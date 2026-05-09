@@ -7,12 +7,14 @@ class AppConfigProvider extends ChangeNotifier {
   final AppConfig config;
   bool _isLoggedIn = false;
   String _userName = '';
+  bool _isLoaded = false;
 
   AppConfigProvider({required this.config});
 
   bool get isLoggedIn => _isLoggedIn;
   String get userName => _userName;
   String get cookie => config.cookie;
+  bool get isLoaded => _isLoaded;
 
   /// 初始化：从存储加载配置
   Future<void> init() async {
@@ -20,9 +22,9 @@ class AppConfigProvider extends ChangeNotifier {
     _isLoggedIn = config.cookie.isNotEmpty;
     if (_isLoggedIn) {
       _userName = '微信用户';
-      // 尝试从 cookie 中提取用户名
       _extractUserName();
     }
+    _isLoaded = true;
     notifyListeners();
   }
 

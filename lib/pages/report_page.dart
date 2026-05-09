@@ -18,6 +18,7 @@ class _ReportPageState extends State<ReportPage> {
   int _totalNotes = 0;
   
   List<MapEntry<String, int>> _categories = [];
+  List<String> _categoryLabels = [];
 
   @override
   void initState() {
@@ -53,7 +54,89 @@ class _ReportPageState extends State<ReportPage> {
       _unreadBooks = unread.clamp(0, books.length);
       _totalNotes = totalItemCount;
       _categories = cats.take(8).toList();
+      _categoryLabels = _buildCategoryLabels(_categories);
     });
+  }
+
+  List<String> _buildCategoryLabels(List<MapEntry<String, int>> cats) {
+    final labels = <String>[];
+    final used = <String>{};
+    for (final cat in cats) {
+      String label = _getCategoryShort(cat.key);
+      if (used.contains(label)) {
+        for (int i = 2; i <= 9; i++) {
+          final candidate = '$label$i';
+          if (!used.contains(candidate)) {
+            label = candidate;
+            break;
+          }
+        }
+      }
+      used.add(label);
+      labels.add(label);
+    }
+    return labels;
+  }
+
+  String _getCategoryShort(String category) {
+    const map = {
+      '未分类': '未分',
+      '政治军事': '政军',
+      '精品小说': '精小',
+      '精品散文': '精散',
+      '精品诗歌': '精诗',
+      '精品科幻': '精幻',
+      '文学': '文学',
+      '小说': '小说',
+      '历史': '历史',
+      '哲学': '哲学',
+      '经济': '经济',
+      '科技': '科技',
+      '艺术': '艺术',
+      '教育': '教育',
+      '生活': '生活',
+      '社会': '社会',
+      '心理': '心理',
+      '传记': '传记',
+      '儿童': '儿童',
+      '漫画': '漫画',
+      '外语': '外语',
+      '工具书': '工具',
+      '其他': '其他',
+      '宗教': '宗教',
+      '自然科学': '自然',
+      '计算机': '计算',
+      '编程': '编程',
+      '设计': '设计',
+      '音乐': '音乐',
+      '电影': '电影',
+      '美食': '美食',
+      '旅行': '旅行',
+      '健康': '健康',
+      '运动': '运动',
+      '职场': '职场',
+      '管理': '管理',
+      '法律': '法律',
+      '政治': '政治',
+      '军事': '军事',
+      '诗歌': '诗歌',
+      '散文': '散文',
+      '科幻': '科幻',
+      '悬疑': '悬疑',
+      '武侠': '武侠',
+      '言情': '言情',
+      '奇幻': '奇幻',
+      '推理': '推理',
+    };
+    if (map.containsKey(category)) return map[category]!;
+    if (category.startsWith('精品') && category.length > 2) {
+      final sub = category.substring(2);
+      if (map.containsKey(sub)) return '精${map[sub]!.substring(0, 1)}';
+      return '精${sub.substring(0, 1)}';
+    }
+    if (category.length >= 2) return category.substring(0, 2);
+    if (category.isNotEmpty) return category;
+    return '未知';
   }
 
   @override
@@ -149,9 +232,12 @@ class _ReportPageState extends State<ReportPage> {
                       const Text('图书分类', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       SizedBox(
-                        height: 200,
+                        height: 260,
                         child: BarChart(
                           BarChartData(
+                            maxY: _categories.isNotEmpty
+                                ? (_categories.first.value / 10).ceil() * 10.0 + 10
+                                : 10,
                             barGroups: _categories.asMap().entries.map((e) {
                               final colors = [
                                 const Color(0xFF4A7CF7),
@@ -169,7 +255,7 @@ class _ReportPageState extends State<ReportPage> {
                                   BarChartRodData(
                                     toY: e.value.value.toDouble(),
                                     color: colors[e.key % colors.length],
-                                    width: 20,
+                                    width: 16,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ],
@@ -179,16 +265,18 @@ class _ReportPageState extends State<ReportPage> {
                               bottomTitles: AxisTitles(
                                 sideTitles: SideTitles(
                                   showTitles: true,
+                                  reservedSize: 30,
                                   getTitlesWidget: (value, meta) {
                                     final idx = value.toInt();
-                                    if (idx >= 0 && idx < _categories.length) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(top: 4),
+                                    if (idx >= 0 && idx < _categoryLabels.length) {
+                                      final label = _categoryLabels[idx];
+                                      return SideTitleWidget(
+                                        axisSide: meta.axisSide,
+                                        space: 4,
                                         child: Text(
-                                          _categories[idx].key.length > 4
-                                              ? '${_categories[idx].key.substring(0, 4)}...'
-                                              : _categories[idx].key,
-                                          style: const TextStyle(fontSize: 10),
+                                          label,
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                          textAlign: TextAlign.center,
                                         ),
                                       );
                                     }
@@ -197,13 +285,32 @@ class _ReportPageState extends State<ReportPage> {
                                 ),
                               ),
                               leftTitles: AxisTitles(
-                                sideTitles: SideTitles(showTitles: true, reservedSize: 30),
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 40,
+                                  interval: 10,
+                                  getTitlesWidget: (value, meta) {
+                                    if (value % 10 != 0) return const SizedBox();
+                                    return SideTitleWidget(
+                                      axisSide: meta.axisSide,
+                                      space: 6,
+                                      child: Text(
+                                        value.toInt().toString(),
+                                        style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
                               topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                               rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                             ),
                             borderData: FlBorderData(show: false),
-                            gridData: FlGridData(show: true, drawVerticalLine: false),
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: 10,
+                            ),
                           ),
                         ),
                       ),

@@ -23,25 +23,47 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
-    _loadAiConfig();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAiConfig();
+    });
   }
 
   void _loadAiConfig() {
     final appConfig = context.read<AppConfigProvider>();
-    _apiKey = appConfig.config.apiKey;
-    _baseUrl = appConfig.config.baseUrl.isNotEmpty
-        ? appConfig.config.baseUrl
-        : 'https://api.deepseek.com';
-    _modelName = appConfig.config.modelName.isNotEmpty
-        ? appConfig.config.modelName
-        : 'deepseek-chat';
-    _apiKeyController.text = _apiKey;
-    _baseUrlController.text = _baseUrl;
-    _modelNameController.text = _modelName;
+    if (!appConfig.isLoaded) {
+      appConfig.addListener(_onConfigLoaded);
+      return;
+    }
+    _applyConfig();
+  }
+
+  void _onConfigLoaded() {
+    final appConfig = context.read<AppConfigProvider>();
+    if (appConfig.isLoaded) {
+      appConfig.removeListener(_onConfigLoaded);
+      _applyConfig();
+    }
+  }
+
+  void _applyConfig() {
+    final appConfig = context.read<AppConfigProvider>();
+    setState(() {
+      _apiKey = appConfig.config.apiKey;
+      _baseUrl = appConfig.config.baseUrl.isNotEmpty
+          ? appConfig.config.baseUrl
+          : 'https://api.deepseek.com';
+      _modelName = appConfig.config.modelName.isNotEmpty
+          ? appConfig.config.modelName
+          : 'deepseek-chat';
+      _apiKeyController.text = _apiKey;
+      _baseUrlController.text = _baseUrl;
+      _modelNameController.text = _modelName;
+    });
   }
 
   @override
   void dispose() {
+    context.read<AppConfigProvider>().removeListener(_onConfigLoaded);
     _apiKeyController.dispose();
     _baseUrlController.dispose();
     _modelNameController.dispose();
@@ -462,7 +484,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Text(
-                        'v2.1.0',
+                        'v2.2.0',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -479,7 +501,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('当前已是最新版本 v2.1.0'),
+                          content: Text('当前已是最新版本 v2.2.0'),
                           duration: Duration(seconds: 1),
                         ),
                       );
