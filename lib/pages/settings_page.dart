@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
+import '../services/config.dart';
 import 'cookie_login_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -15,6 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _baseUrl = 'https://api.deepseek.com';
   String _modelName = 'deepseek-chat';
   bool _obscureApiKey = true;
+  AppConfigProvider? _appConfig;
 
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
@@ -24,12 +26,14 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _loadAiConfig();
     });
   }
 
   void _loadAiConfig() {
     final appConfig = context.read<AppConfigProvider>();
+    _appConfig = appConfig;
     if (!appConfig.isLoaded) {
       appConfig.addListener(_onConfigLoaded);
       return;
@@ -63,7 +67,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
-    context.read<AppConfigProvider>().removeListener(_onConfigLoaded);
+    _appConfig?.removeListener(_onConfigLoaded);
     _apiKeyController.dispose();
     _baseUrlController.dispose();
     _modelNameController.dispose();
@@ -117,25 +121,23 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: '账号'),
               _SettingsCard(
                 children: [
-                  if (appConfig.isLoggedIn) ...[
+                   if (appConfig.hasSavedCredentials) ...[
                     ListTile(
                       leading: CircleAvatar(
                         backgroundColor: const Color(0xFF07C160),
                         child: const Icon(Icons.person, color: Colors.white, size: 20),
                       ),
                       title: Text(
-                        appConfig.userName,
+                        appConfig.userName.isEmpty ? '微信读书账号' : appConfig.userName,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      subtitle: const Text(
-                        '已登录',
-                        style: TextStyle(fontSize: 13),
-                      ),
+                      subtitle: Text(appConfig.loginStatusText, style: const TextStyle(fontSize: 13)),
+                      onTap: appConfig.isBusy ? null : _startWeChatLogin,
                       trailing: TextButton(
-                        onPressed: () async {
+                        onPressed: appConfig.isBusy ? null : () async {
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
@@ -159,6 +161,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           if (confirm == true && mounted) {
                             await appConfig.logout();
                             if (mounted) {
+                              _applyConfig();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('已退出登录'),
@@ -201,7 +204,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: TextStyle(fontSize: 12),
                       ),
                       trailing: ElevatedButton(
-                        onPressed: _startWeChatLogin,
+                        onPressed: appConfig.isBusy ? null : _startWeChatLogin,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF07C160),
                           foregroundColor: Colors.white,
@@ -397,7 +400,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () async {
+                        onPressed: appConfig.isBusy ? null : () async {
+                          if (!AppConfig.isHttpsUrl(_baseUrl.trim())) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('AI 服务地址必须是有效的 HTTPS 地址')),
+                            );
+                            return;
+                          }
                           await appConfig.updateAiConfig(
                             apiKey: _apiKey,
                             baseUrl: _baseUrl,

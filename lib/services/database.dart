@@ -1,21 +1,62 @@
+import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseService {
-  static Database? _db;
-  static final DatabaseService _instance = DatabaseService._();
-  static DatabaseService get instance => _instance;
-  DatabaseService._();
+  Database? _db;
+  Future<Database>? _opening;
+  bool _closed = false;
+  final String accountId;
+  bool get isActive => !_closed && identical(_instance, this);
+  static DatabaseService? _instance;
+  static DatabaseService get instance =>
+      _instance ?? (throw StateError('请先验证登录'));
+  DatabaseService._(this.accountId);
+
+  static Future<void> endSession() async {
+    final previous = _instance;
+    _instance = null;
+    await previous?.close();
+  }
+
+  static Future<void> selectAccount(String accountId) async {
+    if (!RegExp(r'^[0-9]+$').hasMatch(accountId) || accountId == '0') {
+      throw ArgumentError('无效的账号 ID');
+    }
+    await _instance?.close();
+    _instance = null;
+    // 旧数据库没有账号归属，不能迁移给当前登录者。
+    await deleteDatabase(join(await getDatabasesPath(), 'weread_companion.db'));
+    _instance = DatabaseService._(accountId);
+  }
+
+  static Future<void> clearLocalData() async {
+    final previous = _instance;
+    _instance = null;
+    await previous?.close();
+    final directory = Directory(await getDatabasesPath());
+    if (!await directory.exists()) return;
+    await for (final file in directory.list()) {
+      final name = basename(file.path);
+      if (name == 'weread_companion.db' ||
+          RegExp(r'^weread_companion_account_[0-9]+\.db$').hasMatch(name)) {
+        await deleteDatabase(file.path);
+      }
+    }
+  }
 
   Future<Database> get database async {
+    if (_closed) throw StateError('账号会话已结束');
     if (_db != null) return _db!;
-    _db = await _initDb();
+    final db = await (_opening ??= _initDb());
+    if (_closed) throw StateError('账号会话已结束');
+    _db = db;
     return _db!;
   }
 
   Future<Database> _initDb() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'weread_companion.db');
+    final path = join(dbPath, 'weread_companion_account_$accountId.db');
 
     return await openDatabase(
       path,
@@ -283,8 +324,10 @@ class DatabaseService {
   }
 
   Future<void> close() async {
-    final db = await database;
-    await db.close();
+    _closed = true;
+    final db = _db ?? await _opening;
+    await db?.close();
     _db = null;
+    _opening = null;
   }
 }

@@ -27,35 +27,41 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _loadStats() async {
-    final rawBooks = await DatabaseService.instance.getAllBooks();
-    final books = rawBooks.map((m) => Book.fromJson(m)).toList();
+    try {
+      final db = DatabaseService.instance;
+      final rawBooks = await db.getAllBooks();
+      final books = rawBooks.map((m) => Book.fromJson(m)).toList();
 
-    // 统计划线 + 笔记（两个表都要查）
-    final rawBookmarks = await DatabaseService.instance.getAllBookmarks();
-    final rawNotes = await DatabaseService.instance.getAllNotes();
-    final totalItemCount = rawBookmarks.length + rawNotes.length;
+      // 统计划线 + 笔记（两个表都要查）
+      final rawBookmarks = await db.getAllBookmarks();
+      final rawNotes = await db.getAllNotes();
+      final totalItemCount = rawBookmarks.length + rawNotes.length;
 
-    final read = books.where((b) => b.isFinished || b.progress >= 85).length;
-    final reading = books.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).length;
-    final unread = books.length - read - reading;
+      final read = books.where((b) => b.isFinished || b.progress >= 85).length;
+      final reading = books.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).length;
+      final unread = books.length - read - reading;
 
-    // 按分类统计
-    final catMap = <String, int>{};
-    for (final b in books) {
-      final cat = b.category.isNotEmpty ? b.category : '未分类';
-      catMap[cat] = (catMap[cat] ?? 0) + 1;
+      // 按分类统计
+      final catMap = <String, int>{};
+      for (final b in books) {
+        final cat = b.category.isNotEmpty ? b.category : '未分类';
+        catMap[cat] = (catMap[cat] ?? 0) + 1;
+      }
+      final cats = catMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+      if (!mounted) return;
+      setState(() {
+        _totalBooks = books.length;
+        _readBooks = read;
+        _readingBooks = reading;
+        _unreadBooks = unread.clamp(0, books.length);
+        _totalNotes = totalItemCount;
+        _categories = cats.take(8).toList();
+        _categoryLabels = _buildCategoryLabels(_categories);
+      });
+    } catch (_) {
+      // 退出登录时数据库会关闭，丢弃该会话的加载结果。
     }
-    final cats = catMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-
-    setState(() {
-      _totalBooks = books.length;
-      _readBooks = read;
-      _readingBooks = reading;
-      _unreadBooks = unread.clamp(0, books.length);
-      _totalNotes = totalItemCount;
-      _categories = cats.take(8).toList();
-      _categoryLabels = _buildCategoryLabels(_categories);
-    });
   }
 
   List<String> _buildCategoryLabels(List<MapEntry<String, int>> cats) {

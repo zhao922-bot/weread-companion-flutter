@@ -1,31 +1,72 @@
 import 'package:flutter/material.dart';
 import '../services/config.dart';
+import '../services/database.dart';
+import '../services/api.dart';
+import '../services/ai_service.dart';
+import '../services/export_service.dart';
+
+enum LoginStatus { signedOut, saved, verified, invalid }
 
 /// 应用配置 Provider
 /// 管理登录状态、Cookie、AI 配置等
 class AppConfigProvider extends ChangeNotifier {
   final AppConfig config;
-  bool _isLoggedIn = false;
+  LoginStatus _loginStatus = LoginStatus.signedOut;
+  bool _busy = false;
+  String? _loginError;
   String _userName = '';
   bool _isLoaded = false;
+  int _sessionRevision = 0;
+  int get sessionRevision => _sessionRevision;
 
   AppConfigProvider({required this.config});
 
-  bool get isLoggedIn => _isLoggedIn;
+  bool get isLoggedIn => _loginStatus == LoginStatus.verified;
+  bool get hasSavedCredentials => config.cookie.isNotEmpty;
+  bool get isBusy => _busy;
+  LoginStatus get loginStatus => _loginStatus;
+  String? get loginError => _loginError;
+  String get loginStatusText => switch (_loginStatus) {
+        LoginStatus.signedOut => '未登录',
+        LoginStatus.saved => '已保存凭据',
+        LoginStatus.verified => '验证成功',
+        LoginStatus.invalid => '凭据失效',
+      };
   String get userName => _userName;
   String get cookie => config.cookie;
   bool get isLoaded => _isLoaded;
 
   /// 初始化：从存储加载配置
   Future<void> init() async {
-    await config.load();
-    _isLoggedIn = config.cookie.isNotEmpty;
-    if (_isLoggedIn) {
-      _userName = '微信用户';
-      _extractUserName();
+    _busy = true;
+    try {
+      await config.load();
+      if (config.cookie.isNotEmpty) {
+        _loginStatus = LoginStatus.saved;
+        try {
+          config.cookie = WeReadApi.normalizeCookie(config.cookie);
+        } on FormatException {
+          _loginStatus = LoginStatus.invalid;
+          _loginError = '已保存的 Cookie 格式无效，请重新导入';
+          return;
+        }
+        await config.save();
+        await _verifyCookie();
+      }
+    } catch (_) {
+      _loginError = '配置加载失败，请重试';
+    } finally {
+      _isLoaded = true;
+      _busy = false;
+      notifyListeners();
     }
-    _isLoaded = true;
-    notifyListeners();
+  }
+
+  String? _accountId(String cookie) {
+    final match =
+        RegExp(r'(?:^|;\s*)wr_vid=([0-9]+)(?:;|$)').firstMatch(cookie);
+    final id = match?.group(1);
+    return id == '0' ? null : id;
   }
 
   /// 从 cookie 中提取用户信息
@@ -35,27 +76,101 @@ class AppConfigProvider extends ChangeNotifier {
     for (final part in parts) {
       final trimmed = part.trim();
       if (trimmed.startsWith('wr_name=')) {
-        _userName = Uri.decodeComponent(trimmed.substring(8));
+        try {
+          _userName = Uri.decodeComponent(trimmed.substring(8));
+        } on FormatException {
+          _userName = '微信用户';
+        }
         break;
       }
     }
   }
 
-  /// 微信扫码登录成功后保存 Cookie
-  Future<void> loginWithCookie(String cookieStr) async {
-    config.cookie = cookieStr;
-    await config.save();
-    _isLoggedIn = true;
-    _extractUserName();
+  void _beginOperation() {
+    if (_busy) throw StateError('配置操作进行中，请稍后重试');
+    _busy = true;
     notifyListeners();
+  }
+
+  Future<void> _verifyCookie() async {
+    final accountId = _accountId(config.cookie);
+    if (accountId == null) {
+      _loginStatus = LoginStatus.invalid;
+      _loginError = 'Cookie 缺少有效的 wr_vid，请重新导入';
+      return;
+    }
+    final api = WeReadApi.forLogin(config: AppConfig(cookie: config.cookie));
+    try {
+      final valid = await api.checkLogin();
+      if (!valid || api.authenticatedAccountId != accountId) {
+        _loginStatus = LoginStatus.invalid;
+        _loginError = '凭据失效或账号不匹配，请重新导入 Cookie';
+        return;
+      }
+      await DatabaseService.selectAccount(accountId);
+      _loginStatus = LoginStatus.verified;
+      _loginError = null;
+      _userName = '微信用户';
+      _extractUserName();
+    } catch (_) {
+      _loginStatus = LoginStatus.saved;
+      _loginError = '已保存凭据，暂时无法完成验证，请检查网络后重试';
+    } finally {
+      api.dispose();
+    }
+  }
+
+  /// 规范化并保存凭据，通过服务器验证后才允许访问阅读数据。
+  Future<void> loginWithCookie(String cookieStr) async {
+    final normalized = WeReadApi.normalizeCookie(cookieStr);
+    final accountId = _accountId(normalized);
+    if (accountId == null) throw const FormatException('Cookie 缺少有效的 wr_vid');
+    _beginOperation();
+    try {
+      WeReadApi.reset();
+      AIService.cancelAll();
+      _loginStatus = LoginStatus.signedOut;
+      _userName = '';
+      _loginError = null;
+      _sessionRevision++;
+      notifyListeners();
+      await DatabaseService.endSession();
+      config.cookie = normalized;
+      await config.save();
+      _loginStatus = LoginStatus.saved;
+      notifyListeners();
+      await _verifyCookie();
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
   }
 
   /// 退出登录
   Future<void> logout() async {
-    await config.clear();
-    _isLoggedIn = false;
-    _userName = '';
-    notifyListeners();
+    _beginOperation();
+    try {
+      WeReadApi.reset();
+      AIService.cancelAll();
+      _loginStatus = LoginStatus.signedOut;
+      _userName = '';
+      _loginError = null;
+      config.cookie = '';
+      config.apiKey = '';
+      config.baseUrl = 'https://api.deepseek.com';
+      config.modelName = 'deepseek-chat';
+      _sessionRevision++;
+      notifyListeners();
+      try {
+        await DatabaseService.clearLocalData();
+        await ExportService.clearLocalExports();
+      } finally {
+        await config.clear();
+      }
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
   }
 
   /// 更新 AI 配置
@@ -64,10 +179,20 @@ class AppConfigProvider extends ChangeNotifier {
     String? baseUrl,
     String? modelName,
   }) async {
-    if (apiKey != null) config.apiKey = apiKey;
-    if (baseUrl != null) config.baseUrl = baseUrl;
-    if (modelName != null) config.modelName = modelName;
-    await config.save();
-    notifyListeners();
+    if (baseUrl != null && !AppConfig.isHttpsUrl(baseUrl.trim())) {
+      throw const FormatException('AI 服务地址必须是有效的 HTTPS 地址');
+    }
+    _beginOperation();
+    try {
+      if (apiKey != null) config.apiKey = apiKey;
+      if (baseUrl != null) {
+        config.baseUrl = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+      }
+      if (modelName != null) config.modelName = modelName;
+      await config.save();
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
   }
 }

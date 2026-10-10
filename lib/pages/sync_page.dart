@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/bookshelf_provider.dart';
 import '../providers/notes_provider.dart';
+import '../providers/app_config_provider.dart';
 import '../services/api.dart';
-import '../services/config.dart';
 import '../services/database.dart';
 
 /// 同步进度页
@@ -28,11 +28,13 @@ class _SyncPageState extends State<SyncPage> {
 
   @override
   void dispose() {
+    _cancelled = true;
     _logScrollController.dispose();
     super.dispose();
   }
 
   void _addLog(String msg) {
+    if (!mounted) return;
     setState(() {
       _logs.add(msg);
     });
@@ -61,10 +63,11 @@ class _SyncPageState extends State<SyncPage> {
     });
 
     try {
-      final config = AppConfig();
-      await config.load();
+      final appConfig = context.read<AppConfigProvider>();
+      final revision = appConfig.sessionRevision;
+      final config = appConfig.config;
 
-      if (config.cookie.isEmpty) {
+      if (!appConfig.isLoggedIn) {
         setState(() {
           _error = '请先导入 Cookie';
           _syncing = false;
@@ -75,22 +78,20 @@ class _SyncPageState extends State<SyncPage> {
       _addLog('🚀 开始同步...');
 
       // 初始化 API
-      try {
-        WeReadApi.instance;
-      } catch (_) {
-        await WeReadApi.init(config: config, db: DatabaseService.instance);
-      }
-      WeReadApi.instance.updateCookie(config.cookie);
+      final api = await WeReadApi.init(config: config, db: DatabaseService.instance);
+      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
+      api.updateCookie(config.cookie);
 
       // 同步书架
       _addLog('📚 正在同步书架...');
-      final books = await WeReadApi.instance.fetchBookshelf();
+      final books = await api.fetchBookshelf();
+      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
       _totalBooks = books.length;
       _addLog('✅ 书架同步完成，共 $_totalBooks 本书');
 
       // 逐本同步划线和笔记
       for (int i = 0; i < books.length; i++) {
-        if (_cancelled) {
+        if (_cancelled || revision != appConfig.sessionRevision) {
           _addLog('⚠️ 同步已取消');
           break;
         }
@@ -99,7 +100,7 @@ class _SyncPageState extends State<SyncPage> {
         _addLog('📖 [${i + 1}/$_totalBooks] ${book.title}');
 
         try {
-          final bm = await WeReadApi.instance.fetchBookmarks(book.bookId, book.title);
+          final bm = await api.fetchBookmarks(book.bookId, book.title);
           _totalBookmarks += bm.length;
           if (bm.isNotEmpty) _addLog('   ✏️ ${bm.length} 条划线');
         } catch (e) {
@@ -107,7 +108,7 @@ class _SyncPageState extends State<SyncPage> {
         }
 
         try {
-          final nt = await WeReadApi.instance.fetchNotes(book.bookId, book.title);
+          final nt = await api.fetchNotes(book.bookId, book.title);
           _totalNotes += nt.length;
           if (nt.isNotEmpty) _addLog('   📝 ${nt.length} 条笔记');
         } catch (e) {
@@ -115,6 +116,7 @@ class _SyncPageState extends State<SyncPage> {
         }
 
         _syncedBooks = i + 1;
+        if (_cancelled || !mounted) return;
         setState(() {});
 
         // 请求间隔
@@ -123,7 +125,7 @@ class _SyncPageState extends State<SyncPage> {
         }
       }
 
-      if (!_cancelled) {
+      if (!_cancelled && revision == appConfig.sessionRevision) {
         _addLog('');
         _addLog('🎉 同步完成！');
         _addLog('   📚 $_totalBooks 本书');
@@ -140,7 +142,7 @@ class _SyncPageState extends State<SyncPage> {
       _error = e.toString();
       _addLog('❌ 同步失败: $e');
     } finally {
-      setState(() => _syncing = false);
+      if (mounted) setState(() => _syncing = false);
     }
   }
 

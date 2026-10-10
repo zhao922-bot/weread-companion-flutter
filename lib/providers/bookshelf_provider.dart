@@ -11,6 +11,19 @@ class BookshelfProvider extends ChangeNotifier {
   String _filter = '全部'; // 全部/读完/在读中/未读
   bool _loading = false;
   String? _error;
+  int _sessionRevision = -1;
+
+  void resetSession(int revision) {
+    if (_sessionRevision == revision) return;
+    _sessionRevision = revision;
+    _books = [];
+    _filtered = [];
+    _searchQuery = '';
+    _filter = '全部';
+    _loading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   List<Book> get books => _filtered;
   bool get isLoading => _loading;
@@ -19,19 +32,24 @@ class BookshelfProvider extends ChangeNotifier {
   int get totalCount => _books.length;
 
   Future<void> loadBooks() async {
+    final revision = _sessionRevision;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
       final raw = await DatabaseService.instance.getAllBooks();
+      if (revision != _sessionRevision) return;
       _books = raw.map((m) => Book.fromJson(m)).toList();
       _applyFilter();
     } catch (e) {
+      if (revision != _sessionRevision) return;
       _error = e.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (revision == _sessionRevision) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -39,6 +57,7 @@ class BookshelfProvider extends ChangeNotifier {
   /// [config] 可选，传入主 AppConfig 实例以保持一致性
   /// 返回同步结果信息，供 UI 显示
   Future<String> syncFromServer({AppConfig? config}) async {
+    final revision = _sessionRevision;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -47,26 +66,26 @@ class BookshelfProvider extends ChangeNotifier {
       // 使用传入的 config 或从存储加载
       final appConfig = config ?? AppConfig();
       if (config == null) await appConfig.load();
+      if (revision != _sessionRevision) throw StateError('同步已取消');
+      final db = DatabaseService.instance;
 
       if (appConfig.cookie.isEmpty) {
         throw Exception('请先导入 Cookie 再同步');
       }
 
-      // 初始化 API（如果尚未初始化）
-      try {
-        WeReadApi.instance;
-      } catch (_) {
-        await WeReadApi.init(config: appConfig, db: DatabaseService.instance);
-      }
+      final api = await WeReadApi.init(config: appConfig, db: db);
+      if (revision != _sessionRevision) throw StateError('同步已取消');
 
       // 更新 Cookie
-      WeReadApi.instance.updateCookie(appConfig.cookie);
+      api.updateCookie(appConfig.cookie);
 
       // 执行同步
-      final result = await WeReadApi.instance.syncAll();
+      final result = await api.syncAll();
+      if (revision != _sessionRevision) throw StateError('同步已取消');
 
       // 重新加载本地数据
-      final raw = await DatabaseService.instance.getAllBooks();
+      final raw = await db.getAllBooks();
+      if (revision != _sessionRevision) throw StateError('同步已取消');
       _books = raw.map((m) => Book.fromJson(m)).toList();
       _applyFilter();
 
@@ -76,6 +95,7 @@ class BookshelfProvider extends ChangeNotifier {
       notifyListeners();
       return msg;
     } catch (e) {
+      if (revision != _sessionRevision) rethrow;
       _error = e.toString();
       _loading = false;
       notifyListeners();

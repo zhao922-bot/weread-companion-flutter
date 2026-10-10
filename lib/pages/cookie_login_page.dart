@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
+import 'qr_login_page.dart';
 
-/// 登录页面 —— 仅支持 Cookie 导入
+/// 登录页面 —— Cookie 导入及扫码登录入口
 class CookieLoginPage extends StatefulWidget {
   const CookieLoginPage({super.key});
 
@@ -14,6 +15,7 @@ class CookieLoginPage extends StatefulWidget {
 class _CookieLoginPageState extends State<CookieLoginPage> {
   final TextEditingController _controller = TextEditingController();
   bool _obscure = true;
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -23,6 +25,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
 
   Future<void> _pasteFromClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
     final text = data?.text?.trim() ?? '';
     if (text.isNotEmpty) {
       setState(() => _controller.text = text);
@@ -38,20 +41,25 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
       _showMsg('请输入 Cookie', isError: true);
       return;
     }
-    if (cookie.length < 20) {
-      _showMsg('Cookie 内容过短，请检查', isError: true);
-      return;
-    }
-
-    // 保存
+    if (_submitting) return;
     final appConfig = context.read<AppConfigProvider>();
-    await appConfig.loginWithCookie(cookie);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cookie 已保存'), backgroundColor: Color(0xFF07C160)),
-      );
-      Navigator.pop(context);
+    setState(() => _submitting = true);
+    try {
+      await appConfig.loginWithCookie(cookie);
+      if (!mounted) return;
+      if (appConfig.isLoggedIn) {
+        _showMsg('验证成功');
+        Navigator.pop(context);
+      } else {
+        _showMsg(appConfig.loginError ?? appConfig.loginStatusText,
+          isError: appConfig.loginStatus == LoginStatus.invalid);
+      }
+    } on FormatException catch (e) {
+      if (mounted) _showMsg(e.message, isError: true);
+    } catch (_) {
+      if (mounted) _showMsg('导入失败，请重试', isError: true);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -117,8 +125,11 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _controller,
-                  maxLines: 6,
+                  maxLines: _obscure ? 1 : 6,
                   obscureText: _obscure,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  enabled: !_submitting,
                   decoration: InputDecoration(
                     hintText: 'wr_vid=xxx; wr_skey=xxx; ... 或 Cookie-Editor JSON 格式',
                     hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
@@ -154,17 +165,37 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: _submit,
+              onPressed: _submitting || context.watch<AppConfigProvider>().isBusy ? null : _submit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF07C160),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 elevation: 0,
               ),
-              child: const Text('确认导入', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+              child: Text(_submitting ? '正在验证…' : '确认导入并验证', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             ),
           ),
           const SizedBox(height: 12),
+
+          OutlinedButton.icon(
+            onPressed: _submitting || context.watch<AppConfigProvider>().isBusy
+                ? null
+                : () async {
+                    final navigator = Navigator.of(context);
+                    final success = await navigator.push<bool>(
+                      MaterialPageRoute(builder: (_) => const QrLoginPage()),
+                    );
+                    if (!mounted) return;
+                    if (success == true) navigator.pop();
+                  },
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('扫码登录'),
+          ),
+          const SizedBox(height: 12),
+
+          Consumer<AppConfigProvider>(
+            builder: (_, config, __) => Center(child: Text(config.loginStatusText)),
+          ),
 
           // 提示
           Center(

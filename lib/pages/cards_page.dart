@@ -39,11 +39,13 @@ class _CardsPageState extends State<CardsPage> {
     });
     try {
       final raw = await DatabaseService.instance.getAllBookmarks();
+      if (!mounted) return;
       setState(() {
         _allBookmarks = raw.map((m) => Bookmark.fromJson(m)).toList();
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -543,6 +545,7 @@ class _CardPreviewState extends State<_CardPreview> {
 
   /// 将卡片渲染为图片并分享
   Future<void> _exportAsImage() async {
+    final db = DatabaseService.instance;
     setState(() => _exporting = true);
     try {
       final boundary = _cardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
@@ -555,8 +558,13 @@ class _CardPreviewState extends State<_CardPreview> {
 
       final pngBytes = byteData.buffer.asUint8List();
       final tempDir = await getTemporaryDirectory();
+      if (!mounted || !db.isActive) return;
       final file = File('${tempDir.path}/weread_card_${DateTime.now().millisecondsSinceEpoch}.png');
       await file.writeAsBytes(pngBytes);
+      if (!mounted || !db.isActive) {
+        if (await file.exists()) await file.delete();
+        return;
+      }
 
       await Share.shareXFiles(
         [XFile(file.path)],

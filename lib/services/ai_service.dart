@@ -6,6 +6,14 @@ import 'config.dart';
 class AIService {
   final AppConfig config;
   late Dio _dio;
+  static final Set<CancelToken> _tasks = {};
+
+  static void cancelAll() {
+    for (final task in _tasks) {
+      task.cancel('账号会话已结束');
+    }
+    _tasks.clear();
+  }
 
   AIService({required this.config}) {
     _dio = Dio(BaseOptions(
@@ -15,7 +23,7 @@ class AIService {
   }
 
   /// 是否已配置 AI
-  bool get isConfigured => config.apiKey.isNotEmpty && config.baseUrl.isNotEmpty;
+  bool get isConfigured => config.apiKey.isNotEmpty && AppConfig.isHttpsUrl(config.baseUrl);
 
   /// 通用 API 调用
   Future<String?> _callApi(String prompt, {String system = ''}) async {
@@ -27,10 +35,14 @@ class AIService {
     }
     messages.add({'role': 'user', 'content': prompt});
 
+    final task = CancelToken();
+    _tasks.add(task);
     try {
       final resp = await _dio.post(
         '${config.baseUrl}/chat/completions',
+        cancelToken: task,
         options: Options(
+          followRedirects: false,
           headers: {
             'Authorization': 'Bearer ${config.apiKey}',
             'Content-Type': 'application/json',
@@ -48,6 +60,8 @@ class AIService {
       return data['choices'][0]['message']['content'] as String?;
     } catch (e) {
       return null;
+    } finally {
+      _tasks.remove(task);
     }
   }
 

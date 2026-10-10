@@ -27,8 +27,16 @@ class WeReadCompanionApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => AppConfigProvider(config: appConfig)..init(),
         ),
-        ChangeNotifierProvider(create: (_) => BookshelfProvider()),
-        ChangeNotifierProvider(create: (_) => NotesProvider()),
+        ChangeNotifierProxyProvider<AppConfigProvider, BookshelfProvider>(
+          create: (_) => BookshelfProvider(),
+          update: (_, config, provider) => provider!
+            ..resetSession(config.sessionRevision),
+        ),
+        ChangeNotifierProxyProvider<AppConfigProvider, NotesProvider>(
+          create: (_) => NotesProvider(),
+          update: (_, config, provider) => provider!
+            ..resetSession(config.sessionRevision),
+        ),
       ],
       child: MaterialApp(
         title: '微信读书伴侣',
@@ -91,10 +99,18 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final config = context.watch<AppConfigProvider>();
     return Scaffold(
       body: IndexedStack(
+        key: ValueKey('${config.sessionRevision}:${config.isLoggedIn}'),
         index: _currentIndex,
-        children: _pages,
+        children: [
+          for (var i = 0; i < _pages.length; i++)
+            if (i == 4 || config.isLoggedIn)
+              _pages[i]
+            else
+              const Center(child: Text('请先在设置中验证登录')),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,

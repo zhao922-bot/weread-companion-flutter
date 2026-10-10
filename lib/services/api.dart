@@ -9,10 +9,30 @@ import '../models/bookmark.dart';
 class WeReadApi {
   late Dio _dio;
   final AppConfig config;
-  final DatabaseService db;
+  final DatabaseService? _database;
+  DatabaseService get db => _database ?? (throw StateError('登录验证不能访问阅读数据'));
+  bool _cancelled = false;
+  String? authenticatedAccountId;
+  static final Set<WeReadApi> _sessions = {};
 
   static WeReadApi? _instance;
   static WeReadApi get instance => _instance!;
+
+  static void reset() {
+    _instance = null;
+    for (final session in _sessions.toList()) {
+      session.dispose();
+    }
+  }
+
+  void dispose() {
+    _cancelled = true;
+    _dio.close(force: true);
+    config.cookie = '';
+    _sessions.remove(this);
+  }
+
+  factory WeReadApi.forLogin({required AppConfig config}) => WeReadApi._(config: config);
 
   static Future<WeReadApi> init({required AppConfig config, required DatabaseService db}) async {
     if (_instance == null) {
@@ -21,7 +41,8 @@ class WeReadApi {
     return _instance!;
   }
 
-  WeReadApi._({required this.config, required this.db}) {
+  WeReadApi._({required this.config, DatabaseService? db}) : _database = db {
+    _sessions.add(this);
     _dio = Dio(BaseOptions(
       baseUrl: 'https://weread.qq.com/web',
       headers: {
@@ -38,6 +59,14 @@ class WeReadApi {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
+        if (_cancelled) {
+          handler.reject(DioException(
+            requestOptions: options,
+            type: DioExceptionType.cancel,
+            message: '账号会话已结束',
+          ));
+          return;
+        }
         if (config.cookie.isNotEmpty) {
           options.headers['Cookie'] = config.cookie;
         }
@@ -56,43 +85,74 @@ class WeReadApi {
   /// Cookie 格式兼容：支持 JSON 数组、Netscape/TSV、普通字符串
   static String normalizeCookie(String raw) {
     raw = raw.trim();
-
-    // JSON 数组格式（Cookie-Editor 导出）
-    if (raw.startsWith('[')) {
-      try {
-        final cookies = jsonDecode(raw);
-        if (cookies is List && cookies.isNotEmpty && cookies[0] is Map && cookies[0].containsKey('name')) {
-          final parts = cookies.map((c) => '${c['name']}=${c['value'] ?? ''}').join('; ');
-          return parts;
-        }
-      } catch (_) {}
+    final cookies = <String, String>{};
+    void add(dynamic name, dynamic value) {
+      if (name is! String || value is! String ||
+          !RegExp(r'^[!#$%&\x27*+.^_`|~0-9A-Za-z-]+$').hasMatch(name) ||
+          RegExp(r'[;\r\n\x00-\x1f\x7f]').hasMatch(value)) {
+        throw const FormatException('Cookie 格式无效');
+      }
+      cookies[name] = value;
     }
 
-    // JSON 对象格式
-    if (raw.startsWith('{')) {
-      try {
-        final obj = jsonDecode(raw);
-        if (obj is Map) {
-          final parts = obj.entries.map((e) => '${e.key}=${e.value}').join('; ');
-          return parts;
+    if (raw.startsWith('[') || raw.startsWith('{')) {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is! Map) throw const FormatException('Cookie JSON 格式无效');
+          final domain = item['domain'];
+          if (domain is String && domain.isNotEmpty &&
+              domain != 'weread.qq.com' && domain != '.weread.qq.com' &&
+              domain != '.qq.com' && domain != 'qq.com') {
+            continue;
+          }
+          add(item['name'], item['value'] ?? '');
         }
-      } catch (_) {}
+      } else if (decoded is Map) {
+        for (final entry in decoded.entries) {
+          add(entry.key, entry.value);
+        }
+      } else {
+        throw const FormatException('Cookie JSON 格式无效');
+      }
+    } else if (raw.contains('\t')) {
+      for (final line in raw.split(RegExp(r'\r?\n'))) {
+        if (line.trim().isEmpty || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) continue;
+        final fields = line.replaceFirst('#HttpOnly_', '').split('\t');
+        if (fields.length != 7) throw const FormatException('Cookie TSV 格式无效');
+        if (fields[0] == 'weread.qq.com' || fields[0] == '.weread.qq.com' ||
+            fields[0] == '.qq.com' || fields[0] == 'qq.com') {
+          add(fields[5], fields[6]);
+        }
+      }
+    } else {
+      raw = raw.replaceFirst(RegExp(r'^cookie\s*:\s*', caseSensitive: false), '');
+      for (final part in raw.split(';')) {
+        final trimmed = part.trim();
+        if (trimmed.isEmpty) continue;
+        final separator = trimmed.indexOf('=');
+        if (separator < 1) throw const FormatException('Cookie 格式无效');
+        add(trimmed.substring(0, separator).trim(), trimmed.substring(separator + 1).trim());
+      }
     }
-
-    return raw;
+    return cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
   }
 
   /// 检查登录状态
   Future<bool> checkLogin() async {
+    authenticatedAccountId = null;
     try {
       final resp = await _dio.get('/user?userVid=0');
       final data = resp.data;
-      if (data is Map && data.containsKey('vid') && data['vid'] != 0) {
+      final id = data is Map ? data['vid']?.toString() : null;
+      if (id != null && RegExp(r'^[0-9]+$').hasMatch(id) && id != '0') {
+        authenticatedAccountId = id;
         return true;
       }
       return false;
-    } catch (_) {
-      return false;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) return false;
+      rethrow;
     }
   }
 
@@ -264,6 +324,7 @@ class WeReadApi {
     int totalNotes = 0;
 
     for (int i = 0; i < books.length; i++) {
+      if (_cancelled) throw StateError('同步已取消');
       final book = books[i];
 
       try {

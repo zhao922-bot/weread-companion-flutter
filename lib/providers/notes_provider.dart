@@ -34,6 +34,19 @@ class NotesProvider extends ChangeNotifier {
   String _filter = '全部划线'; // 全部划线/全部笔记/收藏
   bool _loading = false;
   String? _error;
+  int _sessionRevision = -1;
+
+  void resetSession(int revision) {
+    if (_sessionRevision == revision) return;
+    _sessionRevision = revision;
+    _notes = [];
+    _filtered = [];
+    _searchQuery = '';
+    _filter = '全部划线';
+    _loading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   List<NoteItem> get notes => _filtered;
   bool get isLoading => _loading;
@@ -43,15 +56,18 @@ class NotesProvider extends ChangeNotifier {
 
   /// 从 bookmarks 表和 notes 表加载全部数据，合并排序
   Future<void> loadNotes() async {
+    final revision = _sessionRevision;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
+      final db = DatabaseService.instance;
       final items = <NoteItem>[];
 
       // 从 bookmarks 表加载划线
-      final rawBookmarks = await DatabaseService.instance.getAllBookmarks();
+      final rawBookmarks = await db.getAllBookmarks();
+      if (revision != _sessionRevision) return;
       for (final m in rawBookmarks) {
         items.add(NoteItem(
           id: m['bookmark_id'] ?? '',
@@ -66,7 +82,8 @@ class NotesProvider extends ChangeNotifier {
       }
 
       // 从 notes 表加载笔记/想法
-      final rawNotes = await DatabaseService.instance.getAllNotes();
+      final rawNotes = await db.getAllNotes();
+      if (revision != _sessionRevision) return;
       for (final m in rawNotes) {
         items.add(NoteItem(
           id: m['note_id'] ?? '',
@@ -86,10 +103,13 @@ class NotesProvider extends ChangeNotifier {
       _notes = items;
       _applyFilter();
     } catch (e) {
+      if (revision != _sessionRevision) return;
       _error = e.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (revision == _sessionRevision) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -104,12 +124,14 @@ class NotesProvider extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(NoteItem note) async {
+    final revision = _sessionRevision;
     if (note.source == NoteSource.bookmark) {
       await DatabaseService.instance.toggleBookmarkFavorite(note.id, !note.isFav);
     } else {
       await DatabaseService.instance.toggleFavorite(note.id, !note.isFav);
     }
 
+    if (revision != _sessionRevision) return;
     final idx = _notes.indexWhere((n) => n.id == note.id && n.source == note.source);
     if (idx >= 0) {
       _notes[idx].isFav = !_notes[idx].isFav;

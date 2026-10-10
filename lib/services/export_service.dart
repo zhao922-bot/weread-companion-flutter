@@ -6,6 +6,22 @@ import 'database.dart';
 
 /// 笔记导出服务
 class ExportService {
+  static Future<void> clearLocalExports() async {
+    final documents = await getApplicationDocumentsDirectory();
+    final temporary = await getTemporaryDirectory();
+    for (final directory in [documents, temporary]) {
+      if (!await directory.exists()) continue;
+      await for (final entry in directory.list()) {
+        final name = entry.uri.pathSegments.last;
+        if (entry is File &&
+            (RegExp(r'^微信读书笔记_[0-9]+\.md$').hasMatch(name) ||
+                RegExp(r'^weread_card_[0-9]+\.png$').hasMatch(name))) {
+          await entry.delete();
+        }
+      }
+    }
+  }
+
   /// 导出笔记为 Markdown 格式
   /// 返回文件路径
   static Future<String> exportToMarkdown({String? bookId}) async {
@@ -97,8 +113,13 @@ class ExportService {
 
     // 保存文件
     final dir = await getApplicationDocumentsDirectory();
+    if (!db.isActive) throw StateError('账号会话已结束');
     final file = File('${dir.path}/微信读书笔记_$dateStr.md');
     await file.writeAsString(lines.join('\n'), encoding: utf8);
+    if (!db.isActive) {
+      if (await file.exists()) await file.delete();
+      throw StateError('账号会话已结束');
+    }
 
     return file.path;
   }
