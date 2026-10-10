@@ -69,8 +69,8 @@ class BookshelfProvider extends ChangeNotifier {
       if (revision != _sessionRevision) throw StateError('同步已取消');
       final db = DatabaseService.instance;
 
-      if (appConfig.cookie.isEmpty) {
-        throw Exception('请先导入 Cookie 再同步');
+      if (!appConfig.isConfigured) {
+        throw Exception('请先登录（扫码或导入 Cookie）再同步');
       }
 
       final api = await WeReadApi.init(config: appConfig, db: db);

@@ -69,7 +69,7 @@ class _SyncPageState extends State<SyncPage> {
 
       if (!appConfig.isLoggedIn) {
         setState(() {
-          _error = '请先导入 Cookie';
+          _error = '请先登录（扫码或导入 Cookie）';
           _syncing = false;
         });
         return;
