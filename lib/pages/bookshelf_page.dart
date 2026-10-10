@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/bookshelf_provider.dart';
 import '../providers/app_config_provider.dart';
 import '../models/book.dart';
@@ -14,6 +15,9 @@ class BookshelfPage extends StatefulWidget {
 }
 
 class _BookshelfPageState extends State<BookshelfPage> {
+  static const _densityKey = 'bookshelf_columns';
+  int _crossAxisCount = 3;
+  bool _densityLoaded = false;
   String _searchQuery = '';
   String _selectedFilter = '全部';
   final TextEditingController _searchController = TextEditingController();
@@ -23,10 +27,27 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   void initState() {
     super.initState();
+    _loadDensity();
     // 首次加载数据
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BookshelfProvider>().loadBooks();
     });
+  }
+
+  Future<void> _loadDensity() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final columns = prefs.getInt(_densityKey);
+    setState(() {
+      _crossAxisCount = columns == 2 ? 2 : 3;
+      _densityLoaded = true;
+    });
+  }
+
+  Future<void> _setDensity(int columns) async {
+    setState(() => _crossAxisCount = columns);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_densityKey, columns);
   }
 
   @override
@@ -102,9 +123,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final crossAxisCount = screenWidth < 380 ? 2 : 3;
-    final childAspectRatio = screenWidth < 380 ? 0.48 : 0.5;
+    final crossAxisCount = _crossAxisCount;
+    const childAspectRatio = 0.5;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -115,6 +135,21 @@ class _BookshelfPageState extends State<BookshelfPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         actions: [
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.grid_view_rounded),
+            tooltip: '显示密度：当前 $_crossAxisCount 列',
+            enabled: _densityLoaded,
+            initialValue: _crossAxisCount,
+            onSelected: _setDensity,
+            itemBuilder: (context) => [
+              for (final columns in [2, 3])
+                CheckedPopupMenuItem(
+                  value: columns,
+                  checked: _crossAxisCount == columns,
+                  child: Text('$columns 列 · ${columns == 2 ? '宽松' : '紧凑'}'),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.cloud_sync_rounded),
             tooltip: '同步数据',

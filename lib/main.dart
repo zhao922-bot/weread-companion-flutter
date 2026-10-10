@@ -106,7 +106,9 @@ class _MainScreenState extends State<MainScreen> {
         index: _currentIndex,
         children: [
           for (var i = 0; i < _pages.length; i++)
-            if (i == 4 || config.isLoggedIn)
+            if (i == 4)
+              SettingsPage(isActive: _currentIndex == 4)
+            else if (config.isLoggedIn)
               _pages[i]
             else
               const Center(child: Text('请先在设置中验证登录')),

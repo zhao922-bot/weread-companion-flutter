@@ -5,7 +5,9 @@ import '../services/config.dart';
 import 'cookie_login_page.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  final bool isActive;
+
+  const SettingsPage({super.key, this.isActive = true});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -53,12 +55,8 @@ class _SettingsPageState extends State<SettingsPage> {
     final appConfig = context.read<AppConfigProvider>();
     setState(() {
       _apiKey = appConfig.config.apiKey;
-      _baseUrl = appConfig.config.baseUrl.isNotEmpty
-          ? appConfig.config.baseUrl
-          : 'https://api.deepseek.com';
-      _modelName = appConfig.config.modelName.isNotEmpty
-          ? appConfig.config.modelName
-          : 'deepseek-chat';
+      _baseUrl = appConfig.config.baseUrl.isNotEmpty ? appConfig.config.baseUrl : 'https://api.deepseek.com';
+      _modelName = appConfig.config.modelName.isNotEmpty ? appConfig.config.modelName : 'deepseek-chat';
       _apiKeyController.text = _apiKey;
       _baseUrlController.text = _baseUrl;
       _modelNameController.text = _modelName;
@@ -87,6 +85,19 @@ class _SettingsPageState extends State<SettingsPage> {
         duration: const Duration(seconds: 1),
       ),
     );
+  }
+
+  String get _aiConfigSummary {
+    final host = Uri.tryParse(_baseUrl.trim())?.host.toLowerCase() ?? '';
+    final provider = switch (host) {
+      'api.deepseek.com' => 'DeepSeek',
+      'dashscope.aliyuncs.com' => 'Qwen',
+      'api.minimax.chat' || 'api.minimax.io' => 'MiniMax',
+      'api.moonshot.cn' || 'api.moonshot.ai' => 'Moonshot',
+      'api.siliconflow.cn' || 'api.siliconflow.com' => 'SiliconFlow',
+      _ => '自定义服务',
+    };
+    return '$provider · ${_modelName.trim().isEmpty ? '未设置模型' : _modelName.trim()}';
   }
 
   /// 跳转到 Cookie 导入页面
@@ -121,7 +132,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: '账号'),
               _SettingsCard(
                 children: [
-                   if (appConfig.hasSavedCredentials) ...[
+                  if (appConfig.hasSavedCredentials) ...[
                     ListTile(
                       leading: CircleAvatar(
                         backgroundColor: const Color(0xFF07C160),
@@ -137,40 +148,42 @@ class _SettingsPageState extends State<SettingsPage> {
                       subtitle: Text(appConfig.loginStatusText, style: const TextStyle(fontSize: 13)),
                       onTap: appConfig.isBusy ? null : _startWeChatLogin,
                       trailing: TextButton(
-                        onPressed: appConfig.isBusy ? null : () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('确认退出'),
-                              content: const Text('退出登录后将清除所有本地数据，确定要退出吗？'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('取消'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.red,
+                        onPressed: appConfig.isBusy
+                            ? null
+                            : () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: const Text('确认退出'),
+                                    content: const Text('退出登录后将清除所有本地数据，确定要退出吗？'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: const Text('取消'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Colors.red,
+                                        ),
+                                        child: const Text('退出'),
+                                      ),
+                                    ],
                                   ),
-                                  child: const Text('退出'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirm == true && mounted) {
-                            await appConfig.logout();
-                            if (mounted) {
-                              _applyConfig();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('已退出登录'),
-                                  duration: Duration(seconds: 1),
-                                ),
-                              );
-                            }
-                          }
-                        },
+                                );
+                                if (confirm == true && mounted) {
+                                  await appConfig.logout();
+                                  if (mounted) {
+                                    _applyConfig();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('已退出登录'),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
                         child: const Text(
                           '退出登录',
                           style: TextStyle(color: Colors.redAccent),
@@ -226,215 +239,229 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: 'AI 配置'),
               _SettingsCard(
                 children: [
-                  // Preset buttons
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '快速预设',
+                  ExpansionTile(
+                    // 切换标签后重新创建面板，每次进入设置都默认折叠。
+                    key: ValueKey(widget.isActive),
+                    initiallyExpanded: false,
+                    shape: const Border(),
+                    collapsedShape: const Border(),
+                    title: const Text('AI 配置', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    subtitle: Text(_aiConfigSummary, style: const TextStyle(fontSize: 12)),
+                    children: [
+                      // Preset buttons
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '快速预设',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _PresetButton(
+                                  label: 'DeepSeek',
+                                  color: const Color(0xFF4D6BFE),
+                                  onTap: () => _applyPreset(
+                                    'DeepSeek',
+                                    'https://api.deepseek.com',
+                                    'deepseek-chat',
+                                  ),
+                                ),
+                                _PresetButton(
+                                  label: 'Qwen',
+                                  color: const Color(0xFF6C3BF5),
+                                  onTap: () => _applyPreset(
+                                    '通义千问',
+                                    'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                                    'qwen3.6-plus',
+                                  ),
+                                ),
+                                _PresetButton(
+                                  label: 'MiniMax',
+                                  color: const Color(0xFF00B4D8),
+                                  onTap: () => _applyPreset(
+                                    'MiniMax',
+                                    'https://api.minimax.chat/v1',
+                                    'MiniMax-M2.7',
+                                  ),
+                                ),
+                                _PresetButton(
+                                  label: 'Moonshot',
+                                  color: const Color(0xFF1A1A2E),
+                                  onTap: () => _applyPreset(
+                                    'Moonshot',
+                                    'https://api.moonshot.cn/v1',
+                                    'kimi-k2.5',
+                                  ),
+                                ),
+                                _PresetButton(
+                                  label: 'SiliconFlow',
+                                  color: const Color(0xFFFF6B35),
+                                  onTap: () => _applyPreset(
+                                    'SiliconFlow',
+                                    'https://api.siliconflow.cn/v1',
+                                    'deepseek-ai/DeepSeek-V4-Flash',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      // API Key
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                        child: Text(
+                          'API Key',
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[500],
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _PresetButton(
-                              label: 'DeepSeek',
-                              color: const Color(0xFF4D6BFE),
-                              onTap: () => _applyPreset(
-                                'DeepSeek',
-                                'https://api.deepseek.com',
-                                'deepseek-chat',
-                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: TextField(
+                          controller: _apiKeyController,
+                          obscureText: _obscureApiKey,
+                          decoration: InputDecoration(
+                            hintText: '输入 API Key',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                            filled: true,
+                            fillColor: const Color(0xFFF8F8F8),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
                             ),
-                            _PresetButton(
-                              label: 'Qwen',
-                              color: const Color(0xFF6C3BF5),
-                              onTap: () => _applyPreset(
-                                '通义千问',
-                                'https://dashscope.aliyuncs.com/compatible-mode/v1',
-                                'qwen3.6-plus',
-                              ),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscureApiKey ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                  size: 20),
+                              onPressed: () => setState(() => _obscureApiKey = !_obscureApiKey),
                             ),
-                            _PresetButton(
-                              label: 'MiniMax',
-                              color: const Color(0xFF00B4D8),
-                              onTap: () => _applyPreset(
-                                'MiniMax',
-                                'https://api.minimax.chat/v1',
-                                'MiniMax-M2.7',
-                              ),
-                            ),
-                            _PresetButton(
-                              label: 'Moonshot',
-                              color: const Color(0xFF1A1A2E),
-                              onTap: () => _applyPreset(
-                                'Moonshot',
-                                'https://api.moonshot.cn/v1',
-                                'kimi-k2.5',
-                              ),
-                            ),
-                            _PresetButton(
-                              label: 'SiliconFlow',
-                              color: const Color(0xFFFF6B35),
-                              onTap: () => _applyPreset(
-                                'SiliconFlow',
-                                'https://api.siliconflow.cn/v1',
-                                'deepseek-ai/DeepSeek-V4-Flash',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  // API Key
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                    child: Text(
-                      'API Key',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: TextField(
-                      controller: _apiKeyController,
-                      obscureText: _obscureApiKey,
-                      decoration: InputDecoration(
-                        hintText: '输入 API Key',
-                        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                        filled: true,
-                        fillColor: const Color(0xFFF8F8F8),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscureApiKey ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-                          onPressed: () => setState(() => _obscureApiKey = !_obscureApiKey),
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                      onChanged: (value) => _apiKey = value,
-                    ),
-                  ),
-                  // Base URL
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: Text(
-                      'Base URL',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: TextField(
-                      controller: _baseUrlController,
-                      decoration: InputDecoration(
-                        hintText: '输入 Base URL',
-                        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                        filled: true,
-                        fillColor: const Color(0xFFF8F8F8),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                      onChanged: (value) => _baseUrl = value,
-                    ),
-                  ),
-                  // Model Name
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: Text(
-                      '模型名称',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: TextField(
-                      controller: _modelNameController,
-                      decoration: InputDecoration(
-                        hintText: '输入模型名称',
-                        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                        filled: true,
-                        fillColor: const Color(0xFFF8F8F8),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                      onChanged: (value) => _modelName = value,
-                    ),
-                  ),
-                  // Save button
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: appConfig.isBusy ? null : () async {
-                          if (!AppConfig.isHttpsUrl(_baseUrl.trim())) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('AI 服务地址必须是有效的 HTTPS 地址')),
-                            );
-                            return;
-                          }
-                          await appConfig.updateAiConfig(
-                            apiKey: _apiKey,
-                            baseUrl: _baseUrl,
-                            modelName: _modelName,
-                          );
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('AI 配置已保存'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2196F3),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: const Text(
-                          '保存配置',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          style: const TextStyle(fontSize: 14),
+                          onChanged: (value) => _apiKey = value,
                         ),
                       ),
-                    ),
+                      // Base URL
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          'Base URL',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: TextField(
+                          controller: _baseUrlController,
+                          decoration: InputDecoration(
+                            hintText: '输入 Base URL',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                            filled: true,
+                            fillColor: const Color(0xFFF8F8F8),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 14),
+                          onChanged: (value) => setState(() => _baseUrl = value),
+                        ),
+                      ),
+                      // Model Name
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                        child: Text(
+                          '模型名称',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: TextField(
+                          controller: _modelNameController,
+                          decoration: InputDecoration(
+                            hintText: '输入模型名称',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                            filled: true,
+                            fillColor: const Color(0xFFF8F8F8),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 14),
+                          onChanged: (value) => setState(() => _modelName = value),
+                        ),
+                      ),
+                      // Save button
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: appConfig.isBusy
+                                ? null
+                                : () async {
+                                    if (!AppConfig.isHttpsUrl(_baseUrl.trim())) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('AI 服务地址必须是有效的 HTTPS 地址')),
+                                      );
+                                      return;
+                                    }
+                                    await appConfig.updateAiConfig(
+                                      apiKey: _apiKey,
+                                      baseUrl: _baseUrl,
+                                      modelName: _modelName,
+                                    );
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('AI 配置已保存'),
+                                          duration: Duration(seconds: 1),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2196F3),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            child: const Text(
+                              '保存配置',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -445,7 +472,8 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: '使用帮助'),
               _SettingsCard(
                 children: [
-                  _helpItem(Icons.cookie_outlined, '导入 Cookie', '在电脑浏览器登录 weread.qq.com 后，F12 → Console 执行 copy(document.cookie)，粘贴到 App'),
+                  _helpItem(Icons.cookie_outlined, '导入 Cookie',
+                      '在电脑浏览器登录 weread.qq.com 后，F12 → Console 执行 copy(document.cookie)，粘贴到 App'),
                   const Divider(height: 1, indent: 52),
                   _helpItem(Icons.sync_rounded, '同步书架', '导入 Cookie 后，在书架页下拉刷新即可同步所有书籍、划线和笔记'),
                   const Divider(height: 1, indent: 52),

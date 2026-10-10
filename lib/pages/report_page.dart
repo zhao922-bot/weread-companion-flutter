@@ -16,14 +16,26 @@ class _ReportPageState extends State<ReportPage> {
   int _readingBooks = 0;
   int _unreadBooks = 0;
   int _totalNotes = 0;
-  
-  List<MapEntry<String, int>> _categories = [];
-  List<String> _categoryLabels = [];
+  List<MapEntry<String, int>> _topHighlights = [];
+  List<MapEntry<DateTime, int>> _monthlyActivity = [];
 
   @override
   void initState() {
     super.initState();
     _loadStats();
+  }
+
+  // 数据库列表接口默认只返回 500 条，报告需读取全部本地记录。
+  Future<List<Map<String, dynamic>>> _loadAllItems(
+    Future<List<Map<String, dynamic>>> Function({required int offset, required int limit}) load,
+  ) async {
+    final items = <Map<String, dynamic>>[];
+    const pageSize = 500;
+    while (true) {
+      final page = await load(offset: items.length, limit: pageSize);
+      items.addAll(page);
+      if (page.length < pageSize) return items;
+    }
   }
 
   Future<void> _loadStats() async {
@@ -33,21 +45,41 @@ class _ReportPageState extends State<ReportPage> {
       final books = rawBooks.map((m) => Book.fromJson(m)).toList();
 
       // 统计划线 + 笔记（两个表都要查）
-      final rawBookmarks = await db.getAllBookmarks();
-      final rawNotes = await db.getAllNotes();
+      final rawBookmarks = await _loadAllItems(db.getAllBookmarks);
+      final rawNotes = await _loadAllItems(db.getAllNotes);
       final totalItemCount = rawBookmarks.length + rawNotes.length;
 
       final read = books.where((b) => b.isFinished || b.progress >= 85).length;
       final reading = books.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).length;
       final unread = books.length - read - reading;
 
-      // 按分类统计
-      final catMap = <String, int>{};
-      for (final b in books) {
-        final cat = b.category.isNotEmpty ? b.category : '未分类';
-        catMap[cat] = (catMap[cat] ?? 0) + 1;
+      final titles = {for (final book in books) book.bookId: book.title};
+      final highlightCounts = <String, int>{};
+      for (final bookmark in rawBookmarks) {
+        final bookId = bookmark['book_id'] as String;
+        highlightCounts[bookId] = (highlightCounts[bookId] ?? 0) + 1;
+        if (titles[bookId]?.isNotEmpty != true) {
+          titles[bookId] = bookmark['book_title'] as String? ?? '';
+        }
       }
-      final cats = catMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+      final topHighlights = highlightCounts.entries.toList()
+        ..sort((a, b) {
+          final byCount = b.value.compareTo(a.value);
+          return byCount != 0 ? byCount : a.key.compareTo(b.key);
+        });
+
+      // books.updated_at 是更新时间，不能用作读完时间；仅统计划线/笔记创建时间。
+      final now = DateTime.now();
+      final months = <DateTime, int>{
+        for (int i = 5; i >= 0; i--) DateTime(now.year, now.month - i): 0,
+      };
+      for (final item in [...rawBookmarks, ...rawNotes]) {
+        final timestamp = item['created_at'] as int? ?? 0;
+        if (timestamp <= 0 || timestamp > now.millisecondsSinceEpoch ~/ 1000) continue;
+        final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+        final month = DateTime(date.year, date.month);
+        if (months.containsKey(month)) months[month] = months[month]! + 1;
+      }
 
       if (!mounted) return;
       setState(() {
@@ -56,93 +88,15 @@ class _ReportPageState extends State<ReportPage> {
         _readingBooks = reading;
         _unreadBooks = unread.clamp(0, books.length);
         _totalNotes = totalItemCount;
-        _categories = cats.take(8).toList();
-        _categoryLabels = _buildCategoryLabels(_categories);
+        _topHighlights = topHighlights.take(5).map((entry) {
+          final title = titles[entry.key];
+          return MapEntry(title == null || title.isEmpty ? '未知书籍' : title, entry.value);
+        }).toList();
+        _monthlyActivity = months.entries.toList();
       });
     } catch (_) {
       // 退出登录时数据库会关闭，丢弃该会话的加载结果。
     }
-  }
-
-  List<String> _buildCategoryLabels(List<MapEntry<String, int>> cats) {
-    final labels = <String>[];
-    final used = <String>{};
-    for (final cat in cats) {
-      String label = _getCategoryShort(cat.key);
-      if (used.contains(label)) {
-        for (int i = 2; i <= 9; i++) {
-          final candidate = '$label$i';
-          if (!used.contains(candidate)) {
-            label = candidate;
-            break;
-          }
-        }
-      }
-      used.add(label);
-      labels.add(label);
-    }
-    return labels;
-  }
-
-  String _getCategoryShort(String category) {
-    const map = {
-      '未分类': '未分',
-      '政治军事': '政军',
-      '精品小说': '精小',
-      '精品散文': '精散',
-      '精品诗歌': '精诗',
-      '精品科幻': '精幻',
-      '文学': '文学',
-      '小说': '小说',
-      '历史': '历史',
-      '哲学': '哲学',
-      '经济': '经济',
-      '科技': '科技',
-      '艺术': '艺术',
-      '教育': '教育',
-      '生活': '生活',
-      '社会': '社会',
-      '心理': '心理',
-      '传记': '传记',
-      '儿童': '儿童',
-      '漫画': '漫画',
-      '外语': '外语',
-      '工具书': '工具',
-      '其他': '其他',
-      '宗教': '宗教',
-      '自然科学': '自然',
-      '计算机': '计算',
-      '编程': '编程',
-      '设计': '设计',
-      '音乐': '音乐',
-      '电影': '电影',
-      '美食': '美食',
-      '旅行': '旅行',
-      '健康': '健康',
-      '运动': '运动',
-      '职场': '职场',
-      '管理': '管理',
-      '法律': '法律',
-      '政治': '政治',
-      '军事': '军事',
-      '诗歌': '诗歌',
-      '散文': '散文',
-      '科幻': '科幻',
-      '悬疑': '悬疑',
-      '武侠': '武侠',
-      '言情': '言情',
-      '奇幻': '奇幻',
-      '推理': '推理',
-    };
-    if (map.containsKey(category)) return map[category]!;
-    if (category.startsWith('精品') && category.length > 2) {
-      final sub = category.substring(2);
-      if (map.containsKey(sub)) return '精${map[sub]!.substring(0, 1)}';
-      return '精${sub.substring(0, 1)}';
-    }
-    if (category.length >= 2) return category.substring(0, 2);
-    if (category.isNotEmpty) return category;
-    return '未知';
   }
 
   @override
@@ -154,6 +108,7 @@ class _ReportPageState extends State<ReportPage> {
       body: RefreshIndicator(
         onRefresh: _loadStats,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
             // 统计卡片
@@ -169,7 +124,7 @@ class _ReportPageState extends State<ReportPage> {
             const SizedBox(height: 12),
             Row(
               children: [
-                _StatCard('笔记数', '$_totalNotes', Icons.note, const Color(0xFF9C27B0)),
+                _StatCard('划线与笔记', '$_totalNotes', Icons.note, const Color(0xFF9C27B0)),
                 const SizedBox(width: 12),
                 const Expanded(child: SizedBox()),
                 const SizedBox(width: 12),
@@ -186,7 +141,7 @@ class _ReportPageState extends State<ReportPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('阅读进度', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('阅读进度', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
                     SizedBox(
                       height: 200,
@@ -224,106 +179,141 @@ class _ReportPageState extends State<ReportPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            if (_monthlyActivity.any((entry) => entry.value > 0)) ...[
+              const SizedBox(height: 16),
+              _buildMonthlyActivity(cs.primary),
+            ],
+            if (_topHighlights.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildTopHighlights(cs.primary),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
-            // 分类柱状图
-            if (_categories.isNotEmpty)
-              Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('图书分类', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 260,
-                        child: BarChart(
-                          BarChartData(
-                            maxY: _categories.isNotEmpty
-                                ? (_categories.first.value / 10).ceil() * 10.0 + 10
-                                : 10,
-                            barGroups: _categories.asMap().entries.map((e) {
-                              final colors = [
-                                const Color(0xFF4A7CF7),
-                                const Color(0xFF4CAF50),
-                                const Color(0xFFFF9800),
-                                const Color(0xFFE91E63),
-                                const Color(0xFF9C27B0),
-                                const Color(0xFF00BCD4),
-                                const Color(0xFFFF5722),
-                                const Color(0xFF607D8B),
-                              ];
-                              return BarChartGroupData(
-                                x: e.key,
-                                barRods: [
-                                  BarChartRodData(
-                                    toY: e.value.value.toDouble(),
-                                    color: colors[e.key % colors.length],
-                                    width: 16,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ],
-                              );
-                            }).toList(),
-                            titlesData: FlTitlesData(
-                              bottomTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 30,
-                                  getTitlesWidget: (value, meta) {
-                                    final idx = value.toInt();
-                                    if (idx >= 0 && idx < _categoryLabels.length) {
-                                      final label = _categoryLabels[idx];
-                                      return SideTitleWidget(
-                                        axisSide: meta.axisSide,
-                                        space: 4,
-                                        child: Text(
-                                          label,
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      );
-                                    }
-                                    return const SizedBox();
-                                  },
-                                ),
-                              ),
-                              leftTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 40,
-                                  interval: 10,
-                                  getTitlesWidget: (value, meta) {
-                                    if (value % 10 != 0) return const SizedBox();
-                                    return SideTitleWidget(
-                                      axisSide: meta.axisSide,
-                                      space: 6,
-                                      child: Text(
-                                        value.toInt().toString(),
-                                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                              rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                            ),
-                            borderData: FlBorderData(show: false),
-                            gridData: FlGridData(
-                              show: true,
-                              drawVerticalLine: false,
-                              horizontalInterval: 10,
-                            ),
-                          ),
+  Widget _buildMonthlyActivity(Color color) {
+    final maxCount = _monthlyActivity.fold<int>(0, (max, entry) => entry.value > max ? entry.value : max);
+    final interval = (maxCount / 4).ceilToDouble().clamp(1.0, double.infinity);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('划线与笔记趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 220,
+              child: BarChart(
+                BarChartData(
+                  maxY: ((maxCount / interval).ceil() + 1) * interval,
+                  barGroups: _monthlyActivity.asMap().entries.map((entry) {
+                    return BarChartGroupData(
+                      x: entry.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: entry.value.value.toDouble(),
+                          color: color,
+                          width: 18,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                  barTouchData: BarTouchData(
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final entry = _monthlyActivity[group.x];
+                        return BarTooltipItem(
+                          '${entry.key.year}年${entry.key.month}月\n${entry.value} 条',
+                          const TextStyle(color: Colors.white, fontSize: 12),
+                        );
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 32,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index < 0 || index >= _monthlyActivity.length) return const SizedBox();
+                          final month = _monthlyActivity[index].key;
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            space: 8,
+                            child: Text('${month.year % 100}/${month.month}', style: const TextStyle(fontSize: 11)),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 44,
+                        interval: interval,
+                        getTitlesWidget: (value, meta) => SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          space: 6,
+                          child: Text('${value.toInt()}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                         ),
                       ),
-                    ],
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
+                  borderData: FlBorderData(show: false),
+                  gridData: FlGridData(drawVerticalLine: false, horizontalInterval: interval),
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopHighlights(Color color) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('划线最多的书 Top5', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            for (final entry in _topHighlights.asMap().entries) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Text('${entry.key + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(entry.value.key, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: entry.value.value / _topHighlights.first.value,
+                  minHeight: 6,
+                  color: color,
+                  backgroundColor: color.withValues(alpha: 0.1),
+                ),
+              ),
+            ],
           ],
         ),
       ),
