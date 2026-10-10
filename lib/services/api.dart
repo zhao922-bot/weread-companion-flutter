@@ -1,10 +1,20 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'config.dart';
+import 'credentials.dart';
 import 'database.dart';
 import '../models/book.dart';
 import '../models/bookmark.dart';
+
+class LoginExpiredException implements Exception {
+  const LoginExpiredException();
+
+  @override
+  String toString() => '登录凭据已失效，请重新登录';
+}
 
 class WeReadApi {
   late Dio _dio;
@@ -12,6 +22,7 @@ class WeReadApi {
   final DatabaseService? _database;
   DatabaseService get db => _database ?? (throw StateError('登录验证不能访问阅读数据'));
   bool _cancelled = false;
+  Future<void>? _refreshing;
   String? authenticatedAccountId;
   static final Set<WeReadApi> _sessions = {};
 
@@ -28,11 +39,11 @@ class WeReadApi {
   void dispose() {
     _cancelled = true;
     _dio.close(force: true);
-    config.cookie = '';
     _sessions.remove(this);
   }
 
-  factory WeReadApi.forLogin({required AppConfig config}) => WeReadApi._(config: config);
+  factory WeReadApi.forLogin({required AppConfig config, Dio? dio}) =>
+      WeReadApi._(config: config, dio: dio);
 
   static Future<WeReadApi> init({required AppConfig config, required DatabaseService db}) async {
     if (_instance == null) {
@@ -41,21 +52,24 @@ class WeReadApi {
     return _instance!;
   }
 
-  WeReadApi._({required this.config, DatabaseService? db}) : _database = db {
+  WeReadApi._({required this.config, DatabaseService? db, Dio? dio}) : _database = db {
     _sessions.add(this);
-    _dio = Dio(BaseOptions(
-      baseUrl: 'https://weread.qq.com/web',
-      headers: {
+    final options = BaseOptions(
+      baseUrl: config.credentials != null
+          ? 'https://i.weread.qq.com' : 'https://weread.qq.com/web',
+      headers: config.credentials != null ? mobileVersionHeaders : {
         'Host': 'weread.qq.com',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
             '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
       },
-      followRedirects: true,
+      followRedirects: config.credentials == null,
       maxRedirects: 5,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
-    ));
+    );
+    _dio = dio ?? Dio();
+    _dio.options = options;
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
@@ -67,15 +81,142 @@ class WeReadApi {
           ));
           return;
         }
-        if (config.cookie.isNotEmpty) {
+        final credentials = config.credentials;
+        if (credentials != null) {
+          options.headers.remove('Cookie');
+          if (options.extra['tokenMint'] != true) {
+            options.headers['vid'] = credentials.vid;
+            options.headers['accessToken'] = credentials.accessToken;
+          }
+        } else if (config.cookie.isNotEmpty) {
           options.headers['Cookie'] = config.cookie;
         }
         handler.next(options);
       },
-      onError: (error, handler) {
-        handler.next(error);
+      onResponse: (response, handler) async {
+        if (_shouldRefresh(response)) {
+          try {
+            handler.resolve(await _retryAuthenticated(response));
+          } on DioException catch (error) {
+            handler.reject(error);
+          } catch (error) {
+            handler.reject(DioException(
+              requestOptions: response.requestOptions,
+              error: error,
+            ));
+          }
+        } else {
+          handler.next(response);
+        }
+      },
+      onError: (error, handler) async {
+        final response = error.response;
+        if (response != null && _shouldRefresh(response)) {
+          try {
+            handler.resolve(await _retryAuthenticated(response));
+          } on DioException catch (failure) {
+            handler.next(failure);
+          } catch (failure) {
+            handler.next(DioException(
+              requestOptions: error.requestOptions,
+              error: failure,
+            ));
+          }
+        } else {
+          handler.next(error);
+        }
       },
     ));
+  }
+
+  bool _authFailed(Response<dynamic> response) {
+    final data = response.data;
+    final code = data is Map ? data['errCode'] ?? data['errcode'] : null;
+    return response.statusCode == 401 || response.statusCode == 403 ||
+        code?.toString() == '-2012';
+  }
+
+  bool _shouldRefresh(Response<dynamic> response) =>
+      config.credentials != null &&
+      response.requestOptions.extra['tokenMint'] != true &&
+      response.requestOptions.extra['authRetried'] != true &&
+      _authFailed(response);
+
+  Future<Response<dynamic>> _retryAuthenticated(Response<dynamic> response) async {
+    final options = response.requestOptions;
+    // 迟到的旧 token 响应复用已刷新的凭据，多个并发请求只刷新一次。
+    if (options.headers['accessToken'] == config.credentials?.accessToken) {
+      await _refreshToken();
+    }
+    if (_cancelled) throw StateError('账号会话已结束');
+    final retried = await _dio.fetch<dynamic>(options.copyWith(
+      extra: {...options.extra, 'authRetried': true},
+    ));
+    if (_authFailed(retried)) {
+      // 新 token 仍被拒绝不能证明 refreshToken 失效，保留凭据供再次验证。
+      throw StateError('新 token 暂时无法通过验证，请稍后重试');
+    }
+    return retried;
+  }
+
+  Future<void> _refreshToken() async {
+    final pending = _refreshing;
+    if (pending != null) return pending;
+    final started = _mintAccessToken();
+    _refreshing = started;
+    try {
+      await started;
+    } finally {
+      if (identical(_refreshing, started)) _refreshing = null;
+    }
+  }
+
+  Future<void> _mintAccessToken() async {
+    final previous = config.credentials!;
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final random = Random.secure().nextInt(1000) + 1;
+    final response = await _dio.post<dynamic>('/login',
+      options: Options(
+        extra: {'tokenMint': true},
+        contentType: 'application/json; charset=UTF-8',
+        validateStatus: (status) => status != null && status < 500,
+      ),
+      data: {
+        'deviceId': previous.deviceId,
+        'deviceName': 'BOOX',
+        'deviceType': 3,
+        'inBackground': 0,
+        'kickType': 1,
+        'random': random,
+        'refCgi': '',
+        'refreshToken': previous.refreshToken,
+        'signature': sha256.convert(utf8.encode(
+            '$timestamp${previous.deviceId}$random')).toString(),
+        'timestamp': timestamp,
+        'trackId': '',
+      },
+    );
+    final data = response.data;
+    if (_authFailed(response)) {
+      throw const LoginExpiredException();
+    }
+    final code = data is Map ? data['errCode'] ?? data['errcode'] : null;
+    if (response.statusCode != 200 || data is! Map ||
+        (code != null && code.toString() != '0')) {
+      throw StateError('刷新服务暂时不可用');
+    }
+    final next = Credentials.fromJson({
+      'vid': data['vid'] ?? previous.vid,
+      'accessToken': data['accessToken'],
+      'refreshToken': data['refreshToken'] ?? previous.refreshToken,
+      'deviceId': previous.deviceId,
+    });
+    if (next.vid != previous.vid) throw StateError('刷新返回的账号不匹配');
+    if (_cancelled || !identical(config.credentials, previous)) {
+      throw StateError('账号会话已结束');
+    }
+    config.credentials = next;
+    await config.saveCredentials();
   }
 
   void updateCookie(String cookie) {
@@ -142,6 +283,18 @@ class WeReadApi {
   Future<bool> checkLogin() async {
     authenticatedAccountId = null;
     try {
+      if (config.credentials != null) {
+        // 书架同步是需要认证的接口，不用公开用户资料接口验证移动端 token。
+        final resp = await _dio.get('/shelf/sync');
+        final data = resp.data;
+        final code = data is Map ? data['errCode'] ?? data['errcode'] : null;
+        if (data is! Map || data['books'] is! List || _authFailed(resp) ||
+            (code != null && code.toString() != '0')) {
+          throw StateError('暂时无法验证移动端登录');
+        }
+        authenticatedAccountId = config.credentials!.vid;
+        return true;
+      }
       final resp = await _dio.get('/user?userVid=0');
       final data = resp.data;
       final id = data is Map ? data['vid']?.toString() : null;
@@ -151,6 +304,10 @@ class WeReadApi {
       }
       return false;
     } on DioException catch (e) {
+      if (config.credentials != null) {
+        if (e.error is LoginExpiredException) return false;
+        rethrow;
+      }
       if (e.response?.statusCode == 401 || e.response?.statusCode == 403) return false;
       rethrow;
     }

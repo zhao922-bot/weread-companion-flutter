@@ -4,6 +4,7 @@ import '../services/database.dart';
 import '../services/api.dart';
 import '../services/ai_service.dart';
 import '../services/export_service.dart';
+import '../services/credentials.dart';
 
 enum LoginStatus { signedOut, saved, verified, invalid }
 
@@ -22,7 +23,7 @@ class AppConfigProvider extends ChangeNotifier {
   AppConfigProvider({required this.config});
 
   bool get isLoggedIn => _loginStatus == LoginStatus.verified;
-  bool get hasSavedCredentials => config.cookie.isNotEmpty;
+  bool get hasSavedCredentials => config.isConfigured;
   bool get isBusy => _busy;
   LoginStatus get loginStatus => _loginStatus;
   String? get loginError => _loginError;
@@ -41,17 +42,19 @@ class AppConfigProvider extends ChangeNotifier {
     _busy = true;
     try {
       await config.load();
-      if (config.cookie.isNotEmpty) {
+      if (config.isConfigured) {
         _loginStatus = LoginStatus.saved;
         try {
-          config.cookie = WeReadApi.normalizeCookie(config.cookie);
+          if (config.credentials == null) {
+            config.cookie = WeReadApi.normalizeCookie(config.cookie);
+          }
         } on FormatException {
           _loginStatus = LoginStatus.invalid;
           _loginError = '已保存的 Cookie 格式无效，请重新导入';
           return;
         }
         await config.save();
-        await _verifyCookie();
+        await _verifyCredentials();
       }
     } catch (_) {
       _loginError = '配置加载失败，请重试';
@@ -92,19 +95,19 @@ class AppConfigProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _verifyCookie() async {
-    final accountId = _accountId(config.cookie);
+  Future<void> _verifyCredentials() async {
+    final accountId = config.credentials?.vid ?? _accountId(config.cookie);
     if (accountId == null) {
       _loginStatus = LoginStatus.invalid;
       _loginError = 'Cookie 缺少有效的 wr_vid，请重新导入';
       return;
     }
-    final api = WeReadApi.forLogin(config: AppConfig(cookie: config.cookie));
+    final api = WeReadApi.forLogin(config: config);
     try {
       final valid = await api.checkLogin();
       if (!valid || api.authenticatedAccountId != accountId) {
         _loginStatus = LoginStatus.invalid;
-        _loginError = '凭据失效或账号不匹配，请重新导入 Cookie';
+        _loginError = '凭据失效或账号不匹配，请重新登录';
         return;
       }
       await DatabaseService.selectAccount(accountId);
@@ -125,6 +128,15 @@ class AppConfigProvider extends ChangeNotifier {
     final normalized = WeReadApi.normalizeCookie(cookieStr);
     final accountId = _accountId(normalized);
     if (accountId == null) throw const FormatException('Cookie 缺少有效的 wr_vid');
+    await _login(cookie: normalized);
+  }
+
+  Future<void> loginWithCredentials(Credentials credentials) async {
+    if (!credentials.isValid) throw const FormatException('移动端凭据格式无效');
+    await _login(credentials: credentials);
+  }
+
+  Future<void> _login({String cookie = '', Credentials? credentials}) async {
     _beginOperation();
     try {
       WeReadApi.reset();
@@ -135,11 +147,12 @@ class AppConfigProvider extends ChangeNotifier {
       _sessionRevision++;
       notifyListeners();
       await DatabaseService.endSession();
-      config.cookie = normalized;
+      config.cookie = cookie;
+      config.credentials = credentials;
       await config.save();
       _loginStatus = LoginStatus.saved;
       notifyListeners();
-      await _verifyCookie();
+      await _verifyCredentials();
     } finally {
       _busy = false;
       notifyListeners();
@@ -156,6 +169,7 @@ class AppConfigProvider extends ChangeNotifier {
       _userName = '';
       _loginError = null;
       config.cookie = '';
+      config.credentials = null;
       config.apiKey = '';
       config.baseUrl = 'https://api.deepseek.com';
       config.modelName = 'deepseek-chat';

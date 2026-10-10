@@ -74,8 +74,7 @@ class _QrLoginPageState extends State<QrLoginPage> {
         _confirmUrl = null;
         _status = '已确认：正在安全保存凭据并验证账号…';
       });
-      // 原有流程负责 secure storage、checkLogin 和账号数据库隔离。
-      await config.loginWithCookie(credentials.cookie);
+      await config.loginWithCredentials(credentials);
       if (!_isCurrent(token)) return;
       if (!config.isLoggedIn) {
         throw QrLoginException(config.loginError ?? config.loginStatusText);

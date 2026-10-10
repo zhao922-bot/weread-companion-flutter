@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'credentials.dart';
 
 enum QrLoginStatus { waiting, scanned, confirmed }
 
@@ -26,36 +27,9 @@ class QrLoginRequest {
       'https://open.weixin.qq.com/connect/confirm?uuid=${Uri.encodeComponent(uuid)}';
 }
 
-class QrLoginCredentials {
-  final String vid;
-  final String accessToken;
-  final String refreshToken;
-  final String deviceId;
-
-  const QrLoginCredentials({
-    required this.vid,
-    required this.accessToken,
-    required this.refreshToken,
-    required this.deviceId,
-  });
-
-  // 复用 AppConfig 的 weread_cookie 安全存储槽及退出清理机制，
-  // 不另存一份可能在切换账号或退出后残留的 token。
-  String get cookie => 'wr_vid=$vid; wr_skey=$accessToken; '
-      'wr_refreshToken=$refreshToken; wr_deviceId=$deviceId';
-}
-
 /// 微信 SDK 扫码登录。所有请求和等待均可由调用方的 CancelToken 中止。
 class QrLoginService {
-  static const _versionHeaders = {
-    'baseapi': '30',
-    'appver': '2.1.2.10245900',
-    'basever': '2.1.2.10245900',
-    'osver': '11',
-    'channelId': '900',
-    'User-Agent': 'WeRead/2.1.2 WRBrand/Onyx wr_eink Dalvik/2.1.0 '
-        '(Linux; U; Android 11; BOOX Build/onyx)',
-  };
+  static const _versionHeaders = mobileVersionHeaders;
   final Dio _dio;
   final Random _random = Random.secure();
 
@@ -223,7 +197,7 @@ class QrLoginService {
   String _digits(int length) =>
       List.generate(length, (_) => _random.nextInt(10)).join();
 
-  Future<QrLoginCredentials> exchange(
+  Future<Credentials> exchange(
     String wxCode, {
     required CancelToken cancelToken,
   }) async {
@@ -273,7 +247,7 @@ class QrLoginService {
         !validToken(refreshToken)) {
       throw const QrLoginException('换取登录凭据失败，请重新扫码');
     }
-    return QrLoginCredentials(
+    return Credentials(
       vid: vid,
       accessToken: accessToken as String,
       refreshToken: refreshToken as String,
@@ -281,7 +255,7 @@ class QrLoginService {
     );
   }
 
-  Future<QrLoginCredentials> login({
+  Future<Credentials> login({
     required CancelToken cancelToken,
     required void Function(QrLoginRequest) onQr,
     void Function(QrLoginStatus)? onStatus,

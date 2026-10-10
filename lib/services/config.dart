@@ -1,15 +1,19 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'credentials.dart';
 
 class AppConfig {
   static const _secureStorage = FlutterSecureStorage();
   String cookie;
+  Credentials? credentials;
   String apiKey;
   String baseUrl;
   String modelName;
 
   AppConfig({
     this.cookie = '',
+    this.credentials,
     this.apiKey = '',
     this.baseUrl = 'https://api.deepseek.com',
     this.modelName = 'deepseek-chat',
@@ -17,12 +21,17 @@ class AppConfig {
 
   static const _keys = {
     'cookie': 'weread_cookie',
+    'credentials': 'weread_mobile_credentials',
     'apiKey': 'weread_api_key',
     'baseUrl': 'weread_base_url',
     'modelName': 'weread_model_name',
   };
 
-  bool get isConfigured => cookie.isNotEmpty;
+  bool get isConfigured => credentials != null || cookie.isNotEmpty;
+
+  Future<void> saveCredentials() => _saveSecret(
+      _keys['credentials']!,
+      credentials == null ? '' : jsonEncode(credentials!.toJson()));
 
   static bool isHttpsUrl(String value) {
     final uri = Uri.tryParse(value);
@@ -56,6 +65,11 @@ class AppConfig {
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     cookie = await _loadSecret(prefs, _keys['cookie']!);
+    final mobile = await _secureStorage.read(key: _keys['credentials']!);
+    credentials = mobile == null
+        ? null
+        : Credentials.fromJson(jsonDecode(mobile) as Map<String, dynamic>);
+    if (credentials != null) cookie = '';
     apiKey = await _loadSecret(prefs, _keys['apiKey']!);
     baseUrl = prefs.getString(_keys['baseUrl']!) ?? 'https://api.deepseek.com';
     if (!isHttpsUrl(baseUrl)) baseUrl = '';
@@ -68,6 +82,7 @@ class AppConfig {
     }
     final prefs = await SharedPreferences.getInstance();
     await _saveSecret(_keys['cookie']!, cookie);
+    await saveCredentials();
     await _saveSecret(_keys['apiKey']!, apiKey);
     await prefs.remove(_keys['cookie']!);
     await prefs.remove(_keys['apiKey']!);
@@ -77,6 +92,7 @@ class AppConfig {
 
   Future<void> clear() async {
     cookie = '';
+    credentials = null;
     apiKey = '';
     baseUrl = 'https://api.deepseek.com';
     modelName = 'deepseek-chat';
@@ -86,6 +102,7 @@ class AppConfig {
     await prefs.remove(_keys['baseUrl']!);
     await prefs.remove(_keys['modelName']!);
     await _secureStorage.delete(key: _keys['cookie']!);
+    await _secureStorage.delete(key: _keys['credentials']!);
     await _secureStorage.delete(key: _keys['apiKey']!);
   }
 
