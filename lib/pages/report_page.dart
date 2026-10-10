@@ -115,20 +115,12 @@ class _ReportPageState extends State<ReportPage> {
             Row(
               children: [
                 _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 _StatCard('已读完', '$_readBooks', Icons.check_circle, const Color(0xFF4CAF50)),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 _StatCard('在读中', '$_readingBooks', Icons.menu_book, const Color(0xFFFF9800)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
+                const SizedBox(width: 8),
                 _StatCard('划线与笔记', '$_totalNotes', Icons.note, const Color(0xFF9C27B0)),
-                const SizedBox(width: 12),
-                const Expanded(child: SizedBox()),
-                const SizedBox(width: 12),
-                const Expanded(child: SizedBox()),
               ],
             ),
             const SizedBox(height: 24),
@@ -335,12 +327,12 @@ class _StatCard extends StatelessWidget {
       child: Card(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           child: Column(
             children: [
-              Icon(icon, color: color, size: 28),
+              Icon(icon, color: color, size: 24),
               const SizedBox(height: 8),
-              Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+              Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 4),
               Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
             ],

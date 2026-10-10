@@ -39,7 +39,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     if (!mounted) return;
     final columns = prefs.getInt(_densityKey);
     setState(() {
-      _crossAxisCount = columns == 2 ? 2 : 3;
+      _crossAxisCount = columns == 4 ? 4 : 3;
       _densityLoaded = true;
     });
   }
@@ -142,11 +142,11 @@ class _BookshelfPageState extends State<BookshelfPage> {
             initialValue: _crossAxisCount,
             onSelected: _setDensity,
             itemBuilder: (context) => [
-              for (final columns in [2, 3])
+              for (final columns in [3, 4])
                 CheckedPopupMenuItem(
                   value: columns,
                   checked: _crossAxisCount == columns,
-                  child: Text('$columns 列 · ${columns == 2 ? '宽松' : '紧凑'}'),
+                  child: Text('$columns 列 · ${columns == 3 ? '紧凑' : '更紧凑'}'),
                 ),
             ],
           ),
