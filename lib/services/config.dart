@@ -10,6 +10,7 @@ class AppConfig {
   String apiKey;
   String baseUrl;
   String modelName;
+  String? trustedAccountId;
 
   AppConfig({
     this.cookie = '',
@@ -25,12 +26,12 @@ class AppConfig {
     'apiKey': 'weread_api_key',
     'baseUrl': 'weread_base_url',
     'modelName': 'weread_model_name',
+    'trustedAccountId': 'weread_trusted_account_id',
   };
 
   bool get isConfigured => credentials != null || cookie.isNotEmpty;
 
-  Future<void> saveCredentials() => _saveSecret(
-      _keys['credentials']!,
+  Future<void> saveCredentials() => _saveSecret(_keys['credentials']!,
       credentials == null ? '' : jsonEncode(credentials!.toJson()));
 
   static bool isHttpsUrl(String value) {
@@ -62,7 +63,19 @@ class AppConfig {
     }
   }
 
+  /// 本地账号恢复独立于安全存储，凭据暂时不可读时仍可浏览缓存。
+  Future<void> loadTrustedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final trustedId = prefs.getString(_keys['trustedAccountId']!);
+    trustedAccountId = trustedId != null &&
+            RegExp(r'^[0-9]+$').hasMatch(trustedId) &&
+            trustedId != '0'
+        ? trustedId
+        : null;
+  }
+
   Future<void> load() async {
+    await loadTrustedAccount();
     final prefs = await SharedPreferences.getInstance();
     cookie = await _loadSecret(prefs, _keys['cookie']!);
     final mobile = await _secureStorage.read(key: _keys['credentials']!);
@@ -91,6 +104,7 @@ class AppConfig {
   }
 
   Future<void> clear() async {
+    await clearTrustedAccount();
     cookie = '';
     credentials = null;
     apiKey = '';
@@ -104,6 +118,26 @@ class AppConfig {
     await _secureStorage.delete(key: _keys['cookie']!);
     await _secureStorage.delete(key: _keys['credentials']!);
     await _secureStorage.delete(key: _keys['apiKey']!);
+  }
+
+  /// 仅在服务器确认账号归属后调用，不从 Cookie 推导可信记录。
+  Future<void> trustAccount(String accountId) async {
+    if (!RegExp(r'^[0-9]+$').hasMatch(accountId) || accountId == '0') {
+      throw ArgumentError('无效的账号 ID');
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(_keys['trustedAccountId']!, accountId)) {
+      throw StateError('可信账号保存失败');
+    }
+    trustedAccountId = accountId;
+  }
+
+  Future<void> clearTrustedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.remove(_keys['trustedAccountId']!)) {
+      throw StateError('可信账号清除失败');
+    }
+    trustedAccountId = null;
   }
 
   Map<String, dynamic> toJson() => {

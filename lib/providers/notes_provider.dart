@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../services/database.dart';
+import '../services/sync_service.dart';
 
 /// 笔记数据源标记
 enum NoteSource { bookmark, note }
@@ -28,8 +29,26 @@ class NoteItem {
 }
 
 class NotesProvider extends ChangeNotifier {
+  NotesProvider() {
+    SyncService.changes.addListener(_onSyncChanged);
+  }
+
+  void _onSyncChanged() {
+    if (SyncService.changes.value?.isActive == true) _refresh = loadNotes();
+  }
+  Future<void>? _refresh;
+
+  @override
+  void dispose() {
+    SyncService.changes.removeListener(_onSyncChanged);
+    _request++;
+    super.dispose();
+  }
   List<NoteItem> _notes = [];
-  List<NoteItem> _filtered = [];
+  int _request = 0;
+  int _matchedCount = 0;
+  Map<String, dynamic> _stats = {};
+  static const pageSize = 100;
   String _searchQuery = '';
   String _filter = '全部划线'; // 全部划线/全部笔记/收藏
   bool _loading = false;
@@ -39,8 +58,10 @@ class NotesProvider extends ChangeNotifier {
   void resetSession(int revision) {
     if (_sessionRevision == revision) return;
     _sessionRevision = revision;
+    _request++;
     _notes = [];
-    _filtered = [];
+    _matchedCount = 0;
+    _stats = {};
     _searchQuery = '';
     _filter = '全部划线';
     _loading = false;
@@ -48,65 +69,75 @@ class NotesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<NoteItem> get notes => _filtered;
+  List<NoteItem> get notes => _notes;
   bool get isLoading => _loading;
   String? get error => _error;
   String get filter => _filter;
-  int get totalCount => _notes.length;
+  int get totalCount => bookmarkCount + noteCount;
+  int get matchedCount => _matchedCount;
+  bool get hasMore => _notes.length < _matchedCount;
 
-  /// 从 bookmarks 表和 notes 表加载全部数据，合并排序
-  Future<void> loadNotes() async {
-    final revision = _sessionRevision;
+  NoteItem _fromRow(Map<String, dynamic> m) => NoteItem(
+    id: m['id'] ?? '',
+    bookId: m['book_id'] ?? '',
+    bookTitle: m['book_title'] ?? '',
+    content: m['content'] ?? '',
+    chapterTitle: m['chapter_title'] ?? '',
+    createdAt: m['created_at'] ?? 0,
+    isFav: (m['is_fav'] ?? 0) == 1,
+    source: m['source'] == 'bookmark' ? NoteSource.bookmark : NoteSource.note,
+  );
+
+  /// 批量操作读取全部匹配项，不受列表已加载页数影响。
+  Future<List<NoteItem>> getAllMatchingNotes() async {
+    final db = DatabaseService.instance;
+    final query = _searchQuery;
+    final filter = _filter;
+    final items = <NoteItem>[];
+    while (true) {
+      final rows = await db.getReadingItems(offset: items.length,
+          limit: pageSize, query: query, filter: filter);
+      if (!db.isActive) throw StateError('账号会话已结束');
+      if (rows.isEmpty) return items;
+      items.addAll(rows.map(_fromRow));
+    }
+  }
+
+  /// 搜索和筛选在全库执行，只加载当前批次。
+  Future<void> loadNotes() => _loadPage(reset: true);
+
+  Future<void> loadMore() async {
+    if (_loading || !hasMore) return;
+    await _loadPage(reset: false);
+  }
+
+  Future<void> _loadPage({required bool reset}) async {
+    final request = ++_request;
+    if (reset) _notes = [];
+    final offset = _notes.length;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
       final db = DatabaseService.instance;
-      final items = <NoteItem>[];
-
-      // 从 bookmarks 表加载划线
-      final rawBookmarks = await db.getAllBookmarks();
-      if (revision != _sessionRevision) return;
-      for (final m in rawBookmarks) {
-        items.add(NoteItem(
-          id: m['bookmark_id'] ?? '',
-          bookId: m['book_id'] ?? '',
-          bookTitle: m['book_title'] ?? '',
-          content: m['mark_text'] ?? '',
-          chapterTitle: m['chapter_title'] ?? '',
-          createdAt: m['created_at'] ?? 0,
-          isFav: (m['is_fav'] ?? 0) == 1,
-          source: NoteSource.bookmark,
-        ));
-      }
-
-      // 从 notes 表加载笔记/想法
-      final rawNotes = await db.getAllNotes();
-      if (revision != _sessionRevision) return;
-      for (final m in rawNotes) {
-        items.add(NoteItem(
-          id: m['note_id'] ?? '',
-          bookId: m['book_id'] ?? '',
-          bookTitle: m['book_title'] ?? '',
-          content: m['content'] ?? '',
-          chapterTitle: m['chapter_title'] ?? '',
-          createdAt: m['created_at'] ?? 0,
-          isFav: (m['is_fav'] ?? 0) == 1,
-          source: NoteSource.note,
-        ));
-      }
-
-      // 按时间倒序
-      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-      _notes = items;
-      _applyFilter();
+      final query = _searchQuery;
+      final filter = _filter;
+      final count = await db.countReadingItems(query: query, filter: filter);
+      final stats = await db.getReadingStats();
+      if (request != _request || !db.isActive) return;
+      final raw = await db.getReadingItems(offset: offset,
+          limit: pageSize, query: query, filter: filter);
+      if (request != _request || !db.isActive) return;
+      final items = raw.map(_fromRow).toList();
+      _notes = [..._notes, ...items];
+      _matchedCount = count;
+      _stats = stats;
     } catch (e) {
-      if (revision != _sessionRevision) return;
+      if (request != _request) return;
       _error = e.toString();
     } finally {
-      if (revision == _sessionRevision) {
+      if (request == _request) {
         _loading = false;
         notifyListeners();
       }
@@ -115,58 +146,30 @@ class NotesProvider extends ChangeNotifier {
 
   void setSearch(String query) {
     _searchQuery = query;
-    _applyFilter();
+    loadNotes();
   }
 
   void setFilter(String filter) {
     _filter = filter;
-    _applyFilter();
+    loadNotes();
   }
 
   Future<void> toggleFavorite(NoteItem note) async {
     final revision = _sessionRevision;
+    final db = DatabaseService.instance;
     if (note.source == NoteSource.bookmark) {
-      await DatabaseService.instance.toggleBookmarkFavorite(note.id, !note.isFav);
+      await db.toggleBookmarkFavorite(note.id, !note.isFav);
     } else {
-      await DatabaseService.instance.toggleFavorite(note.id, !note.isFav);
+      await db.toggleFavorite(note.id, !note.isFav);
     }
 
-    if (revision != _sessionRevision) return;
-    final idx = _notes.indexWhere((n) => n.id == note.id && n.source == note.source);
-    if (idx >= 0) {
-      _notes[idx].isFav = !_notes[idx].isFav;
-    }
-    _applyFilter();
+    if (revision != _sessionRevision || !db.isActive) return;
+    // 统一事件同时刷新详情、收藏列表、卡片和统计；保留可等待的完成语义。
+    SyncService.changes.publish(db);
+    await _refresh;
   }
-
-  void _applyFilter() {
-    var list = List<NoteItem>.from(_notes);
-
-    // 搜索过滤
-    if (_searchQuery.isNotEmpty) {
-      final q = _searchQuery.toLowerCase();
-      list = list.where((n) =>
-        n.content.toLowerCase().contains(q) ||
-        n.bookTitle.toLowerCase().contains(q)
-      ).toList();
-    }
-
-    // 类型过滤：用 source 字段区分（而非长度猜测）
-    switch (_filter) {
-      case '全部笔记':
-        list = list.where((n) => n.source == NoteSource.note).toList();
-        break;
-      case '收藏':
-        list = list.where((n) => n.isFav).toList();
-        break;
-      // '全部划线' 显示全部（划线 + 笔记）
-    }
-
-    _filtered = list;
-    notifyListeners();
-  }
-
-  int get favCount => _notes.where((n) => n.isFav).length;
-  int get bookmarkCount => _notes.where((n) => n.source == NoteSource.bookmark).length;
-  int get noteCount => _notes.where((n) => n.source == NoteSource.note).length;
+  int get favCount => (_stats['favoriteBookmarks'] as int? ?? 0) +
+      (_stats['favoriteNotes'] as int? ?? 0);
+  int get bookmarkCount => _stats['totalBookmarks'] as int? ?? 0;
+  int get noteCount => _stats['totalNotes'] as int? ?? 0;
 }

@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'config.dart';
 import 'credentials.dart';
 import 'database.dart';
+import 'sync_service.dart';
 import '../models/book.dart';
 import '../models/bookmark.dart';
 
@@ -22,6 +23,7 @@ class WeReadApi {
   final DatabaseService? _database;
   DatabaseService get db => _database ?? (throw StateError('登录验证不能访问阅读数据'));
   bool _cancelled = false;
+  bool get syncCancelled => _cancelled;
   Future<void>? _refreshing;
   String? authenticatedAccountId;
   static final Set<WeReadApi> _sessions = {};
@@ -313,15 +315,21 @@ class WeReadApi {
     }
   }
 
+  void _checkSyncResponse(dynamic data) {
+    if (data is! Map) throw const FormatException('同步接口返回格式无效');
+    final code = data['errCode'] ?? data['errcode'];
+    if (code != null && code.toString() != '0') {
+      throw StateError('同步接口失败 (errcode: $code)');
+    }
+  }
+
   /// 书架同步 — GET /web/shelf/sync
   Future<List<Book>> fetchBookshelf() async {
     try {
       final resp = await _dio.get('/shelf/sync');
       final data = resp.data;
 
-      if (data is Map && data.containsKey('errcode')) {
-        throw Exception('Cookie 已过期或无效 (errcode: ${data['errcode']})');
-      }
+      _checkSyncResponse(data);
 
       final booksData = data['books'] ?? [];
       final progressData = data['bookProgress'] ?? [];
@@ -357,14 +365,14 @@ class WeReadApi {
         final progressInt = progress is int ? progress : (progress as num).toInt();
 
         // finished 语义修正：API 的 finished=1 表示「在书架上」，不是「读完了」
-        // 实际判断是否读完用 progress >= 85
+        // 实际判断是否读完用 progress >= 100
         final book = Book(
           bookId: bookId,
           title: b['title'] ?? '',
           author: b['author'] ?? '',
           cover: b['cover'] ?? '',
           progress: progressInt,
-          finished: progressInt >= 85 ? 1 : 0,
+          finished: progressInt >= 100 ? 1 : 0,
           category: b['category'] ?? '',
           updatedAt: b['updateTime'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
         );
@@ -386,6 +394,7 @@ class WeReadApi {
     try {
       final resp = await _dio.get('/book/bookmarklist', queryParameters: {'bookId': bookId});
       final data = resp.data;
+      _checkSyncResponse(data);
 
       // 构建 chapterUid -> chapterTitle 映射
       final chMap = <int, String>{};
@@ -442,6 +451,7 @@ class WeReadApi {
         'synckey': '0',
       });
       final data = resp.data;
+      _checkSyncResponse(data);
       final reviews = data['reviews'] ?? [];
       if (reviews is! List) return [];
 
@@ -475,35 +485,5 @@ class WeReadApi {
   }
 
   /// 全量同步
-  Future<Map<String, int>> syncAll() async {
-    final books = await fetchBookshelf();
-    int totalBookmarks = 0;
-    int totalNotes = 0;
-
-    for (int i = 0; i < books.length; i++) {
-      if (_cancelled) throw StateError('同步已取消');
-      final book = books[i];
-
-      try {
-        final bm = await fetchBookmarks(book.bookId, book.title);
-        totalBookmarks += bm.length;
-      } catch (_) {}
-
-      try {
-        final nt = await fetchNotes(book.bookId, book.title);
-        totalNotes += nt.length;
-      } catch (_) {}
-
-      // 请求间隔，避免被限流（与桌面端一致）
-      if (i < books.length - 1) {
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-    }
-
-    return {
-      'books': books.length,
-      'bookmarks': totalBookmarks,
-      'notes': totalNotes,
-    };
-  }
+  Future<SyncResult> syncAll() => SyncService.forApi(this).syncAll();
 }

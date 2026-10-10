@@ -57,15 +57,14 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Color _getProgressColor(int progress) {
-    if (progress >= 85) return Colors.green;
+    if (progress >= 100) return Colors.green;
+    if (progress >= 85) return Colors.orange;
     if (progress > 0) return const Color(0xFF2196F3);
     return Colors.grey;
   }
 
   String _getStatusText(Book book) {
-    if (book.isFinished || book.progress >= 85) return '已读完';
-    if (book.progress >= 5) return '在读中';
-    return '未读';
+    return book.readingStatus;
   }
 
   List<Book> _filterBooks(List<Book> books) {
@@ -76,13 +75,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
       bool matchesFilter;
       switch (_selectedFilter) {
         case '读完':
-          matchesFilter = book.isFinished || book.progress >= 85;
+          matchesFilter = book.isFinished;
           break;
         case '在读中':
-          matchesFilter = !book.isFinished && book.progress >= 5 && book.progress < 85;
+          matchesFilter = book.isReading;
           break;
         case '未读':
-          matchesFilter = book.progress < 5 && !book.isFinished;
+          matchesFilter = book.isUnread;
           break;
         default:
           matchesFilter = true;
@@ -95,10 +94,29 @@ class _BookshelfPageState extends State<BookshelfPage> {
   Future<void> _doSync(BookshelfProvider provider) async {
     try {
       final appConfig = context.read<AppConfigProvider>();
+      if (!appConfig.isLoggedIn && !await appConfig.verifyForSync()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(appConfig.loginError ?? '本地数据可浏览；同步需要联网验证'),
+        ));
+        return;
+      }
+      if (!mounted) return;
       final msg = await provider.syncFromServer(config: appConfig.config);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: const Color(0xFF07C160), duration: const Duration(seconds: 3)),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: provider.lastSyncResult?.failureCount == 0
+                ? const Color(0xFF07C160) : Colors.orange,
+            duration: const Duration(seconds: 3),
+            action: provider.lastSyncResult?.failureCount == 0 ? null : SnackBarAction(
+              label: '失败清单',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => SyncPage(initialResult: provider.lastSyncResult),
+              )),
+            ),
+          ),
         );
       }
     } catch (e) {
@@ -124,6 +142,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   Widget build(BuildContext context) {
     final crossAxisCount = _crossAxisCount;
+    final appConfig = context.watch<AppConfigProvider>();
     const childAspectRatio = 0.5;
 
     return Scaffold(
@@ -151,8 +170,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
             ],
           ),
           IconButton(
-            icon: const Icon(Icons.cloud_sync_rounded),
-            tooltip: '同步数据',
+            icon: Icon(appConfig.needsOnlineSync
+                ? Icons.cloud_off_rounded : Icons.cloud_sync_rounded),
+            tooltip: appConfig.needsOnlineSync ? '离线：同步需要联网验证' : '同步数据',
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const SyncPage()),
@@ -449,7 +469,7 @@ class _BookCard extends StatelessWidget {
                       else
                         _buildCoverFallback(),
                       // 已读完标记
-                      if (book.isFinished || book.progress >= 85)
+                       if (book.isFinished)
                         Positioned(
                           top: 6,
                           right: 6,

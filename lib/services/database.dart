@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import '../models/ai_summary.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -60,11 +62,12 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 4) await _createSummaryTable(db);
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE bookmarks ADD COLUMN is_fav INTEGER DEFAULT 0');
         }
@@ -83,6 +86,7 @@ class DatabaseService {
   }
 
   Future<void> _createTables(Database db) async {
+    await _createSummaryTable(db);
     await db.execute('''
       CREATE TABLE books (
         book_id TEXT PRIMARY KEY,
@@ -133,6 +137,32 @@ class DatabaseService {
         PRIMARY KEY (book_id, chapter_uid)
       )
     ''');
+  }
+
+  Future<void> _createSummaryTable(Database db) => db.execute('''
+    CREATE TABLE ai_summaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payload TEXT NOT NULL
+    )
+  ''');
+
+  Future<void> saveSummary(AISummary summary) async {
+    final db = await database;
+    await db.insert('ai_summaries', {'payload': jsonEncode(summary.toJson())});
+  }
+
+  Future<List<AISummary>> getSummaries({String? bookId}) async {
+    final db = await database;
+    final rows = await db.query('ai_summaries', orderBy: 'id DESC');
+    return rows.map((r) => AISummary.fromJson(jsonDecode(r['payload'] as String)))
+        .where((s) => bookId == null || s.references.any((r) => r.bookId == bookId)).toList();
+  }
+
+  Future<Map<String, dynamic>?> getReadingItem(String id, String source, String bookId) async {
+    final db = await database;
+    final rows = await db.rawQuery('SELECT * FROM ($_readingItems) '
+        'WHERE id = ? AND source = ? AND book_id = ?', [id, source, bookId]);
+    return rows.isEmpty ? null : rows.first;
   }
 
   // ── Books ──
@@ -213,9 +243,68 @@ class DatabaseService {
     await batch.commit(noResult: true);
   }
 
-  Future<List<Map<String, dynamic>>> getAllBookmarks({int offset = 0, int limit = 500}) async {
+  Future<List<Map<String, dynamic>>> getAllBookmarks({int offset = 0, int limit = 500,
+    String query = '', String? bookId}) async {
     final db = await database;
-    return await db.query('bookmarks', orderBy: 'created_at DESC', offset: offset, limit: limit);
+    final filter = _itemFilter(query, bookId, 'mark_text');
+    return await db.query('bookmarks', where: filter.$1, whereArgs: filter.$2,
+        orderBy: 'created_at DESC, bookmark_id DESC', offset: offset, limit: limit);
+  }
+
+  (String?, List<Object?>) _itemFilter(String query, String? bookId, String content) {
+    final clauses = <String>[];
+    final args = <Object?>[];
+    if (bookId != null) {
+      clauses.add('book_id = ?');
+      args.add(bookId);
+    }
+    if (query.isNotEmpty) {
+      final escaped = query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+      clauses.add("($content LIKE ? ESCAPE '\\' OR book_title LIKE ? ESCAPE '\\' OR chapter_title LIKE ? ESCAPE '\\')");
+      args.addAll(List.filled(3, '%$escaped%'));
+    }
+    return (clauses.isEmpty ? null : clauses.join(' AND '), args);
+  }
+
+  Future<int> countBookmarks({String query = ''}) async {
+    final db = await database;
+    final filter = _itemFilter(query, null, 'mark_text');
+    final rows = await db.query('bookmarks', columns: ['COUNT(*) AS total'],
+        where: filter.$1, whereArgs: filter.$2);
+    return rows.first['total'] as int;
+  }
+
+  // UNION 后统一排序和分页，保证划线/笔记同时间时也不会遗漏或重复。
+  static const _readingItems = '''
+    SELECT bookmark_id AS id, book_id, book_title, mark_text AS content,
+      chapter_title, created_at, is_fav, 'bookmark' AS source FROM bookmarks
+    UNION ALL
+    SELECT note_id AS id, book_id, book_title, content,
+      chapter_title, created_at, is_fav, 'note' AS source FROM notes
+  ''';
+
+  (String, List<Object?>) _readingFilter(String query, String filter) {
+    final search = _itemFilter(query, null, 'content');
+    final clauses = <String>[if (search.$1 != null) search.$1!];
+    if (filter == '全部笔记') clauses.add("source = 'note'");
+    if (filter == '收藏') clauses.add('is_fav = 1');
+    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', search.$2);
+  }
+
+  Future<List<Map<String, dynamic>>> getReadingItems({int offset = 0,
+    int limit = 100, String query = '', String filter = '全部划线'}) async {
+    final db = await database;
+    final where = _readingFilter(query, filter);
+    return db.rawQuery('SELECT * FROM ($_readingItems) ${where.$1} '
+        'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
+        [...where.$2, limit, offset]);
+  }
+
+  Future<int> countReadingItems({String query = '', String filter = '全部划线'}) async {
+    final db = await database;
+    final where = _readingFilter(query, filter);
+    return Sqflite.firstIntValue(await db.rawQuery(
+        'SELECT COUNT(*) FROM ($_readingItems) ${where.$1}', where.$2)) ?? 0;
   }
 
   Future<List<Map<String, dynamic>>> getBookmarksByBook(String bookId) async {
@@ -278,9 +367,12 @@ class DatabaseService {
   }
 
   /// 获取所有笔记（用于笔记页显示）
-  Future<List<Map<String, dynamic>>> getAllNotes({int offset = 0, int limit = 500}) async {
+  Future<List<Map<String, dynamic>>> getAllNotes({int offset = 0, int limit = 500,
+    String? bookId}) async {
     final db = await database;
-    return await db.query('notes', orderBy: 'created_at DESC', offset: offset, limit: limit);
+    return await db.query('notes', where: bookId == null ? null : 'book_id = ?',
+        whereArgs: bookId == null ? null : [bookId],
+        orderBy: 'created_at DESC, note_id DESC', offset: offset, limit: limit);
   }
 
   Future<void> toggleFavorite(String noteId, bool isFav) async {
@@ -306,7 +398,8 @@ class DatabaseService {
   Future<Map<String, dynamic>> getReadingStats() async {
     final db = await database;
     final totalBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books')) ?? 0;
-    final finishedBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE finished = 1')) ?? 0;
+    final finishedBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= 100')) ?? 0;
+    final readingBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= 5 AND progress < 100')) ?? 0;
     final totalBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks')) ?? 0;
     final totalNotes = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM notes')) ?? 0;
     final favBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks WHERE is_fav = 1')) ?? 0;
@@ -315,7 +408,7 @@ class DatabaseService {
     return {
       'totalBooks': totalBooks,
       'finishedBooks': finishedBooks,
-      'readingBooks': totalBooks - finishedBooks,
+      'readingBooks': readingBooks,
       'totalBookmarks': totalBookmarks,
       'totalNotes': totalNotes,
       'favoriteBookmarks': favBookmarks,

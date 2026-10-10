@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/app_config_provider.dart';
 import '../services/config.dart';
 import 'cookie_login_page.dart';
@@ -19,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _modelName = 'deepseek-chat';
   bool _obscureApiKey = true;
   AppConfigProvider? _appConfig;
+  String? _version;
 
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _baseUrlController = TextEditingController();
@@ -27,10 +29,22 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    _loadVersion();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _loadAiConfig();
     });
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() => _version = 'v${info.version}');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _version = '版本读取失败');
+    }
   }
 
   void _loadAiConfig() {
@@ -132,7 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: '账号'),
               _SettingsCard(
                 children: [
-                  if (appConfig.hasSavedCredentials) ...[
+                  if (appConfig.hasSavedCredentials || appConfig.canBrowseLocal) ...[
                     ListTile(
                       leading: CircleAvatar(
                         backgroundColor: const Color(0xFF07C160),
@@ -520,9 +534,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: const Color(0xFF2196F3).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Text(
-                        'v2.2.0',
-                        style: TextStyle(
+                      child: Text(
+                        _version ?? '读取版本中…',
+                        style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF2196F3),
@@ -537,8 +551,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey[400]),
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('当前已是最新版本 v2.2.0'),
+                        SnackBar(
+                          content: Text('当前版本：${_version ?? '读取版本中…'}'),
                           duration: Duration(seconds: 1),
                         ),
                       );
@@ -594,8 +608,10 @@ class _SettingsCard extends StatelessWidget {
           ),
         ],
       ),
-      child: ClipRRect(
+      child: Material(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
         child: Column(children: children),
       ),
     );

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/bookmark.dart';
 import '../services/database.dart';
+import '../services/sync_service.dart';
 
 class CardsPage extends StatefulWidget {
   const CardsPage({super.key});
@@ -25,27 +26,44 @@ class _CardsPageState extends State<CardsPage> {
   String? _error;
 
   List<Bookmark> _allBookmarks = [];
+  int _totalCount = 0;
+  int _request = 0;
 
   @override
   void initState() {
     super.initState();
+    SyncService.changes.addListener(_onSyncChanged);
     _loadBookmarks();
   }
 
+  void _onSyncChanged() {
+    if (SyncService.changes.value?.isActive == true) _loadBookmarks();
+  }
+
   Future<void> _loadBookmarks() async {
+    final request = ++_request;
+    final query = _searchQuery;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final raw = await DatabaseService.instance.getAllBookmarks();
-      if (!mounted) return;
+      final db = DatabaseService.instance;
+      final count = await db.countBookmarks(query: query);
+      if (!mounted || request != _request || !db.isActive) return;
+      final totalPages = (count / _itemsPerPage).ceil();
+      final page = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
+      final raw = await db.getAllBookmarks(query: query,
+          offset: (page - 1) * _itemsPerPage, limit: _itemsPerPage);
+      if (!mounted || request != _request || !db.isActive) return;
       setState(() {
+        _currentPage = page;
+        _totalCount = count;
         _allBookmarks = raw.map((m) => Bookmark.fromJson(m)).toList();
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || request != _request) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -53,32 +71,16 @@ class _CardsPageState extends State<CardsPage> {
     }
   }
 
-  List<Bookmark> get _filteredBookmarks {
-    if (_searchQuery.isEmpty) return _allBookmarks;
-    final q = _searchQuery.toLowerCase();
-    return _allBookmarks.where((b) =>
-      b.markText.toLowerCase().contains(q) ||
-      b.bookTitle.toLowerCase().contains(q)
-    ).toList();
-  }
-
-  List<Bookmark> get _pagedBookmarks {
-    final filtered = _filteredBookmarks;
-    final totalPages = (filtered.length / _itemsPerPage).ceil();
-    final safeCurrentPage = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
-    final start = (safeCurrentPage - 1) * _itemsPerPage;
-    final end = (start + _itemsPerPage).clamp(0, filtered.length);
-    if (start >= filtered.length) return [];
-    return filtered.sublist(start, end);
-  }
+  List<Bookmark> get _pagedBookmarks => _allBookmarks;
 
   int get _totalPages {
-    final total = _filteredBookmarks.length;
-    return (total / _itemsPerPage).ceil().clamp(1, 9999);
+    final pages = (_totalCount / _itemsPerPage).ceil();
+    return pages > 0 ? pages : 1;
   }
 
   @override
   void dispose() {
+    SyncService.changes.removeListener(_onSyncChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -135,6 +137,7 @@ class _CardsPageState extends State<CardsPage> {
                                   _currentPage = 1;
                                   _selectedIndex = 0;
                                 });
+                                _loadBookmarks();
                               },
                             )
                           : null,
@@ -154,6 +157,7 @@ class _CardsPageState extends State<CardsPage> {
                         _currentPage = 1;
                         _selectedIndex = 0;
                       });
+                      _loadBookmarks();
                     },
                   ),
                 ),
@@ -165,7 +169,7 @@ class _CardsPageState extends State<CardsPage> {
                     children: [
                       Flexible(
                         child: Text(
-                          '共 ${_filteredBookmarks.length} 条',
+                          '共 $_totalCount 条',
                           style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -178,6 +182,7 @@ class _CardsPageState extends State<CardsPage> {
                                   _currentPage--;
                                   _selectedIndex = 0;
                                 });
+                                _loadBookmarks();
                               }
                             : null,
                         icon: const Icon(Icons.chevron_left_rounded),
@@ -208,6 +213,7 @@ class _CardsPageState extends State<CardsPage> {
                                   _currentPage++;
                                   _selectedIndex = 0;
                                 });
+                                _loadBookmarks();
                               }
                             : null,
                         icon: const Icon(Icons.chevron_right_rounded),
@@ -502,6 +508,7 @@ class _CardsPageState extends State<CardsPage> {
                     _currentPage = page;
                     _selectedIndex = 0;
                   });
+                  _loadBookmarks();
                   Navigator.pop(context);
                 }
               },

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/bookshelf_provider.dart';
-import '../providers/notes_provider.dart';
 import '../providers/app_config_provider.dart';
 import '../services/api.dart';
 import '../services/database.dart';
+import '../services/sync_service.dart';
 
 /// 同步进度页
 class SyncPage extends StatefulWidget {
-  const SyncPage({super.key});
+  final SyncResult? initialResult;
+  const SyncPage({super.key, this.initialResult});
 
   @override
   State<SyncPage> createState() => _SyncPageState();
@@ -23,8 +23,29 @@ class _SyncPageState extends State<SyncPage> {
   int _totalBookmarks = 0;
   int _totalNotes = 0;
   String? _error;
+  SyncService? _service;
+  SyncResult? _result;
+  final Map<int, BookSyncResult> _retryLogs = {};
 
   final ScrollController _logScrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialResult != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final config = context.read<AppConfigProvider>();
+        final revision = config.sessionRevision;
+        _service = SyncService.forApi(WeReadApi.instance, isCancelled: () =>
+            _cancelled || !mounted || revision != config.sessionRevision);
+        _result = widget.initialResult;
+        _totalBooks = _result!.totalBooks;
+        _syncedBooks = _result!.books.length;
+        _showResult();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -55,6 +76,8 @@ class _SyncPageState extends State<SyncPage> {
       _syncing = true;
       _cancelled = false;
       _logs.clear();
+      _retryLogs.clear();
+      _result = null;
       _error = null;
       _totalBooks = 0;
       _syncedBooks = 0;
@@ -67,14 +90,16 @@ class _SyncPageState extends State<SyncPage> {
       final revision = appConfig.sessionRevision;
       final config = appConfig.config;
 
-      if (!appConfig.isLoggedIn) {
+      if (!appConfig.isLoggedIn && !await appConfig.verifyForSync()) {
+        if (!mounted) return;
         setState(() {
-          _error = '请先登录（扫码或导入 Cookie）';
+          _error = appConfig.loginError ?? '同步需要联网并验证登录';
           _syncing = false;
         });
         return;
       }
 
+      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
       _addLog('🚀 开始同步...');
 
       // 初始化 API
@@ -82,62 +107,23 @@ class _SyncPageState extends State<SyncPage> {
       if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
       api.updateCookie(config.cookie);
 
-      // 同步书架
       _addLog('📚 正在同步书架...');
-      final books = await api.fetchBookshelf();
-      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
-      _totalBooks = books.length;
-      _addLog('✅ 书架同步完成，共 $_totalBooks 本书');
-
-      // 逐本同步划线和笔记
-      for (int i = 0; i < books.length; i++) {
-        if (_cancelled || revision != appConfig.sessionRevision) {
-          _addLog('⚠️ 同步已取消');
-          break;
-        }
-
-        final book = books[i];
-        _addLog('📖 [${i + 1}/$_totalBooks] ${book.title}');
-
-        try {
-          final bm = await api.fetchBookmarks(book.bookId, book.title);
-          _totalBookmarks += bm.length;
-          if (bm.isNotEmpty) _addLog('   ✏️ ${bm.length} 条划线');
-        } catch (e) {
-          _addLog('   ⚠️ 划线同步失败: $e');
-        }
-
-        try {
-          final nt = await api.fetchNotes(book.bookId, book.title);
-          _totalNotes += nt.length;
-          if (nt.isNotEmpty) _addLog('   📝 ${nt.length} 条笔记');
-        } catch (e) {
-          _addLog('   ⚠️ 笔记同步失败: $e');
-        }
-
-        _syncedBooks = i + 1;
-        if (_cancelled || !mounted) return;
-        setState(() {});
-
-        // 请求间隔
-        if (i < books.length - 1 && !_cancelled) {
-          await Future.delayed(const Duration(milliseconds: 300));
-        }
-      }
-
-      if (!_cancelled && revision == appConfig.sessionRevision) {
-        _addLog('');
-        _addLog('🎉 同步完成！');
-        _addLog('   📚 $_totalBooks 本书');
-        _addLog('   ✏️ $_totalBookmarks 条划线');
-        _addLog('   📝 $_totalNotes 条笔记');
-
-        // 通知其他 Provider 刷新数据
-        if (mounted) {
-          context.read<BookshelfProvider>().loadBooks();
-          context.read<NotesProvider>().loadNotes();
-        }
-      }
+      _service = SyncService.forApi(api, isCancelled: () =>
+          _cancelled || !mounted || revision != appConfig.sessionRevision);
+      final result = await _service!.syncAll(
+        onBooks: (total) {
+          _totalBooks = total;
+          _addLog('✅ 书架同步完成，共 $total 本书');
+        },
+        onProgress: (book, processed) {
+          _syncedBooks = processed;
+          _addLog('📖 [$processed/$_totalBooks] ${book.book.title}');
+          _addLog('   ✏️ ${book.bookmarks} 条划线 / 📝 ${book.notes} 条笔记');
+        },
+      );
+      if (!mounted || revision != appConfig.sessionRevision) return;
+      _result = result;
+      _showResult();
     } catch (e) {
       _error = e.toString();
       _addLog('❌ 同步失败: $e');
@@ -146,9 +132,40 @@ class _SyncPageState extends State<SyncPage> {
     }
   }
 
+  void _showResult() {
+    final result = _result!;
+    _totalBookmarks = result.bookmarks;
+    _totalNotes = result.notes;
+    _retryLogs.clear();
+    _addLog('${result.cancelled || result.failureCount > 0 ? '⚠️' : '✅'} ${result.summary}');
+    for (final failure in result.failures) {
+      _retryLogs[_logs.length] = failure;
+      _addLog('❌ ${failure.book.title}：${failure.reason}（点击重试此书）');
+    }
+  }
+
+  Future<void> _retryBook(BookSyncResult failure) async {
+    if (_syncing || _service == null) return;
+    setState(() {
+      _syncing = true;
+      _cancelled = false;
+    });
+    try {
+      final retried = await _service!.retryBook(failure.book);
+      if (!mounted) return;
+      _result = _result!.replace(retried);
+      _showResult();
+    } catch (e) {
+      _addLog('❌ 重试失败：$e');
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final progress = _totalBooks > 0 ? _syncedBooks / _totalBooks : 0.0;
+    final appConfig = context.watch<AppConfigProvider>();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -212,9 +229,11 @@ class _SyncPageState extends State<SyncPage> {
                           ),
                         )
                       : FilledButton.icon(
-                          onPressed: _startSync,
+                           onPressed: appConfig.isBusy ? null : _startSync,
                           icon: const Icon(Icons.sync_rounded),
-                          label: Text(_error != null ? '重新同步' : '开始同步'),
+                           label: Text(appConfig.needsOnlineSync
+                               ? '需要联网 · 验证并同步'
+                               : _error != null ? '重新同步' : '开始同步'),
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF4A7CF7),
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -236,7 +255,9 @@ class _SyncPageState extends State<SyncPage> {
               child: _logs.isEmpty
                   ? Center(
                       child: Text(
-                        '点击「开始同步」同步微信读书数据',
+                         _error ?? (appConfig.needsOnlineSync
+                             ? '本地数据可浏览；请联网后验证并同步'
+                             : '点击「开始同步」同步微信读书数据'),
                         style: TextStyle(color: Colors.grey[500], fontSize: 14),
                       ),
                     )
@@ -254,13 +275,17 @@ class _SyncPageState extends State<SyncPage> {
 
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            log,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 13,
-                              fontFamily: 'monospace',
-                              height: 1.5,
+                          child: GestureDetector(
+                            onTap: !_syncing && _retryLogs.containsKey(index)
+                                ? () => _retryBook(_retryLogs[index]!) : null,
+                            child: Text(
+                              log,
+                              style: TextStyle(
+                                color: color,
+                                fontSize: 13,
+                                fontFamily: 'monospace',
+                                height: 1.5,
+                              ),
                             ),
                           ),
                         );

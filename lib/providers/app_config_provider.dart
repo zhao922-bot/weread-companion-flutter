@@ -18,21 +18,30 @@ class AppConfigProvider extends ChangeNotifier {
   String _userName = '';
   bool _isLoaded = false;
   int _sessionRevision = 0;
+  bool _canBrowseLocal = false;
+  final WeReadApi Function(AppConfig) _loginApi;
   int get sessionRevision => _sessionRevision;
 
-  AppConfigProvider({required this.config});
+  AppConfigProvider(
+      {required this.config, WeReadApi Function(AppConfig)? loginApi})
+      : _loginApi =
+            loginApi ?? ((config) => WeReadApi.forLogin(config: config));
 
   bool get isLoggedIn => _loginStatus == LoginStatus.verified;
+  bool get canBrowseLocal => _canBrowseLocal;
+  bool get needsOnlineSync => canBrowseLocal && !isLoggedIn;
   bool get hasSavedCredentials => config.isConfigured;
   bool get isBusy => _busy;
   LoginStatus get loginStatus => _loginStatus;
   String? get loginError => _loginError;
-  String get loginStatusText => switch (_loginStatus) {
-        LoginStatus.signedOut => '未登录',
-        LoginStatus.saved => '已保存凭据',
-        LoginStatus.verified => '验证成功',
-        LoginStatus.invalid => '凭据失效',
-      };
+  String get loginStatusText => needsOnlineSync
+      ? '本地数据可浏览 · 需要联网验证后同步'
+      : switch (_loginStatus) {
+          LoginStatus.signedOut => '未登录',
+          LoginStatus.saved => '已保存凭据',
+          LoginStatus.verified => '验证成功',
+          LoginStatus.invalid => '凭据失效',
+        };
   String get userName => _userName;
   String get cookie => config.cookie;
   bool get isLoaded => _isLoaded;
@@ -41,6 +50,15 @@ class AppConfigProvider extends ChangeNotifier {
   Future<void> init() async {
     _busy = true;
     try {
+      await config.loadTrustedAccount();
+      final trustedId = config.trustedAccountId;
+      if (trustedId != null) {
+        await DatabaseService.selectAccount(trustedId);
+        await DatabaseService.instance.database;
+        _canBrowseLocal = true;
+        _isLoaded = true;
+        notifyListeners();
+      }
       await config.load();
       if (config.isConfigured) {
         _loginStatus = LoginStatus.saved;
@@ -57,7 +75,7 @@ class AppConfigProvider extends ChangeNotifier {
         await _verifyCredentials();
       }
     } catch (_) {
-      _loginError = '配置加载失败，请重试';
+      _loginError = canBrowseLocal ? '凭据或配置加载失败，本地数据可浏览；请重试后同步' : '配置加载失败，请重试';
     } finally {
       _isLoaded = true;
       _busy = false;
@@ -102,7 +120,12 @@ class AppConfigProvider extends ChangeNotifier {
       _loginError = 'Cookie 缺少有效的 wr_vid，请重新导入';
       return;
     }
-    final api = WeReadApi.forLogin(config: config);
+    if (_canBrowseLocal && config.trustedAccountId != accountId) {
+      _loginStatus = LoginStatus.invalid;
+      _loginError = '本地数据可浏览；凭据与可信账号不匹配，请重新登录后同步';
+      return;
+    }
+    final api = _loginApi(config);
     try {
       final valid = await api.checkLogin();
       if (!valid || api.authenticatedAccountId != accountId) {
@@ -110,16 +133,42 @@ class AppConfigProvider extends ChangeNotifier {
         _loginError = '凭据失效或账号不匹配，请重新登录';
         return;
       }
-      await DatabaseService.selectAccount(accountId);
+      if (!_canBrowseLocal || DatabaseService.instance.accountId != accountId) {
+        await DatabaseService.selectAccount(accountId);
+        await DatabaseService.instance.database;
+      }
+      await config.trustAccount(accountId);
+      _canBrowseLocal = true;
       _loginStatus = LoginStatus.verified;
       _loginError = null;
       _userName = '微信用户';
       _extractUserName();
     } catch (_) {
+      // 首次验证若未能持久化可信账号，不留下可访问的数据库会话。
+      if (!_canBrowseLocal) await DatabaseService.endSession();
       _loginStatus = LoginStatus.saved;
-      _loginError = '已保存凭据，暂时无法完成验证，请检查网络后重试';
+      _loginError = canBrowseLocal
+          ? '暂时无法联网验证，本地数据可浏览；同步需要联网后重试'
+          : '已保存凭据，暂时无法完成验证，请检查网络后重试';
     } finally {
       api.dispose();
+    }
+  }
+
+  /// 离线恢复网络后，可从同步入口重试验证。
+  Future<bool> verifyForSync() async {
+    if (_busy) return false;
+    _beginOperation();
+    try {
+      if (!config.isConfigured) {
+        _loginError = '本地数据可浏览；同步需要联网并重新登录';
+        return false;
+      }
+      await _verifyCredentials();
+      return isLoggedIn;
+    } finally {
+      _busy = false;
+      notifyListeners();
     }
   }
 
@@ -141,6 +190,8 @@ class AppConfigProvider extends ChangeNotifier {
     try {
       WeReadApi.reset();
       AIService.cancelAll();
+      await config.clearTrustedAccount();
+      _canBrowseLocal = false;
       _loginStatus = LoginStatus.signedOut;
       _userName = '';
       _loginError = null;
@@ -165,6 +216,8 @@ class AppConfigProvider extends ChangeNotifier {
     try {
       WeReadApi.reset();
       AIService.cancelAll();
+      await config.clearTrustedAccount();
+      _canBrowseLocal = false;
       _loginStatus = LoginStatus.signedOut;
       _userName = '';
       _loginError = null;

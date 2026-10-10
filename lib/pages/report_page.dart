@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/database.dart';
 import '../models/book.dart';
+import '../services/sync_service.dart';
 
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
@@ -22,7 +23,18 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void initState() {
     super.initState();
+    SyncService.changes.addListener(_onSyncChanged);
     _loadStats();
+  }
+
+  void _onSyncChanged() {
+    if (SyncService.changes.value?.isActive == true) _loadStats();
+  }
+
+  @override
+  void dispose() {
+    SyncService.changes.removeListener(_onSyncChanged);
+    super.dispose();
   }
 
   // 数据库列表接口默认只返回 500 条，报告需读取全部本地记录。
@@ -49,8 +61,8 @@ class _ReportPageState extends State<ReportPage> {
       final rawNotes = await _loadAllItems(db.getAllNotes);
       final totalItemCount = rawBookmarks.length + rawNotes.length;
 
-      final read = books.where((b) => b.isFinished || b.progress >= 85).length;
-      final reading = books.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).length;
+      final read = books.where((b) => b.isFinished).length;
+      final reading = books.where((b) => b.isReading).length;
       final unread = books.length - read - reading;
 
       final titles = {for (final book in books) book.bookId: book.title};
@@ -81,7 +93,7 @@ class _ReportPageState extends State<ReportPage> {
         if (months.containsKey(month)) months[month] = months[month]! + 1;
       }
 
-      if (!mounted) return;
+      if (!mounted || !db.isActive) return;
       setState(() {
         _totalBooks = books.length;
         _readBooks = read;

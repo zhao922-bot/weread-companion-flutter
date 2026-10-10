@@ -28,14 +28,10 @@ class ExportService {
     final db = DatabaseService.instance;
 
     // 获取所有划线和笔记
-    var bookmarks = await db.getAllBookmarks(limit: 9999);
-    var notes = await db.getAllNotes(limit: 9999);
-
-    // 按书过滤
-    if (bookId != null) {
-      bookmarks = bookmarks.where((b) => b['book_id'] == bookId).toList();
-      notes = notes.where((n) => n['book_id'] == bookId).toList();
-    }
+    final bookmarks = await _readAll((offset, limit) =>
+        db.getAllBookmarks(offset: offset, limit: limit, bookId: bookId));
+    final notes = await _readAll((offset, limit) =>
+        db.getAllNotes(offset: offset, limit: limit, bookId: bookId));
 
     if (bookmarks.isEmpty && notes.isEmpty) {
       throw Exception('暂无数据可导出');
@@ -122,6 +118,17 @@ class ExportService {
     }
 
     return file.path;
+  }
+
+  static Future<List<Map<String, dynamic>>> _readAll(
+      Future<List<Map<String, dynamic>>> Function(int offset, int limit) load) async {
+    const batchSize = 500;
+    final items = <Map<String, dynamic>>[];
+    while (true) {
+      final batch = await load(items.length, batchSize);
+      items.addAll(batch);
+      if (batch.isEmpty) return items;
+    }
   }
 
   /// 导出并通过系统分享

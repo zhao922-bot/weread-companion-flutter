@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
-import '../services/ai_service.dart';
-import '../services/config.dart';
+import 'ai_summary_page.dart';
 import '../models/book.dart';
 import '../services/database.dart';
 import '../providers/notes_provider.dart';
+import '../services/sync_service.dart';
 
 /// 书籍详情页
 /// 展示书籍信息、进度、划线和笔记（真实数据）
@@ -21,25 +21,45 @@ class BookDetailPage extends StatefulWidget {
 class _BookDetailPageState extends State<BookDetailPage> {
   List<NoteItem> _allItems = [];
   bool _loading = true;
+  int _loadRequest = 0;
+  final Set<String> _expanded = {};
+  final Set<String> _savingFavorites = {};
 
   @override
   void initState() {
     super.initState();
+    SyncService.changes.addListener(_onDataChanged);
     _loadBookmarks();
   }
 
+  void _onDataChanged() {
+    if (mounted && SyncService.changes.value?.isActive == true) _loadBookmarks();
+  }
+
+  @override
+  void dispose() {
+    SyncService.changes.removeListener(_onDataChanged);
+    _loadRequest++;
+    super.dispose();
+  }
+
   Future<void> _loadBookmarks() async {
+    if (!mounted) return;
+    final request = ++_loadRequest;
     setState(() => _loading = true);
     try {
+      final db = DatabaseService.instance;
       final items = <NoteItem>[];
 
       // 加载划线
-      final rawBookmarks = await DatabaseService.instance.getBookmarksByBook(widget.book.bookId);
+      final rawBookmarks = await db.getBookmarksByBook(widget.book.bookId);
+      if (!mounted || request != _loadRequest || !db.isActive) return;
       for (final m in rawBookmarks) {
         items.add(NoteItem(
           id: m['bookmark_id'] ?? '',
           bookId: m['book_id'] ?? '',
-          bookTitle: m['book_title'] ?? '',
+          bookTitle: (m['book_title'] as String?)?.isNotEmpty == true
+              ? m['book_title'] : widget.book.title,
           content: m['mark_text'] ?? '',
           chapterTitle: m['chapter_title'] ?? '',
           createdAt: m['created_at'] ?? 0,
@@ -49,12 +69,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
       }
 
       // 加载笔记
-      final rawNotes = await DatabaseService.instance.getNotesByBook(widget.book.bookId);
+      final rawNotes = await db.getNotesByBook(widget.book.bookId);
+      if (!mounted || request != _loadRequest || !db.isActive) return;
       for (final m in rawNotes) {
         items.add(NoteItem(
           id: m['note_id'] ?? '',
           bookId: m['book_id'] ?? '',
-          bookTitle: m['book_title'] ?? '',
+          bookTitle: (m['book_title'] as String?)?.isNotEmpty == true
+              ? m['book_title'] : widget.book.title,
           content: m['content'] ?? '',
           chapterTitle: m['chapter_title'] ?? '',
           createdAt: m['created_at'] ?? 0,
@@ -70,89 +92,47 @@ class _BookDetailPageState extends State<BookDetailPage> {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted || request != _loadRequest) return;
       setState(() => _loading = false);
     }
   }
 
+  String _itemKey(NoteItem note) => '${note.source.name}:${note.id}';
+
+  Future<void> _copyNote(NoteItem note) async {
+    await Clipboard.setData(ClipboardData(text: note.content));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)));
+  }
+
+  Future<void> _toggleFavorite(NoteItem note) async {
+    final key = _itemKey(note);
+    if (_savingFavorites.contains(key)) return;
+    setState(() => _savingFavorites.add(key));
+    try {
+      final db = DatabaseService.instance;
+      if (note.source == NoteSource.bookmark) {
+        await db.toggleBookmarkFavorite(note.id, !note.isFav);
+      } else {
+        await db.toggleFavorite(note.id, !note.isFav);
+      }
+      if (!mounted || !db.isActive) return;
+      SyncService.changes.publish(db);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('收藏保存失败')));
+    } finally {
+      if (mounted) setState(() => _savingFavorites.remove(key));
+    }
+  }
+
   String _getStatusText() {
-    final book = widget.book;
-    if (book.isFinished || book.progress >= 85) return '已读完';
-    if (book.progress >= 5) return '在读中';
-    return '未读';
+    return widget.book.readingStatus;
   }
 
-  Future<void> _aiSummarize(BuildContext context) async {
-    final config = AppConfig();
-    await config.load();
-
-    if (config.apiKey.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在设置中配置 AI API Key'), backgroundColor: Colors.orange),
-        );
-      }
-      return;
-    }
-
-    if (_allItems.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('暂无划线和笔记可摘要'), backgroundColor: Colors.orange),
-        );
-      }
-      return;
-    }
-
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('AI 正在生成摘要...'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final ai = AIService(config: config);
-    final highlights = _allItems.map((n) => n.content).where((c) => c.isNotEmpty).toList();
-    final result = await ai.summarizeBook(widget.book.title, widget.book.author, highlights);
-
-    if (mounted) Navigator.pop(context);
-
-    if (result != null && mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text('《${widget.book.title}》AI 摘要'),
-          content: SingleChildScrollView(
-            child: SelectableText(result, style: const TextStyle(fontSize: 14, height: 1.6)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: result));
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
-                );
-              },
-              child: const Text('复制'),
-            ),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-          ],
-        ),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI 摘要生成失败'), backgroundColor: Colors.red),
-      );
-    }
-  }
+  Future<void> _aiSummarize() => generateSummary(
+      context, widget.book.title, widget.book.author, _allItems);
 
   void _shareBook(BuildContext context) {
     final book = widget.book;
@@ -197,8 +177,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
           IconButton(
             icon: const Icon(Icons.auto_awesome_rounded),
             tooltip: 'AI 摘要',
-            onPressed: () => _aiSummarize(context),
+            onPressed: _loading ? null : _aiSummarize,
           ),
+          IconButton(icon: const Icon(Icons.history), tooltip: '历史摘要',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => AISummaryHistoryPage(bookId: book.bookId)))),
           IconButton(
             icon: const Icon(Icons.share_rounded),
             tooltip: '分享',
@@ -229,7 +212,6 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Widget _buildBookHeader(BuildContext context, bool isNarrow) {
-    final book = widget.book;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -345,7 +327,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: book.progress >= 85 ? Colors.green : const Color(0xFF2196F3),
+                color: book.isFinished ? Colors.green : const Color(0xFF2196F3),
               ),
             ),
           ],
@@ -362,6 +344,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
         break;
       case '在读中':
         color = const Color(0xFF2196F3);
+        break;
+      case '接近读完':
+        color = Colors.orange;
         break;
       default:
         color = Colors.grey;
@@ -462,7 +447,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
               value: progress,
               backgroundColor: Colors.grey[200],
               valueColor: AlwaysStoppedAnimation<Color>(
-                progress >= 0.85 ? Colors.green : const Color(0xFF2196F3),
+                widget.book.isFinished ? Colors.green : const Color(0xFF2196F3),
               ),
               minHeight: 8,
             ),
@@ -476,10 +461,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
               Text(
-                progress >= 0.85 ? '🎉 恭喜读完！' : '继续加油',
+                widget.book.isFinished ? '🎉 恭喜读完！'
+                    : widget.book.isNearlyFinished ? '接近读完' : '继续加油',
                 style: TextStyle(
                   fontSize: 13,
-                  color: progress >= 0.85 ? Colors.green : Colors.grey[500],
+                  color: widget.book.isFinished ? Colors.green : Colors.grey[500],
                 ),
               ),
             ],
@@ -558,6 +544,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Widget _buildNoteItem(NoteItem bookmark) {
+    final key = _itemKey(bookmark);
+    final expanded = _expanded.contains(key);
     final isHighlight = bookmark.source == NoteSource.bookmark;
     final accentColor = isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
 
@@ -608,10 +596,26 @@ class _BookDetailPageState extends State<BookDetailPage> {
             child: Text(
               bookmark.content,
               style: TextStyle(fontSize: 13, height: 1.5, color: Colors.grey[700]),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+              maxLines: expanded ? null : 3,
+              overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
             ),
           ),
+          Row(children: [
+            TextButton(
+              key: ValueKey('expand-$key'),
+              onPressed: () => setState(() {
+                if (expanded) { _expanded.remove(key); } else { _expanded.add(key); }
+              }),
+              child: Text(expanded ? '收起' : '展开全文')),
+            const Spacer(),
+            IconButton(key: ValueKey('copy-$key'), tooltip: '复制笔记',
+              icon: const Icon(Icons.copy, size: 20), onPressed: () => _copyNote(bookmark)),
+            IconButton(key: ValueKey('favorite-$key'),
+              tooltip: bookmark.isFav ? '取消收藏' : '收藏笔记',
+              icon: Icon(bookmark.isFav ? Icons.star_rounded : Icons.star_border_rounded,
+                color: bookmark.isFav ? Colors.amber : Colors.grey),
+              onPressed: _savingFavorites.contains(key) ? null : () => _toggleFavorite(bookmark)),
+          ]),
           const SizedBox(height: 12),
           Divider(height: 1, color: Colors.grey[100]),
         ],

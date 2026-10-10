@@ -101,17 +101,31 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final config = context.watch<AppConfigProvider>();
     return Scaffold(
-      body: IndexedStack(
-        key: ValueKey('${config.sessionRevision}:${config.isLoggedIn}'),
-        index: _currentIndex,
+      body: Column(
         children: [
-          for (var i = 0; i < _pages.length; i++)
-            if (i == 4)
-              SettingsPage(isActive: _currentIndex == 4)
-            else if (config.isLoggedIn)
-              _pages[i]
-            else
-              const Center(child: Text('请先在设置中验证登录')),
+          if (config.needsOnlineSync)
+            const SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: Text('离线模式：本地数据可浏览 · 同步需要联网验证'),
+              ),
+            ),
+          Expanded(
+            child: IndexedStack(
+              key: ValueKey('${config.sessionRevision}:${config.canBrowseLocal}'),
+              index: _currentIndex,
+              children: [
+                for (var i = 0; i < _pages.length; i++)
+                  if (i == 4)
+                    SettingsPage(isActive: _currentIndex == 4)
+                  else if (config.canBrowseLocal)
+                    _pages[i]
+                  else
+                    const Center(child: Text('请先在设置中验证登录')),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

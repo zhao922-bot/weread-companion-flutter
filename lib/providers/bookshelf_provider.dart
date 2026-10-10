@@ -3,8 +3,24 @@ import '../models/book.dart';
 import '../services/database.dart';
 import '../services/api.dart';
 import '../services/config.dart';
+import '../services/sync_service.dart';
 
 class BookshelfProvider extends ChangeNotifier {
+  BookshelfProvider() {
+    SyncService.changes.addListener(_onSyncChanged);
+  }
+
+  void _onSyncChanged() {
+    if (SyncService.changes.value?.isActive == true) loadBooks();
+  }
+
+  @override
+  void dispose() {
+    SyncService.changes.removeListener(_onSyncChanged);
+    super.dispose();
+  }
+
+  SyncResult? lastSyncResult;
   List<Book> _books = [];
   List<Book> _filtered = [];
   String _searchQuery = '';
@@ -22,6 +38,7 @@ class BookshelfProvider extends ChangeNotifier {
     _filter = '全部';
     _loading = false;
     _error = null;
+    lastSyncResult = null;
     notifyListeners();
   }
 
@@ -80,7 +97,8 @@ class BookshelfProvider extends ChangeNotifier {
       api.updateCookie(appConfig.cookie);
 
       // 执行同步
-      final result = await api.syncAll();
+      final result = await SyncService.forApi(api,
+          isCancelled: () => revision != _sessionRevision).syncAll();
       if (revision != _sessionRevision) throw StateError('同步已取消');
 
       // 重新加载本地数据
@@ -89,7 +107,8 @@ class BookshelfProvider extends ChangeNotifier {
       _books = raw.map((m) => Book.fromJson(m)).toList();
       _applyFilter();
 
-      final msg = '同步完成：${result['books']} 本书，${result['bookmarks']} 条划线，${result['notes']} 条笔记';
+      lastSyncResult = result;
+      final msg = result.summary;
       _error = null;
       _loading = false;
       notifyListeners();
@@ -126,13 +145,13 @@ class BookshelfProvider extends ChangeNotifier {
 
     switch (_filter) {
       case '读完':
-        list = list.where((b) => b.isFinished || b.progress >= 85).toList();
+        list = list.where((b) => b.isFinished).toList();
         break;
       case '在读中':
-        list = list.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).toList();
+        list = list.where((b) => b.isReading).toList();
         break;
       case '未读':
-        list = list.where((b) => b.progress < 5 && !b.isFinished).toList();
+        list = list.where((b) => b.isUnread).toList();
         break;
     }
 
@@ -140,7 +159,7 @@ class BookshelfProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  int get readCount => _books.where((b) => b.isFinished || b.progress >= 85).length;
-  int get readingCount => _books.where((b) => !b.isFinished && b.progress >= 5 && b.progress < 85).length;
-  int get unreadCount => _books.where((b) => b.progress < 5 && !b.isFinished).length;
+  int get readCount => _books.where((b) => b.isFinished).length;
+  int get readingCount => _books.where((b) => b.isReading).length;
+  int get unreadCount => _books.where((b) => b.isUnread).length;
 }

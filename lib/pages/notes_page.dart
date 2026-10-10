@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/notes_provider.dart';
-import '../providers/app_config_provider.dart';
-import '../services/ai_service.dart';
 import '../services/export_service.dart';
-import '../services/config.dart';
+import '../services/database.dart';
+import '../services/sync_service.dart';
+import '../models/ai_summary.dart';
+import 'ai_summary_page.dart';
 
 
 class NotesPage extends StatefulWidget {
-  const NotesPage({super.key});
+  final SummaryReference? reference;
+  const NotesPage({super.key, this.reference});
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -19,109 +20,55 @@ class _NotesPageState extends State<NotesPage> {
   String _searchQuery = '';
   String _selectedFilter = '全部划线';
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   final List<String> _filters = ['全部划线', '全部笔记', '收藏'];
+  Future<Map<String, dynamic>?>? _target;
 
   @override
   void initState() {
     super.initState();
+    final ref = widget.reference;
+    _target = ref == null ? null : DatabaseService.instance.getReadingItem(
+        ref.noteId, ref.source.name, ref.bookId);
+    if (ref != null) {
+      SyncService.changes.addListener(_reloadReference);
+      return;
+    }
+    _scrollController.addListener(() {
+      if (_scrollController.position.extentAfter < 600) {
+        context.read<NotesProvider>().loadMore();
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       context.read<NotesProvider>().loadNotes();
     });
   }
 
   @override
   void dispose() {
+    SyncService.changes.removeListener(_reloadReference);
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
+  void _reloadReference() {
+    final ref = widget.reference;
+    final db = SyncService.changes.value;
+    if (!mounted || ref == null || db?.isActive != true) return;
+    setState(() => _target = db!.getReadingItem(ref.noteId, ref.source.name, ref.bookId));
+  }
+
   /// AI 摘要
-  Future<void> _aiSummarize(BuildContext context) async {
-    final config = AppConfig();
-    await config.load();
-
-    if (config.apiKey.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先在设置中配置 AI API Key'), backgroundColor: Colors.orange),
-        );
-      }
-      return;
-    }
-
+  Future<void> _aiSummarize() async {
     final provider = context.read<NotesProvider>();
-    final notes = provider.notes;
-    if (notes.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('暂无笔记可摘要'), backgroundColor: Colors.orange),
-        );
-      }
-      return;
-    }
-
-    // 显示加载对话框
-    if (mounted) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 20),
-              Text('AI 正在生成摘要...'),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final ai = AIService(config: config);
-    final highlights = notes.map((n) => n.content).where((c) => c.isNotEmpty).toList();
+    final notes = await provider.getAllMatchingNotes();
+    if (!mounted) return;
     final bookTitles = notes.map((n) => n.bookTitle).where((t) => t.isNotEmpty).toSet().toList();
-
-    // 多本书时使用通用标题，避免拼接书名导致 AI 困惑
-    final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集（${bookTitles.length}本）';
-    final result = await ai.summarizeBook(
-      title,
-      bookTitles.length == 1 ? '' : bookTitles.join('、'),
-      highlights,
-    );
-
-    if (mounted) Navigator.pop(context); // 关闭加载对话框
-
-    if (result != null && mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('AI 摘要'),
-          content: SingleChildScrollView(
-            child: SelectableText(result, style: const TextStyle(fontSize: 14, height: 1.6)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: result));
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
-                );
-              },
-              child: const Text('复制'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI 摘要生成失败，请检查 API 配置'), backgroundColor: Colors.red),
-      );
-    }
+    final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集';
+    await generateSummary(context, title, '', notes);
   }
 
   /// 导出笔记
@@ -144,6 +91,7 @@ class _NotesPageState extends State<NotesPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.reference != null) return _buildReferencePage();
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -157,8 +105,11 @@ class _NotesPageState extends State<NotesPage> {
           IconButton(
             icon: const Icon(Icons.auto_awesome_rounded),
             tooltip: 'AI 摘要',
-            onPressed: () => _aiSummarize(context),
+            onPressed: _aiSummarize,
           ),
+          IconButton(icon: const Icon(Icons.history), tooltip: '历史摘要',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const AISummaryHistoryPage()))),
           // 导出
           IconButton(
             icon: const Icon(Icons.ios_share_rounded),
@@ -260,7 +211,7 @@ class _NotesPageState extends State<NotesPage> {
                       child: Row(
                         children: [
                           Text(
-                            '共 ${filteredNotes.length} 条',
+                            '共 ${provider.matchedCount} 条',
                             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                           ),
                           if (provider.isLoading) ...[
@@ -287,6 +238,36 @@ class _NotesPageState extends State<NotesPage> {
       ),
     );
   }
+
+  Widget _buildReferencePage() => Scaffold(
+    appBar: AppBar(title: const Text('原笔记')),
+    body: FutureBuilder<Map<String, dynamic>?>(future: _target, builder: (context, snapshot) {
+      if (snapshot.hasError) return const Center(child: Text('原笔记加载失败'));
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final row = snapshot.data;
+      if (row == null) return const Center(child: Text('原笔记已不存在；可在摘要历史中核对引用 ID'));
+      final note = NoteItem(id: row['id'], bookId: row['book_id'],
+        bookTitle: row['book_title'], content: row['content'],
+        chapterTitle: row['chapter_title'], createdAt: row['created_at'],
+        isFav: row['is_fav'] == 1,
+        source: NoteSource.values.byName(row['source']));
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        Text('笔记 ID：${note.id}'),
+        _NoteCard(note: note, initiallyExpanded: true, onFavoriteToggle: () async {
+          final db = DatabaseService.instance;
+          if (note.source == NoteSource.bookmark) {
+            await db.toggleBookmarkFavorite(note.id, !note.isFav);
+          } else {
+            await db.toggleFavorite(note.id, !note.isFav);
+          }
+          if (!mounted || !db.isActive) return;
+          SyncService.changes.publish(db);
+        }),
+      ]);
+    }),
+  );
 
   List<NoteItem> _applyLocalFilter(List<NoteItem> notes) {
     // Provider 已经处理了搜索和过滤，这里直接返回
@@ -378,6 +359,7 @@ class _NotesPageState extends State<NotesPage> {
     return RefreshIndicator(
       onRefresh: () => provider.loadNotes(),
       child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: filteredNotes.length,
         itemBuilder: (context, index) {
@@ -393,10 +375,12 @@ class _NotesPageState extends State<NotesPage> {
 }
 
 class _NoteCard extends StatefulWidget {
+  final bool initiallyExpanded;
   final NoteItem note;
   final VoidCallback onFavoriteToggle;
 
   const _NoteCard({
+    this.initiallyExpanded = false,
     required this.note,
     required this.onFavoriteToggle,
   });
@@ -406,7 +390,7 @@ class _NoteCard extends StatefulWidget {
 }
 
 class _NoteCardState extends State<_NoteCard> {
-  bool _isExpanded = false;
+  late bool _isExpanded = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
