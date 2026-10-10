@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/database.dart';
-import '../models/book.dart';
 import '../services/sync_service.dart';
 
-class _ReportLoadCancelled implements Exception {}
 
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
@@ -49,84 +47,34 @@ class _ReportPageState extends State<ReportPage> {
     super.dispose();
   }
 
-  // 数据库列表接口默认只返回 500 条，报告需读取全部本地记录。
-  Future<List<Map<String, dynamic>>> _loadAllItems(
-    Future<List<Map<String, dynamic>>> Function({required int offset, required int limit}) load,
-    bool Function() isCurrent,
-  ) async {
-    final items = <Map<String, dynamic>>[];
-    const pageSize = 500;
-    while (true) {
-      final page = await load(offset: items.length, limit: pageSize);
-      if (!isCurrent()) throw _ReportLoadCancelled();
-      items.addAll(page);
-      if (page.length < pageSize) return items;
-    }
-  }
-
   Future<void> _loadStats() async {
     final request = ++_loadRequest;
     setState(() { _loading = true; _error = null; });
     try {
       final db = DatabaseService.instance;
       bool isCurrent() => mounted && request == _loadRequest && db.isActive;
-      final rawBooks = await db.getAllBooks();
+      final stats = await db.getReportStats();
       if (!isCurrent()) return;
-      final books = rawBooks.map((m) => Book.fromJson(m)).toList();
-
-      // 统计划线 + 笔记（两个表都要查）
-      final rawBookmarks = await _loadAllItems(db.getAllBookmarks, isCurrent);
-      final rawNotes = await _loadAllItems(db.getAllNotes, isCurrent);
-      final totalItemCount = rawBookmarks.length + rawNotes.length;
-
-      final read = books.where((b) => b.isFinished).length;
-      final reading = books.where((b) => b.isReading).length;
-      final unread = books.length - read - reading;
-
-      final titles = {for (final book in books) book.bookId: book.title};
-      final highlightCounts = <String, int>{};
-      for (final bookmark in rawBookmarks) {
-        final bookId = bookmark['book_id'] as String;
-        highlightCounts[bookId] = (highlightCounts[bookId] ?? 0) + 1;
-        if (titles[bookId]?.isNotEmpty != true) {
-          titles[bookId] = bookmark['book_title'] as String? ?? '';
-        }
-      }
-      final topHighlights = highlightCounts.entries.toList()
-        ..sort((a, b) {
-          final byCount = b.value.compareTo(a.value);
-          return byCount != 0 ? byCount : a.key.compareTo(b.key);
-        });
-
-      // books.updated_at 是更新时间，不能用作读完时间；仅统计划线/笔记创建时间。
       final now = DateTime.now();
       final months = <DateTime, int>{
         for (int i = 5; i >= 0; i--) DateTime(now.year, now.month - i): 0,
       };
-      for (final item in [...rawBookmarks, ...rawNotes]) {
-        final timestamp = item['created_at'] as int? ?? 0;
-        if (timestamp <= 0 || timestamp > now.millisecondsSinceEpoch ~/ 1000) continue;
-        final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-        final month = DateTime(date.year, date.month);
-        if (months.containsKey(month)) months[month] = months[month]! + 1;
+      for (final item in stats['monthly'] as List<Map<String, dynamic>>) {
+        final date = DateTime.parse('${item['month']}-01');
+        months[date] = item['total'] as int;
       }
 
       if (!isCurrent()) return;
       setState(() {
-        _totalBooks = books.length;
-        _readBooks = read;
-        _readingBooks = reading;
-        _unreadBooks = unread.clamp(0, books.length);
-        _totalNotes = totalItemCount;
-        _topHighlights = topHighlights.take(5).map((entry) {
-          final title = titles[entry.key];
-          return MapEntry(title == null || title.isEmpty ? '未知书籍' : title, entry.value);
-        }).toList();
+        _totalBooks = stats['totalBooks'] as int;
+        _readBooks = stats['finishedBooks'] as int;
+        _readingBooks = stats['readingBooks'] as int;
+        _unreadBooks = _totalBooks - _readBooks - _readingBooks;
+        _totalNotes = (stats['totalBookmarks'] as int) + (stats['totalNotes'] as int);
+        _topHighlights = (stats['top'] as List<Map<String, dynamic>>)
+            .map((r) => MapEntry(r['title'] as String, r['total'] as int)).toList();
         _monthlyActivity = months.entries.toList();
       });
-    } on _ReportLoadCancelled {
-      // 页面退出、账号结束或被新请求替代属于取消，真实读取异常仍显示。
-      return;
     } catch (e) {
       if (!mounted || request != _loadRequest) return;
       setState(() => _error = e.toString());

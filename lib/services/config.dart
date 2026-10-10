@@ -11,6 +11,7 @@ class AppConfig {
   String baseUrl;
   String modelName;
   String? trustedAccountId;
+  final Map<String, String> _persistedSecrets = {};
 
   AppConfig({
     this.cookie = '',
@@ -51,16 +52,21 @@ class AppConfig {
       // 写入成功后才删除旧值，迁移失败时可重试。
       await _secureStorage.write(key: key, value: legacy);
     }
-    await prefs.remove(key);
-    return stored ?? legacy ?? '';
+    if (legacy != null) await prefs.remove(key);
+    final value = stored ?? legacy ?? '';
+    _persistedSecrets[key] = value;
+    return value;
   }
 
   Future<void> _saveSecret(String key, String value) async {
+    final previous = _persistedSecrets[key] ?? await _secureStorage.read(key: key) ?? '';
+    if (previous == value) { _persistedSecrets[key] = value; return; }
     if (value.isEmpty) {
       await _secureStorage.delete(key: key);
     } else {
       await _secureStorage.write(key: key, value: value);
     }
+    _persistedSecrets[key] = value;
   }
 
   /// 本地账号恢复独立于安全存储，凭据暂时不可读时仍可浏览缓存。
@@ -75,15 +81,21 @@ class AppConfig {
   }
 
   Future<void> load() async {
-    await loadTrustedAccount();
     final prefs = await SharedPreferences.getInstance();
-    cookie = await _loadSecret(prefs, _keys['cookie']!);
-    final mobile = await _secureStorage.read(key: _keys['credentials']!);
+    final values = await Future.wait<String?>([
+      _loadSecret(prefs, _keys['cookie']!),
+      _secureStorage.read(key: _keys['credentials']!),
+      _loadSecret(prefs, _keys['apiKey']!),
+      loadTrustedAccount().then((_) => null),
+    ]);
+    cookie = values[0] ?? '';
+    final mobile = values[1];
+    _persistedSecrets[_keys['credentials']!] = mobile ?? '';
     credentials = mobile == null
         ? null
         : Credentials.fromJson(jsonDecode(mobile) as Map<String, dynamic>);
     if (credentials != null) cookie = '';
-    apiKey = await _loadSecret(prefs, _keys['apiKey']!);
+    apiKey = values[2] ?? '';
     baseUrl = prefs.getString(_keys['baseUrl']!) ?? 'https://api.deepseek.com';
     if (!isHttpsUrl(baseUrl)) baseUrl = '';
     modelName = prefs.getString(_keys['modelName']!) ?? 'deepseek-chat';
@@ -94,13 +106,14 @@ class AppConfig {
       throw const FormatException('AI 服务地址必须是有效的 HTTPS 地址');
     }
     final prefs = await SharedPreferences.getInstance();
-    await _saveSecret(_keys['cookie']!, cookie);
-    await saveCredentials();
-    await _saveSecret(_keys['apiKey']!, apiKey);
-    await prefs.remove(_keys['cookie']!);
-    await prefs.remove(_keys['apiKey']!);
-    await prefs.setString(_keys['baseUrl']!, baseUrl);
-    await prefs.setString(_keys['modelName']!, modelName);
+    await Future.wait([
+      _saveSecret(_keys['cookie']!, cookie), saveCredentials(),
+      _saveSecret(_keys['apiKey']!, apiKey),
+    ]);
+    if (prefs.containsKey(_keys['cookie']!)) await prefs.remove(_keys['cookie']!);
+    if (prefs.containsKey(_keys['apiKey']!)) await prefs.remove(_keys['apiKey']!);
+    if (prefs.getString(_keys['baseUrl']!) != baseUrl) await prefs.setString(_keys['baseUrl']!, baseUrl);
+    if (prefs.getString(_keys['modelName']!) != modelName) await prefs.setString(_keys['modelName']!, modelName);
   }
 
   Future<void> clear() async {
@@ -118,6 +131,7 @@ class AppConfig {
     await _secureStorage.delete(key: _keys['cookie']!);
     await _secureStorage.delete(key: _keys['credentials']!);
     await _secureStorage.delete(key: _keys['apiKey']!);
+    _persistedSecrets.clear();
   }
 
   /// 仅在服务器确认账号归属后调用，不从 Cookie 推导可信记录。
@@ -126,6 +140,10 @@ class AppConfig {
       throw ArgumentError('无效的账号 ID');
     }
     final prefs = await SharedPreferences.getInstance();
+    if (prefs.getString(_keys['trustedAccountId']!) == accountId) {
+      trustedAccountId = accountId;
+      return;
+    }
     if (!await prefs.setString(_keys['trustedAccountId']!, accountId)) {
       throw StateError('可信账号保存失败');
     }

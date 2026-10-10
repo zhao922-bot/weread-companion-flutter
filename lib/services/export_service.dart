@@ -1,142 +1,99 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'database.dart';
 
-/// 笔记导出服务
+String _formatBatch(Map<String, dynamic> input) {
+  final out = StringBuffer();
+  String? chapter = input['chapter'] as String?;
+  for (final row in input['rows'] as List<Map<String, dynamic>>) {
+    final ch = row['chapter_title'] as String? ?? '';
+    if (ch.isNotEmpty && ch != chapter) {
+      chapter = ch;
+      out.write('\n**$ch**\n\n');
+    }
+    out.write('- ${row['source'] == 'bookmark' ? '📝' : '💭'} ${row['content'] ?? ''}\n');
+  }
+  return jsonEncode({'text': out.toString(), 'chapter': chapter});
+}
+
 class ExportService {
   static Future<void> clearLocalExports() async {
-    final documents = await getApplicationDocumentsDirectory();
-    final temporary = await getTemporaryDirectory();
-    for (final directory in [documents, temporary]) {
+    for (final directory in [await getApplicationDocumentsDirectory(), await getTemporaryDirectory()]) {
       if (!await directory.exists()) continue;
       await for (final entry in directory.list()) {
         final name = entry.uri.pathSegments.last;
-        if (entry is File &&
-            (RegExp(r'^微信读书笔记_[0-9]+\.md$').hasMatch(name) ||
-                RegExp(r'^weread_card_[0-9]+\.png$').hasMatch(name))) {
+        if (entry is File && (RegExp(r'^微信读书笔记_[0-9]+\.md$').hasMatch(name) ||
+            RegExp(r'^weread_card_[0-9]+(?:_[0-9]+)?\.png$').hasMatch(name))) {
           await entry.delete();
         }
       }
     }
   }
 
-  /// 导出笔记为 Markdown 格式
-  /// 返回文件路径
   static Future<String> exportToMarkdown({String? bookId}) async {
     final db = DatabaseService.instance;
-
-    // 获取所有划线和笔记
-    final bookmarks = await _readAll((offset, limit) =>
-        db.getAllBookmarks(offset: offset, limit: limit, bookId: bookId));
-    final notes = await _readAll((offset, limit) =>
-        db.getAllNotes(offset: offset, limit: limit, bookId: bookId));
-
-    if (bookmarks.isEmpty && notes.isEmpty) {
-      throw Exception('暂无数据可导出');
-    }
-
-    // 按 bookId 分组
-    final booksMap = <String, Map<String, dynamic>>{};
-
-    for (final bm in bookmarks) {
-      final bid = bm['book_id'] ?? '';
-      if (bid.isEmpty) continue;
-      booksMap.putIfAbsent(bid, () => {
-        'title': bm['book_title'] ?? '未知',
-        'items': <Map<String, dynamic>>[],
-      });
-      (booksMap[bid]!['items'] as List).add({
-        ...bm,
-        '_type': 'bookmark',
-      });
-    }
-
-    for (final nt in notes) {
-      final bid = nt['book_id'] ?? '';
-      if (bid.isEmpty) continue;
-      booksMap.putIfAbsent(bid, () => {
-        'title': nt['book_title'] ?? '未知',
-        'items': <Map<String, dynamic>>[],
-      });
-      (booksMap[bid]!['items'] as List).add({
-        ...nt,
-        '_type': 'note',
-      });
-    }
-
-    // 生成 Markdown
+    final connection = await db.database;
+    // Preserve book order: newest bookmark first, then note-only books.
+    final books = await connection.rawQuery('''
+      SELECT book_id, MIN(priority) AS priority,
+        COALESCE(MAX(CASE WHEN priority = 0 THEN created_at END), MAX(created_at)) AS newest FROM (
+        SELECT book_id, created_at, 0 AS priority FROM bookmarks
+        UNION ALL SELECT book_id, created_at, 1 AS priority FROM notes)
+      ${bookId == null ? '' : 'WHERE book_id = ?'}
+      GROUP BY book_id ORDER BY priority, newest DESC, book_id DESC
+    ''', [if (bookId != null) bookId]);
+    if (books.isEmpty) throw Exception('暂无数据可导出');
     final now = DateTime.now();
-    final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-    final lines = <String>[
-      '# 📚 微信读书笔记\n',
-      '导出时间: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}\n',
-    ];
-
-    for (final entry in booksMap.entries) {
-      final info = entry.value;
-      lines.add('\n## 📖 ${info['title']}\n');
-
-      // 同书内按时间正序排列（划线和笔记统一排序）
-      final items = info['items'] as List<Map<String, dynamic>>;
-      items.sort((a, b) {
-        final ta = a['created_at'] ?? 0;
-        final tb = b['created_at'] ?? 0;
-        return ta.compareTo(tb);
-      });
-
-      // 按章节分组输出
-      String? currentChapter;
-      for (final item in items) {
-        final type = item['_type'];
-        final ch = item['chapter_title'] ?? '';
-
-        // 章节标题
-        if (ch.isNotEmpty && ch != currentChapter) {
-          currentChapter = ch;
-          lines.add('\n**$ch**\n');
-        }
-
-        if (type == 'bookmark') {
-          lines.add('- 📝 ${item['mark_text'] ?? ''}');
-        } else {
-          lines.add('- 💭 ${item['content'] ?? ''}');
+    String two(int n) => n.toString().padLeft(2, '0');
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}.md');
+    final sink = file.openWrite(encoding: utf8);
+    var succeeded = false;
+    try {
+      sink.write('# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
+      for (final book in books) {
+        final id = book['book_id'];
+        final title = await connection.rawQuery('''
+          SELECT book_title FROM (
+            SELECT book_title, created_at, bookmark_id AS id, 0 AS priority FROM bookmarks WHERE book_id = ?
+            UNION ALL SELECT book_title, created_at, note_id AS id, 1 AS priority FROM notes WHERE book_id = ?)
+          ORDER BY priority, created_at DESC, id DESC LIMIT 1
+        ''', [id, id]);
+        sink.write('\n\n## 📖 ${title.first['book_title']}\n\n');
+        String? chapter;
+        Map<String, dynamic>? after;
+        while (true) {
+          if (!db.isActive) throw StateError('账号会话已结束');
+          final rows = await connection.rawQuery('''
+            SELECT * FROM (
+              SELECT bookmark_id AS id, mark_text AS content, chapter_title, created_at, 'bookmark' AS source FROM bookmarks WHERE book_id = ?
+              UNION ALL SELECT note_id AS id, content, chapter_title, created_at, 'note' AS source FROM notes WHERE book_id = ?)
+            ${after == null ? '' : 'WHERE created_at > ? OR (created_at = ? AND (source > ? OR (source = ? AND id < ?)))'}
+            ORDER BY created_at ASC, source ASC, id DESC LIMIT 500
+          ''', [id, id, if (after != null) ...[after['created_at'], after['created_at'], after['source'], after['source'], after['id']]]);
+          if (rows.isEmpty) break;
+          final formatted = jsonDecode(await compute(_formatBatch, {'rows': rows, 'chapter': chapter})) as Map<String, dynamic>;
+          sink.write(formatted['text']);
+          chapter = formatted['chapter'] as String?;
+          after = rows.last;
+          await sink.flush();
         }
       }
-      lines.add('');
+      await sink.flush();
+      if (!db.isActive) throw StateError('账号会话已结束');
+      succeeded = true;
+    } finally {
+      await sink.close();
+      if (!succeeded && await file.exists()) await file.delete();
     }
-
-    // 保存文件
-    final dir = await getApplicationDocumentsDirectory();
-    if (!db.isActive) throw StateError('账号会话已结束');
-    final file = File('${dir.path}/微信读书笔记_$dateStr.md');
-    await file.writeAsString(lines.join('\n'), encoding: utf8);
-    if (!db.isActive) {
-      if (await file.exists()) await file.delete();
-      throw StateError('账号会话已结束');
-    }
-
     return file.path;
   }
 
-  static Future<List<Map<String, dynamic>>> _readAll(
-      Future<List<Map<String, dynamic>>> Function(int offset, int limit) load) async {
-    const batchSize = 500;
-    final items = <Map<String, dynamic>>[];
-    while (true) {
-      final batch = await load(items.length, batchSize);
-      items.addAll(batch);
-      if (batch.isEmpty) return items;
-    }
-  }
-
-  /// 导出并通过系统分享
   static Future<void> exportAndShare({String? bookId}) async {
-    final filePath = await exportToMarkdown(bookId: bookId);
-    await Share.shareXFiles(
-      [XFile(filePath)],
-      text: '微信读书笔记导出',
-    );
+    final path = await exportToMarkdown(bookId: bookId);
+    await Share.shareXFiles([XFile(path)], text: '微信读书笔记导出');
   }
 }

@@ -274,7 +274,8 @@ class _NotesPageState extends State<NotesPage> {
             await db.toggleFavorite(note.id, !note.isFav);
           }
           if (!mounted || !db.isActive) return;
-          SyncService.changes.publish(db, favoritesOnly: true);
+          SyncService.changes.publish(db, favoritesOnly: true, bookIds: {note.bookId},
+            itemIds: {'${note.source.name}:${note.id}'}, sources: {note.source.name});
         }),
       ]);
     }),
@@ -362,17 +363,17 @@ class _NotesPageState extends State<NotesPage> {
     }
 
     // 正常列表
+    final childIndices = <Key, int>{
+      for (var i = 0; i < filteredNotes.length; i++)
+        ValueKey('${filteredNotes[i].source.name}:${filteredNotes[i].id}'): i,
+    };
     return RefreshIndicator(
       onRefresh: () => provider.loadNotes(),
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: filteredNotes.length + (provider.hasMore || provider.error != null ? 1 : 0),
-        findChildIndexCallback: (key) {
-          final index = filteredNotes.indexWhere((note) =>
-            ValueKey('${note.source.name}:${note.id}') == key);
-          return index < 0 ? null : index;
-        },
+        findChildIndexCallback: (key) => childIndices[key],
         itemBuilder: (context, index) {
           if (index == filteredNotes.length) {
             if (provider.isLoading) return const Center(child: CircularProgressIndicator());

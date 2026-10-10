@@ -71,11 +71,12 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 8,
       onCreate: (db, version) async {
         await _createTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 5) await _createSyncTable(db);
         if (oldVersion < 4) await _createSummaryTable(db);
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE bookmarks ADD COLUMN is_fav INTEGER DEFAULT 0');
@@ -90,12 +91,17 @@ class DatabaseService {
             'PRIMARY KEY (book_id, chapter_uid))'
           );
         }
+        if (oldVersion < 6) await _createItemIndexes(db);
+        if (oldVersion < 7) await _createSearchIndex(db);
+        if (oldVersion < 8) await _upgradeSummaryMetadata(db);
       },
     );
   }
 
   Future<void> _createTables(Database db) async {
+    await _createSyncTable(db);
     await _createSummaryTable(db);
+    await _upgradeSummaryMetadata(db);
     await db.execute('''
       CREATE TABLE books (
         book_id TEXT PRIMARY KEY,
@@ -136,6 +142,8 @@ class DatabaseService {
 
     await db.execute('CREATE INDEX idx_bookmarks_book_id ON bookmarks(book_id)');
     await db.execute('CREATE INDEX idx_notes_book_id ON notes(book_id)');
+    await _createItemIndexes(db);
+    await _createSearchIndex(db);
 
     await db.execute('''
       CREATE TABLE chapters (
@@ -148,6 +156,84 @@ class DatabaseService {
     ''');
   }
 
+  Future<void> _createSearchIndex(Database db) async {
+    await db.execute('CREATE TABLE item_trigrams (term TEXT NOT NULL, source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(term, source, id)) WITHOUT ROWID');
+    await db.execute('CREATE INDEX idx_trigrams_item ON item_trigrams(source, id)');
+    for (final (table, id, content, source) in [
+      ('bookmarks', 'bookmark_id', 'mark_text', 'bookmark'),
+      ('notes', 'note_id', 'content', 'note')]) {
+      if (!await _tableExists(db, table)) continue;
+      String terms(String prefix) => '''
+        SELECT DISTINCT lower(substr(text, n, 3)), '$source', $prefix$id FROM (
+          WITH RECURSIVE positions(n) AS (
+            SELECT 1 UNION ALL SELECT n + 1 FROM positions
+            WHERE n < length($prefix$content || char(10) || $prefix book_title || char(10) || $prefix chapter_title) - 2)
+          SELECT n, $prefix$content || char(10) || $prefix book_title || char(10) || $prefix chapter_title AS text FROM positions
+        ) WHERE length(substr(text, n, 3)) = 3
+      '''.replaceAll('$prefix ', prefix);
+      // Ordinary SQLite tables/triggers work on Android without FTS5 extensions.
+      // Backfill needs a row from the source table for each term.
+      // Trigger inserts and updates are in the same transaction as the source row.
+      for (final event in ['INSERT', 'UPDATE']) {
+        await db.execute('''CREATE TRIGGER search_${table}_${event.toLowerCase()}
+          AFTER ${event == 'UPDATE' ? 'UPDATE OF $content, book_title, chapter_title, $id' : event} ON $table BEGIN
+          DELETE FROM item_trigrams WHERE source = '$source' AND id = new.$id;
+          INSERT OR IGNORE INTO item_trigrams ${terms('new.')}; END''');
+      }
+      await db.execute('''CREATE TRIGGER search_${table}_delete AFTER DELETE ON $table BEGIN
+        DELETE FROM item_trigrams WHERE source = '$source' AND id = old.$id; END''');
+      await db.execute('UPDATE $table SET $content = $content');
+    }
+  }
+
+  Future<void> _createItemIndexes(Database db) async {
+    for (final (table, id) in [('bookmarks', 'bookmark_id'), ('notes', 'note_id')]) {
+      if (!await _tableExists(db, table)) continue;
+      for (final prefix in ['', 'book_id, ', 'is_fav, ']) {
+        final name = prefix.isEmpty ? 'time' : prefix.startsWith('book') ? 'book_time' : 'fav_time';
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_${table}_$name ON $table (${prefix}created_at DESC, $id DESC)');
+      }
+    }
+  }
+
+  Future<bool> _tableExists(Database db, String table) async =>
+      (await db.rawQuery("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [table])).isNotEmpty;
+
+  Future<void> _createSyncTable(Database db) => db.execute('''
+    CREATE TABLE sync_cursors (
+      book_id TEXT NOT NULL, source TEXT NOT NULL, synckey TEXT NOT NULL,
+      PRIMARY KEY (book_id, source))
+  ''');
+
+  Future<String> getSyncCursor(String bookId, String source) async {
+    final rows = await (await database).query('sync_cursors',
+        where: 'book_id = ? AND source = ?', whereArgs: [bookId, source]);
+    return rows.isEmpty ? '0' : rows.single['synckey'] as String;
+  }
+
+  Future<void> applySyncDelta(String bookId, String source,
+      List<Map<String, dynamic>> rows, List<String> deleted, String? cursor) async {
+    final table = source == 'note' ? 'notes' : 'bookmarks';
+    final id = source == 'note' ? 'note_id' : 'bookmark_id';
+    await (await database).transaction((txn) async {
+      for (final row in rows) {
+        final values = {'is_fav': 0, ...row};
+        final columns = values.keys.toList();
+        await txn.rawInsert('INSERT INTO $table (${columns.join(',')}) '
+            'VALUES (${List.filled(columns.length, '?').join(',')}) '
+            'ON CONFLICT($id) DO UPDATE SET ${columns.where((c) => c != id && c != 'is_fav').map((c) => '$c = excluded.$c').join(',')}',
+            values.values.toList());
+      }
+      for (final key in deleted) {
+        await txn.delete(table, where: 'book_id = ? AND $id = ?', whereArgs: [bookId, key]);
+      }
+      if (cursor != null) {
+        await txn.insert('sync_cursors', {'book_id': bookId, 'source': source, 'synckey': cursor},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
   Future<void> _createSummaryTable(Database db) => db.execute('''
     CREATE TABLE ai_summaries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,7 +243,48 @@ class DatabaseService {
 
   Future<void> saveSummary(AISummary summary) async {
     final db = await database;
-    await db.insert('ai_summaries', {'payload': jsonEncode(summary.toJson())});
+    await db.transaction((txn) async {
+      final id = await txn.insert('ai_summaries', {'payload': jsonEncode(summary.toJson()),
+        'title': summary.title, 'coverage': summary.coverage, 'created_at': summary.createdAt});
+      for (final book in summary.references.map((r) => r.bookId).toSet()) {
+        await txn.insert('summary_books', {'summary_id': id, 'book_id': book});
+      }
+    });
+  }
+
+  Future<void> _upgradeSummaryMetadata(Database db) async {
+    await db.execute('ALTER TABLE ai_summaries ADD COLUMN title TEXT');
+    await db.execute('ALTER TABLE ai_summaries ADD COLUMN coverage TEXT');
+    await db.execute('ALTER TABLE ai_summaries ADD COLUMN created_at INTEGER');
+    await db.execute('CREATE TABLE summary_books (summary_id INTEGER NOT NULL, book_id TEXT NOT NULL, PRIMARY KEY(book_id, summary_id))');
+    var last = 0;
+    while (true) {
+      final rows = await db.query('ai_summaries', where: 'id > ?', whereArgs: [last], orderBy: 'id', limit: 100);
+      if (rows.isEmpty) break;
+      for (final row in rows) {
+        final summary = AISummary.fromJson(jsonDecode(row['payload'] as String));
+        await db.update('ai_summaries', {'title': summary.title, 'coverage': summary.coverage,
+          'created_at': summary.createdAt}, where: 'id = ?', whereArgs: [row['id']]);
+        for (final book in summary.references.map((r) => r.bookId).toSet()) {
+          await db.insert('summary_books', {'summary_id': row['id'], 'book_id': book});
+        }
+      }
+      last = rows.last['id'] as int;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getSummaryMetadata({String? bookId, int? before, int limit = 50}) async {
+    final clauses = <String>[
+      if (bookId != null) 'id IN (SELECT summary_id FROM summary_books WHERE book_id = ?)',
+      if (before != null) 'id < ?'];
+    return (await database).query('ai_summaries', columns: ['id', 'title', 'coverage', 'created_at'],
+      where: clauses.isEmpty ? null : clauses.join(' AND '),
+      whereArgs: [if (bookId != null) bookId, if (before != null) before], orderBy: 'id DESC', limit: limit);
+  }
+
+  Future<AISummary> getSummary(int id) async {
+    final rows = await (await database).query('ai_summaries', columns: ['payload'], where: 'id = ?', whereArgs: [id]);
+    return AISummary.fromJson(jsonDecode(rows.single['payload'] as String));
   }
 
   Future<List<AISummary>> getSummaries({String? bookId}) async {
@@ -218,6 +345,8 @@ class DatabaseService {
       await txn.delete('books', where: 'book_id = ?', whereArgs: [bookId]);
       await txn.delete('bookmarks', where: 'book_id = ?', whereArgs: [bookId]);
       await txn.delete('notes', where: 'book_id = ?', whereArgs: [bookId]);
+      await txn.delete('sync_cursors', where: 'book_id = ?', whereArgs: [bookId]);
+      await txn.delete('chapters', where: 'book_id = ?', whereArgs: [bookId]);
     });
   }
 
@@ -269,7 +398,7 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getAllBookmarks({int offset = 0, int limit = 500,
     String query = '', String? bookId}) async {
     final db = await database;
-    final filter = _itemFilter(query, bookId, 'mark_text');
+    final filter = _bookmarkFilter(query, bookId);
     return await db.query('bookmarks', where: filter.$1, whereArgs: filter.$2,
         orderBy: 'created_at DESC, bookmark_id DESC', offset: offset, limit: limit);
   }
@@ -289,9 +418,19 @@ class DatabaseService {
     return (clauses.isEmpty ? null : clauses.join(' AND '), args);
   }
 
+  (String?, List<Object?>) _bookmarkFilter(String query, String? bookId) {
+    final filter = _itemFilter(query, bookId, 'mark_text');
+    if (query.runes.length < 3) return filter;
+    return ('${filter.$1} AND bookmark_id IN (SELECT id FROM item_trigrams WHERE term = ? AND source = \'bookmark\')',
+      [...filter.$2, _searchTerm(query)]);
+  }
+
+  String _searchTerm(String query) => String.fromCharCodes(query.runes.take(3))
+      .replaceAllMapped(RegExp('[A-Z]'), (m) => m[0]!.toLowerCase());
+
   Future<int> countBookmarks({String query = ''}) async {
     final db = await database;
-    final filter = _itemFilter(query, null, 'mark_text');
+    final filter = _bookmarkFilter(query, null);
     final rows = await db.query('bookmarks', columns: ['COUNT(*) AS total'],
         where: filter.$1, whereArgs: filter.$2);
     return rows.first['total'] as int;
@@ -311,16 +450,24 @@ class DatabaseService {
     final clauses = <String>[if (search.$1 != null) search.$1!];
     if (filter == ReadingFilter.notes) clauses.add("source = 'note'");
     if (filter == ReadingFilter.favorites) clauses.add('is_fav = 1');
-    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', search.$2);
+    final args = [...search.$2];
+    if (query.runes.length >= 3) {
+      clauses.add('(source, id) IN (SELECT source, id FROM item_trigrams WHERE term = ?)');
+      args.add(_searchTerm(query));
+    }
+    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', args);
   }
 
   Future<List<Map<String, dynamic>>> getReadingItems({int offset = 0,
-    int limit = 100, String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
+    int limit = 100, String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId,
+    NoteItem? after}) async {
     final db = await database;
     final where = _readingFilter(query, filter, bookId);
-    return db.rawQuery('SELECT * FROM ($_readingItems) ${where.$1} '
+    final cursor = after == null ? '' : '${where.$1.isEmpty ? 'WHERE' : 'AND'} '
+        '(created_at, source, id) < (?, ?, ?)';
+    return db.rawQuery('SELECT * FROM ($_readingItems) ${where.$1} $cursor '
         'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
-        [...where.$2, limit, offset]);
+        [...where.$2, if (after != null) ...[after.createdAt, after.source.name, after.id], limit, offset]);
   }
 
   Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
@@ -407,6 +554,27 @@ class DatabaseService {
   }
 
   // ── Stats ──
+
+  Future<Map<String, dynamic>> getReportStats({DateTime? now}) async {
+    final db = await database;
+    final time = now ?? DateTime.now();
+    final stats = await getReadingStats();
+    final top = await db.rawQuery('''
+      SELECT COALESCE(NULLIF(b.title, ''), NULLIF(MAX(m.book_title), ''), '未知书籍') AS title,
+        COUNT(*) AS total FROM bookmarks m LEFT JOIN books b ON b.book_id = m.book_id
+      GROUP BY m.book_id ORDER BY total DESC, m.book_id ASC LIMIT 5
+    ''');
+    final monthly = await db.rawQuery('''
+      SELECT strftime('%Y-%m', created_at, 'unixepoch', 'localtime') AS month,
+        COUNT(*) AS total FROM (
+        SELECT created_at FROM bookmarks WHERE created_at BETWEEN ? AND ?
+        UNION ALL SELECT created_at FROM notes WHERE created_at BETWEEN ? AND ?)
+      GROUP BY month
+    ''', [for (var i = 0; i < 2; i++) ...[
+      DateTime(time.year, time.month - 5).millisecondsSinceEpoch ~/ 1000,
+      time.millisecondsSinceEpoch ~/ 1000]]);
+    return {...stats, 'top': top, 'monthly': monthly};
+  }
 
   Future<Map<String, dynamic>> getReadingStats() async {
     final db = await database;

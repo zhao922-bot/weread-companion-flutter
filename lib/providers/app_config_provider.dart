@@ -60,15 +60,19 @@ class AppConfigProvider extends ChangeNotifier {
     _loginError = null;
     notifyListeners();
     try {
-      await config.loadTrustedAccount();
-      final trustedId = config.trustedAccountId;
-      if (trustedId != null) {
-        await DatabaseService.selectAccount(trustedId);
-        await DatabaseService.instance.database;
-        _canBrowseLocal = true;
-        notifyListeners();
+      Future<void> restoreLocal() async {
+        await config.loadTrustedAccount();
+        final trustedId = config.trustedAccountId;
+        if (trustedId != null) {
+          await DatabaseService.selectAccount(trustedId);
+          await DatabaseService.instance.database;
+          _canBrowseLocal = true;
+          notifyListeners();
+          // Deliver the local-ready state before completing configuration load.
+          await Future<void>.delayed(Duration.zero);
+        }
       }
-      await config.load();
+      await Future.wait([restoreLocal(), config.load()]);
       _isLoaded = true;
       _isLoading = false;
       notifyListeners();

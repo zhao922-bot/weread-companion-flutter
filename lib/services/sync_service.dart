@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'package:dio/dio.dart';
 import '../models/book.dart';
 import 'api.dart';
 import 'database.dart';
@@ -39,14 +41,26 @@ class SyncResult {
 }
 
 /// 所有同步入口共享的编排与本地数据刷新通知。
+enum SyncChangeKind { all, bookshelf, items, favorites }
+
 class SyncChanges extends ChangeNotifier {
   DatabaseService? value;
   int dataVersion = 0;
   bool favoritesOnly = false;
+  Set<String> bookIds = const {};
+  Set<String> itemIds = const {};
+  Set<String> sources = const {};
+  SyncChangeKind kind = SyncChangeKind.all;
 
-  void publish(DatabaseService db, {bool favoritesOnly = false}) {
+  void publish(DatabaseService db, {bool favoritesOnly = false,
+      SyncChangeKind kind = SyncChangeKind.all, Set<String> bookIds = const {},
+      Set<String> itemIds = const {}, Set<String> sources = const {}}) {
     value = db;
     this.favoritesOnly = favoritesOnly;
+    this.kind = favoritesOnly ? SyncChangeKind.favorites : kind;
+    this.bookIds = Set.unmodifiable(bookIds);
+    this.itemIds = Set.unmodifiable(itemIds);
+    this.sources = Set.unmodifiable(sources);
     if (!favoritesOnly) dataVersion++;
     notifyListeners();
   }
@@ -73,6 +87,9 @@ class SyncService {
   final bool Function() isCancelled;
   final VoidCallback onChanged;
   final Duration requestInterval;
+  static DateTime _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  static int _activeRequests = 0;
+  static final _waiting = <Completer<void>>[];
 
   SyncService({
     required this.loadBooks,
@@ -85,50 +102,122 @@ class SyncService {
 
   factory SyncService.forApi(WeReadApi api, {bool Function()? isCancelled}) {
     final db = api.db;
+    final changedBooks = <String>{};
+    final changedItems = <String>{};
+    final changedSources = <String>{};
+    void record(String book, String source, Iterable<String> ids) {
+      final keys = ids.toList();
+      if (keys.isEmpty) return;
+      changedBooks.add(book);
+      changedSources.add(source);
+      changedItems.addAll(keys.map((id) => '$source:$id'));
+    }
     return SyncService(
       loadBooks: () async {
         final books = await api.fetchBookshelf();
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
         await db.insertBooks(books.map((b) => b.toJson()).toList());
+        changes.publish(db, kind: SyncChangeKind.bookshelf,
+          bookIds: books.map((b) => b.bookId).toSet());
         return books;
       },
       loadBookmarks: (book) async {
-        final rows = await api.fetchBookmarks(book.bookId, book.title);
+        String? cursor;
+        var deleted = <String>[];
+        final rows = await api.fetchBookmarks(book.bookId, book.title,
+            synckey: await db.getSyncCursor(book.bookId, 'bookmark'),
+            onDelta: (key, ids) { cursor = key; deleted = ids; });
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
-        await db.insertBookmarksPreserveFav(rows.map((r) => r.toJson()).toList());
+        await db.applySyncDelta(book.bookId, 'bookmark', rows.map((r) => r.toJson()).toList(), deleted, cursor);
+        record(book.bookId, 'bookmark', [...rows.map((r) => r.bookmarkId), ...deleted]);
         return rows.length;
       },
       loadNotes: (book) async {
-        final rows = await api.fetchNotes(book.bookId, book.title);
+        String? cursor;
+        var deleted = <String>[];
+        final rows = await api.fetchNotes(book.bookId, book.title,
+            synckey: await db.getSyncCursor(book.bookId, 'note'),
+            onDelta: (key, ids) { cursor = key; deleted = ids; });
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
-        await db.insertNotesPreserveFav(rows);
+        await db.applySyncDelta(book.bookId, 'note', rows, deleted, cursor);
+        record(book.bookId, 'note', [...rows.map((r) => r['note_id'] as String), ...deleted]);
         return rows.length;
       },
       isCancelled: () => api.syncCancelled || !db.isActive || (isCancelled?.call() ?? false),
       onChanged: () {
-        if (db.isActive) {
-          changes.publish(db);
+        if (db.isActive && changedItems.isNotEmpty) {
+          changes.publish(db, kind: SyncChangeKind.items, bookIds: changedBooks,
+            itemIds: changedItems, sources: changedSources);
+          changedBooks.clear(); changedItems.clear(); changedSources.clear();
         }
       },
     );
+  }
+
+  Future<T> _request<T>(Future<T> Function() load) async {
+    if (_activeRequests < 4) {
+      _activeRequests++;
+    } else {
+      final gate = Completer<void>();
+      _waiting.add(gate);
+      await gate.future;
+    }
+    try {
+      return await _retryRequest(load);
+    } finally {
+      if (_waiting.isEmpty) {
+        _activeRequests--;
+      } else {
+        _waiting.removeAt(0).complete();
+      }
+    }
+  }
+
+  Future<T> _retryRequest<T>(Future<T> Function() load) async {
+    for (var attempt = 0; ; attempt++) {
+      while (_blockedUntil.isAfter(DateTime.now()) && !isCancelled()) {
+        await Future<void>.delayed(_blockedUntil.difference(DateTime.now()));
+      }
+      if (isCancelled()) throw StateError('同步已取消');
+      try {
+        return await load();
+      } on DioException catch (e) {
+        final status = e.response?.statusCode;
+        if (attempt >= 2 || (status != 429 && status != 503 &&
+            e.type != DioExceptionType.connectionTimeout &&
+            e.type != DioExceptionType.receiveTimeout)) {
+          rethrow;
+        }
+        final seconds = int.tryParse(e.response?.headers.value('retry-after') ?? '');
+        final delay = seconds != null ? Duration(seconds: seconds) :
+            (status == 429 ? requestInterval : const Duration(milliseconds: 500)) * (1 << attempt);
+        final until = DateTime.now().add(delay);
+        if (until.isAfter(_blockedUntil)) _blockedUntil = until;
+      }
+    }
   }
 
   Future<BookSyncResult> _syncBook(Book book) async {
     final errors = <String>[];
     var bookmarks = 0;
     var notes = 0;
-    try {
-      bookmarks = await loadBookmarks(book);
-    } catch (e) {
-      errors.add('划线：$e');
-    }
-    if (!isCancelled()) {
+    Future<void> bookmarksTask() async {
       try {
-        notes = await loadNotes(book);
+        bookmarks = await _request(() => loadBookmarks(book));
+      } catch (e) {
+        errors.add('划线：$e');
+      }
+    }
+    final first = bookmarksTask();
+    Future<void> notesTask() async {
+      if (isCancelled()) return;
+      try {
+        notes = await _request(() => loadNotes(book));
       } catch (e) {
         errors.add('笔记：$e');
       }
     }
+    await Future.wait([first, notesTask()]);
     if (isCancelled()) errors.add('同步已取消');
     return BookSyncResult(book, bookmarks, notes, errors);
   }
@@ -139,18 +228,20 @@ class SyncService {
   }) async {
     if (isCancelled()) return SyncResult([], 0, cancelled: true);
     try {
-      final books = await loadBooks();
+      final books = await _request(loadBooks);
       onBooks?.call(books.length);
       final results = <BookSyncResult>[];
-      for (final book in books) {
-        if (isCancelled()) break;
-        final result = await _syncBook(book);
-        results.add(result);
-        onProgress?.call(result, results.length);
-        if (results.length < books.length && !isCancelled()) {
-          await Future<void>.delayed(requestInterval);
+      var next = 0;
+      Future<void> worker() async {
+        while (!isCancelled() && next < books.length) {
+          final book = books[next++];
+          final result = await _syncBook(book);
+          results.add(result);
+          onProgress?.call(result, results.length);
         }
       }
+      // Two books, each with two overlapping requests: at most four in flight.
+      await Future.wait([worker(), worker()]);
       return SyncResult(results, books.length, cancelled: isCancelled());
     } finally {
       onChanged();

@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -17,6 +19,7 @@ class CardsPage extends StatefulWidget {
 
 class _CardsPageState extends State<CardsPage> {
   String _searchQuery = '';
+  Timer? _searchTimer;
   final TextEditingController _searchController = TextEditingController();
   int _currentPage = 1;
   int _selectedIndex = 0;
@@ -36,6 +39,11 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   void _onSyncChanged() {
+    final event = SyncService.changes;
+    if (event.kind == SyncChangeKind.bookshelf || event.favoritesOnly ||
+        (event.sources.isNotEmpty && !event.sources.contains('bookmark'))) {
+      return;
+    }
     if (SyncService.changes.value?.isActive == true) _loadBookmarks();
   }
 
@@ -79,6 +87,7 @@ class _CardsPageState extends State<CardsPage> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     SyncService.changes.removeListener(_onSyncChanged);
     _searchController.dispose();
     super.dispose();
@@ -130,6 +139,7 @@ class _CardsPageState extends State<CardsPage> {
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
+                                _searchTimer?.cancel();
                                 setState(() {
                                   _searchController.clear();
                                   _searchQuery = '';
@@ -151,12 +161,15 @@ class _CardsPageState extends State<CardsPage> {
                     ),
                     style: const TextStyle(fontSize: 14),
                     onChanged: (value) {
+                      if (value == _searchQuery) return;
+                      _request++;
+                      _searchTimer?.cancel();
                       setState(() {
                         _searchQuery = value;
                         _currentPage = 1;
                         _selectedIndex = 0;
                       });
-                      _loadBookmarks();
+                      _searchTimer = Timer(const Duration(milliseconds: 300), _loadBookmarks);
                     },
                   ),
                 ),
@@ -535,6 +548,17 @@ class _CardsPageState extends State<CardsPage> {
 }
 
 /// 卡片预览组件（支持调节文字大小 + 导出图片）
+class _ExportBoundary extends SingleChildRenderObjectWidget {
+  const _ExportBoundary({super.key, required super.child});
+  @override
+  RenderRepaintBoundary createRenderObject(BuildContext context) => _ExportRenderBoundary();
+}
+
+class _ExportRenderBoundary extends RenderRepaintBoundary {
+  Future<ui.Image> captureRegion(Rect region, double ratio) =>
+      (layer! as OffsetLayer).toImage(region, pixelRatio: ratio);
+}
+
 class _CardPreview extends StatefulWidget {
   final Bookmark bookmark;
 
@@ -554,26 +578,41 @@ class _CardPreviewState extends State<_CardPreview> {
     final db = DatabaseService.instance;
     setState(() => _exporting = true);
     try {
-      final boundary = _cardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary = _cardKey.currentContext?.findRenderObject() as _ExportRenderBoundary?;
       if (boundary == null) return;
 
-      // 4x 像素密度，保证高清输出
-      final image = await boundary.toImage(pixelRatio: 4.0);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return;
-
-      final pngBytes = byteData.buffer.asUint8List();
       final tempDir = await getTemporaryDirectory();
-      if (!mounted || !db.isActive) return;
-      final file = File('${tempDir.path}/weread_card_${DateTime.now().millisecondsSinceEpoch}.png');
-      await file.writeAsBytes(pngBytes);
-      if (!mounted || !db.isActive) {
-        if (await file.exists()) await file.delete();
-        return;
+      final files = <XFile>[];
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final size = boundary.size;
+      // Render one bounded region at a time, never allocate a full long image.
+      const pageHeight = 1600.0;
+      for (var top = 0.0; top < size.height; top += pageHeight) {
+        if (!mounted || !db.isActive) {
+          for (final file in files) { await File(file.path).delete(); }
+          return;
+        }
+        final height = math.min(pageHeight, size.height - top);
+        var ratio = math.min(4.0, math.sqrt(8000000 / (size.width * height)));
+        // Raster dimensions are rounded up; include that rounding in the budget.
+        while ((size.width * ratio).ceil() * (height * ratio).ceil() > 8000000) {
+          ratio *= 0.999;
+        }
+        final image = await boundary.captureRegion(
+          Rect.fromLTWH(0, top, size.width, height), ratio);
+        try {
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (bytes == null) throw StateError('图片编码失败');
+          final file = File('${tempDir.path}/weread_card_${stamp}_${files.length + 1}.png');
+          await file.writeAsBytes(bytes.buffer.asUint8List());
+          files.add(XFile(file.path));
+        } finally {
+          image.dispose();
+        }
       }
-
+      if (!mounted || !db.isActive) return;
       await Share.shareXFiles(
-        [XFile(file.path)],
+        files,
         text: '「${widget.bookmark.markText}」—— ${widget.bookmark.bookTitle}',
       );
     } catch (e) {
@@ -597,7 +636,7 @@ class _CardPreviewState extends State<_CardPreview> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: RepaintBoundary(
+            child: _ExportBoundary(
               key: _cardKey,
               child: Container(
                 width: double.infinity,

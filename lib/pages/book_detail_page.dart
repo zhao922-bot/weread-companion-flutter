@@ -49,6 +49,15 @@ class _BookDetailPageState extends State<BookDetailPage> {
 
   void _onDataChanged() {
     if (!mounted || SyncService.changes.value?.isActive != true || _publishingFavorite) return;
+    final event = SyncService.changes;
+    if (event.kind == SyncChangeKind.bookshelf ||
+        (event.bookIds.isNotEmpty && !event.bookIds.contains(widget.book.bookId))) {
+      return;
+    }
+    if (event.favoritesOnly && event.itemIds.isNotEmpty) {
+      _refreshFavorites(event.itemIds);
+      return;
+    }
     final version = SyncService.changes.dataVersion;
     final limit = version == _dataVersion && _allItems.length > _pageSize
         ? _allItems.length : _pageSize;
@@ -62,6 +71,27 @@ class _BookDetailPageState extends State<BookDetailPage> {
     _loadRequest++;
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshFavorites(Set<String> keys) async {
+    final request = _loadRequest;
+    try {
+      final db = DatabaseService.instance;
+      final updates = <(NoteItem, bool)>[];
+      for (final item in _allItems.where((n) => keys.contains(_itemKey(n)))) {
+        final row = await db.getReadingItem(item.id, item.source.name, item.bookId);
+        if (row != null) updates.add((item, row['is_fav'] == 1));
+      }
+      final count = await db.countReadingItems(bookId: widget.book.bookId, filter: ReadingFilter.favorites);
+      if (!mounted || !db.isActive || request != _loadRequest) return;
+      setState(() {
+        _favoriteRevision++;
+        for (final (item, favorite) in updates) { item.isFav = favorite; }
+        _favoriteCount = count;
+      });
+    } catch (e) {
+      if (mounted && request == _loadRequest) setState(() => _error = e.toString());
+    }
   }
 
   Future<void> _loadBookmarks() => _loadPage(reset: true);
@@ -79,7 +109,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (!mounted) return;
     final request = ++_loadRequest;
     final favoriteRevision = _favoriteRevision;
-    final offset = reset ? 0 : _allItems.length;
+    final after = reset || _allItems.isEmpty ? null : _allItems.last;
     setState(() { _loading = true; _error = null; });
     try {
       final db = DatabaseService.instance;
@@ -87,10 +117,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
       final counts = await connection.rawQuery(
         'SELECT COUNT(*) AS total, COALESCE(SUM(is_fav), 0) AS favorites '
         'FROM ($_bookItems) WHERE book_id = ?', [widget.book.bookId]);
-      final rows = await connection.rawQuery(
-        'SELECT * FROM ($_bookItems) WHERE book_id = ? '
-        'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
-        [widget.book.bookId, limit, offset]);
+      final rows = await db.getReadingItems(bookId: widget.book.bookId,
+          limit: limit, after: after);
       if (!mounted || request != _loadRequest || !db.isActive) return;
       if (favoriteRevision != _favoriteRevision) {
         await _loadPage(reset: reset, limit: limit);
@@ -152,7 +180,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
       });
       _publishingFavorite = true;
       try {
-        SyncService.changes.publish(db, favoritesOnly: true);
+        SyncService.changes.publish(db, favoritesOnly: true, bookIds: {note.bookId},
+          itemIds: {_itemKey(note)}, sources: {note.source.name});
       } finally {
         _publishingFavorite = false;
       }

@@ -28,11 +28,21 @@ class WeReadApi {
   Future<void>? _refreshing;
   String? authenticatedAccountId;
   static final Set<WeReadApi> _sessions = {};
+  static Map<String, dynamic>? _shelfSnapshot;
+  static String? _snapshotCredential;
+  static DateTime? _snapshotTime;
+  String? get _credentialKey => config.credentials == null ? null :
+      sha256.convert(utf8.encode(jsonEncode(config.credentials!.toJson()))).toString();
+
+  static void _clearSnapshot() {
+    _shelfSnapshot = null; _snapshotCredential = null; _snapshotTime = null;
+  }
 
   static WeReadApi? _instance;
   static WeReadApi get instance => _instance!;
 
   static void reset() {
+    _clearSnapshot();
     _instance = null;
     for (final session in _sessions.toList()) {
       session.dispose();
@@ -282,6 +292,7 @@ class WeReadApi {
 
   /// 检查登录状态
   Future<bool> checkLogin() async {
+    _clearSnapshot();
     authenticatedAccountId = null;
     try {
       if (config.credentials != null) {
@@ -294,6 +305,9 @@ class WeReadApi {
           throw StateError('暂时无法验证移动端登录');
         }
         authenticatedAccountId = config.credentials!.vid;
+        _shelfSnapshot = Map<String, dynamic>.from(data);
+        _snapshotCredential = _credentialKey;
+        _snapshotTime = DateTime.now();
         return true;
       }
       final resp = await _dio.get('/user?userVid=0');
@@ -351,8 +365,13 @@ class WeReadApi {
   /// 书架同步 — GET /web/shelf/sync
   Future<List<Book>> fetchBookshelf() async {
     try {
-      final resp = await _dio.get('/shelf/sync');
-      final data = resp.data;
+      final reusable = !_cancelled && _database?.isActive == true &&
+          _database?.accountId == config.credentials?.vid &&
+          _credentialKey != null && _credentialKey == _snapshotCredential &&
+          _snapshotTime != null && DateTime.now().difference(_snapshotTime!) < const Duration(seconds: 30);
+      final snapshot = reusable ? _shelfSnapshot : null;
+      _clearSnapshot();
+      final data = snapshot ?? (await _dio.get('/shelf/sync')).data;
 
       _checkSyncResponse(data);
 
@@ -417,22 +436,24 @@ class WeReadApi {
       if (e.response?.statusCode == 401 || e.response?.statusCode == 302) {
         throw Exception('Cookie 已过期，请重新导入');
       }
-      throw Exception('获取书架失败: ${e.message}');
+      rethrow;
     }
   }
 
   /// 划线/书签 — GET /web/book/bookmarklist?bookId=xxx
-  Future<List<Bookmark>> fetchBookmarks(String bookId, String bookTitle) async {
+  Future<List<Bookmark>> fetchBookmarks(String bookId, String bookTitle,
+      {String synckey = '0', void Function(String?, List<String>)? onDelta}) async {
     try {
       final resp = await _dio.get(
         '/book/bookmarklist',
-        queryParameters: {'bookId': bookId},
+        queryParameters: {'bookId': bookId, 'synckey': synckey},
       );
       final data = resp.data;
       _checkSyncResponse(data);
 
       // 构建 chapterUid -> chapterTitle 映射
       final chMap = <int, String>{};
+      var invalidRows = false;
       final chapters = data['chapters'] ?? [];
       if (chapters is List) {
         for (final c in chapters) {
@@ -442,6 +463,7 @@ class WeReadApi {
             final title = _text(c['title']);
             if (uid != 0) chMap[uid] = title;
           } on FormatException catch (e) {
+            invalidRows = true;
             _invalidRow('章节', e);
           }
         }
@@ -474,12 +496,15 @@ class WeReadApi {
 
           bookmarks.add(bookmark);
         } on FormatException catch (e) {
+          invalidRows = true;
           _invalidRow('划线', e);
         }
       }
+      _checkDeltaRows(data, invalidRows);
+      onDelta?.call(data['synckey']?.toString(), _deletedIds(data, 'bookmarkId'));
       return bookmarks;
-    } on DioException catch (e) {
-      throw Exception('获取划线失败: ${e.message}');
+    } on DioException {
+      rethrow;
     }
   }
 
@@ -487,19 +512,21 @@ class WeReadApi {
   Future<List<Map<String, dynamic>>> fetchNotes(
     String bookId,
     String bookTitle,
+    {String synckey = '0', void Function(String?, List<String>)? onDelta}
   ) async {
     try {
       final resp = await _dio.get('/review/list', queryParameters: {
         'bookId': bookId,
         'listType': '11',
         'mine': '1',
-        'synckey': '0',
+        'synckey': synckey,
       });
       final data = resp.data;
       _checkSyncResponse(data);
       final reviews = _requiredList(data, 'reviews');
 
       final notes = <Map<String, dynamic>>[];
+      var invalidRows = false;
       for (final item in reviews) {
         try {
           if (item is! Map) throw const FormatException('笔记条目类型无效');
@@ -524,12 +551,28 @@ class WeReadApi {
           };
           notes.add(note);
         } on FormatException catch (e) {
+          invalidRows = true;
           _invalidRow('笔记', e);
         }
       }
+      _checkDeltaRows(data, invalidRows);
+      onDelta?.call(data['synckey']?.toString(), _deletedIds(data, 'reviewId'));
       return notes;
-    } on DioException catch (e) {
-      throw Exception('获取笔记失败: ${e.message}');
+    } on DioException {
+      rethrow;
     }
+  }
+
+  void _checkDeltaRows(dynamic data, bool invalidRows) {
+    if (invalidRows && data['synckey'] != null) {
+      throw const FormatException('增量响应包含无效条目，未提交数据或推进同步游标，请重试');
+    }
+  }
+
+  List<String> _deletedIds(dynamic data, String field) {
+    final deleted = data['deleted'] ?? data['removed'] ?? [];
+    if (deleted is! List) throw const FormatException('删除记录格式无效');
+    return deleted.map((row) => _id(row is Map ? row[field] : row))
+        .where((id) => id.isNotEmpty).toList();
   }
 }

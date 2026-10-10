@@ -43,6 +43,50 @@ void main() {
     'created_at': i, 'is_fav': 1,
   }));
 
+  test('notes筛选忽略无关列表刷新但更新划线及书架全局统计', () async {
+    await seed(2);
+    final provider = NotesProvider();
+    addTearDown(provider.dispose);
+    provider.setFilter(ReadingFilter.notes);
+    await provider.loadNotes();
+    final list = provider.notes;
+    var loadingNotifications = 0;
+    provider.addListener(() { if (provider.isLoading) loadingNotifications++; });
+    await db.insertBookmark({'bookmark_id': 'bm', 'book_id': 'b',
+      'mark_text': '划线', 'created_at': 3, 'is_fav': 1});
+    SyncService.changes.publish(db, kind: SyncChangeKind.items,
+      bookIds: {'b'}, itemIds: {'bookmark:bm'}, sources: {'bookmark'});
+    await waitUntil(() => provider.totalCount == 3);
+    expect(provider.bookmarkCount, 1);
+    expect(provider.noteCount, 2);
+    expect(provider.favCount, 3);
+    expect(provider.notes, same(list));
+    expect(provider.matchedCount, 2);
+    await db.insertBook({'book_id': 'b', 'title': '书', 'updated_at': 1});
+    SyncService.changes.publish(db, kind: SyncChangeKind.bookshelf, bookIds: {'b'});
+    await waitUntil(() => provider.bookCount == 1);
+    expect(provider.notes, same(list));
+    expect(provider.matchedCount, 2);
+    expect(loadingNotifications, 0);
+  });
+
+  testWidgets('显式loadNotes取消待执行搜索防抖，不重复加载列表', (tester) async {
+    await tester.runAsync(() => seed(2));
+    final provider = NotesProvider();
+    addTearDown(provider.dispose);
+    await tester.runAsync(provider.loadNotes);
+    var loads = 0;
+    provider.addListener(() { if (provider.isLoading) loads++; });
+    provider.setSearch('笔记');
+    await tester.runAsync(provider.loadNotes);
+    final list = provider.notes;
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(loads, 1);
+    expect(provider.notes, same(list));
+    expect(provider.matchedCount, 2);
+    expect(provider.isLoading, isFalse);
+  });
+
   test('收藏局部更新保留已加载页数且不增加数据版本，收藏筛选移除后无分页遗漏', () async {
     await seed(240);
     final provider = NotesProvider();

@@ -116,6 +116,44 @@ void main() {
     expect((await db.getAllNotes()).single['created_at'], 14);
   });
 
+  test('携带synckey的坏行响应明确失败，不提交部分数据或游标，修复后可重试', () async {
+    await db.applySyncDelta('b', 'bookmark', [{
+      'bookmark_id': 'bm', 'book_id': 'b', 'mark_text': '原划线', 'created_at': 1,
+    }], [], 'previous');
+    await db.applySyncDelta('b', 'note', [{
+      'note_id': 'nt', 'book_id': 'b', 'content': '原笔记', 'created_at': 1,
+    }], [], 'previous');
+    final responses = <String, Object?>{
+      '/shelf/sync': shelf,
+      '/book/bookmarklist': {...bookmarks, 'synckey': 'next'},
+      '/review/list': {...notes, 'synckey': 'next'},
+    };
+    final api = await apiWith(responses);
+    var deltas = 0;
+    await expectLater(api.fetchBookmarks('b', '真实书',
+      onDelta: (_, __) => deltas++), throwsA(isA<FormatException>()));
+    await expectLater(api.fetchNotes('b', '真实书',
+      onDelta: (_, __) => deltas++), throwsA(isA<FormatException>()));
+    expect(deltas, 0);
+    final service = SyncService.forApi(api);
+    final failed = await service.syncAll();
+    expect(failed.failureCount, 1);
+    expect(failed.failures.single.errors, hasLength(2));
+    expect(failed.failures.single.reason, contains('未提交数据或推进同步游标'));
+    expect(await db.getSyncCursor('b', 'bookmark'), 'previous');
+    expect(await db.getSyncCursor('b', 'note'), 'previous');
+    expect((await db.getAllBookmarks()).single['mark_text'], '原划线');
+    expect((await db.getAllNotes()).single['content'], '原笔记');
+    responses['/book/bookmarklist'] = {'updated': [(bookmarks['updated'] as List).first],
+      'chapters': [(bookmarks['chapters'] as List).first], 'synckey': 'next'};
+    responses['/review/list'] = {'reviews': [(notes['reviews'] as List).first], 'synckey': 'next'};
+    expect((await service.retryBook(failed.books.single.book)).succeeded, isTrue);
+    expect(await db.getSyncCursor('b', 'bookmark'), 'next');
+    expect(await db.getSyncCursor('b', 'note'), 'next');
+    expect((await db.getAllBookmarks()).single['mark_text'], '划线');
+    expect((await db.getAllNotes()).single['content'], '想法');
+  });
+
   for (final field in ['books', 'updated', 'reviews']) {
     test('$field非列表明确失败而非空成功', () async {
       final api = await apiWith({

@@ -107,21 +107,56 @@ class AISummaryHistoryPage extends StatefulWidget {
 }
 
 class _AISummaryHistoryPageState extends State<AISummaryHistoryPage> {
-  late final Future<List<AISummary>> _history =
-      DatabaseService.instance.getSummaries(bookId: widget.bookId);
+  final _items = <Map<String, dynamic>>[];
+  bool _loading = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    if (_loading || !_hasMore) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final db = DatabaseService.instance;
+      final rows = await db.getSummaryMetadata(bookId: widget.bookId,
+        before: _items.isEmpty ? null : _items.last['id'] as int);
+      if (!mounted || !db.isActive) return;
+      setState(() { _items.addAll(rows); _hasMore = rows.length == 50; });
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _open(int id) async {
+    try {
+      final db = DatabaseService.instance;
+      final summary = await db.getSummary(id);
+      if (!mounted || !db.isActive) return;
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => AISummaryPage(summary: summary)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('摘要加载失败: $e')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('历史摘要')),
-    body: FutureBuilder<List<AISummary>>(future: _history, builder: (context, snapshot) {
-      if (snapshot.hasError) return const Center(child: Text('历史摘要加载失败'));
-      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-      if (snapshot.data!.isEmpty) return const Center(child: Text('暂无历史摘要'));
-      return ListView(children: snapshot.data!.map((s) => ListTile(
-        title: Text(s.title), subtitle: Text('${s.coverage}\n${DateTime.fromMillisecondsSinceEpoch(s.createdAt).toLocal()}'),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => AISummaryPage(summary: s))),
-      )).toList());
-    }),
+    body: _items.isEmpty && !_loading && _error == null
+      ? const Center(child: Text('暂无历史摘要'))
+      : ListView.builder(itemCount: _items.length + 1, itemBuilder: (context, index) {
+        if (index == _items.length) {
+          if (_loading) return const Center(child: CircularProgressIndicator());
+          if (_error != null) return TextButton(onPressed: _load, child: Text('历史摘要加载失败: $_error · 重试'));
+          return _hasMore ? TextButton(onPressed: _load, child: const Text('加载更多')) : const SizedBox.shrink();
+        }
+        final row = _items[index];
+        return ListTile(title: Text(row['title'] as String),
+          subtitle: Text('${row['coverage']}\n${DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int).toLocal()}'),
+          onTap: () => _open(row['id'] as int));
+      }),
   );
 }

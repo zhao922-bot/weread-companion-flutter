@@ -11,11 +11,19 @@ class BookshelfProvider extends ChangeNotifier {
   }
 
   void _onSyncChanged() {
-    if (!SyncService.changes.favoritesOnly && SyncService.changes.value?.isActive == true) loadBooks();
+    final event = SyncService.changes;
+    if ((event.kind == SyncChangeKind.all || event.kind == SyncChangeKind.bookshelf) && event.value?.isActive == true) {
+      _refresh = loadBooks();
+    }
   }
+  Future<void>? _refresh;
+  bool _disposed = false;
+  int _request = 0;
 
   @override
   void dispose() {
+    _disposed = true;
+    _request++;
     SyncService.changes.removeListener(_onSyncChanged);
     super.dispose();
   }
@@ -50,21 +58,24 @@ class BookshelfProvider extends ChangeNotifier {
   int get totalCount => _books.length;
 
   Future<void> loadBooks() async {
+    if (_disposed) return;
+    final request = ++_request;
     final revision = _sessionRevision;
     _loading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final raw = await DatabaseService.instance.getAllBooks();
-      if (revision != _sessionRevision) return;
+      final db = DatabaseService.instance;
+      final raw = await db.getAllBooks();
+      if (_disposed || request != _request || !db.isActive || revision != _sessionRevision) return;
       _books = raw.map((m) => Book.fromJson(m)).toList();
       _applyFilter();
     } catch (e) {
-      if (revision != _sessionRevision) return;
+      if (_disposed || request != _request || revision != _sessionRevision) return;
       _error = e.toString();
     } finally {
-      if (revision == _sessionRevision) {
+      if (!_disposed && request == _request && revision == _sessionRevision) {
         _loading = false;
         notifyListeners();
       }
@@ -81,17 +92,13 @@ class BookshelfProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final db = DatabaseService.instance;
       final service = await SyncService.connect(config: config,
-          isCancelled: () => revision != _sessionRevision);
+          isCancelled: () => _disposed || revision != _sessionRevision);
       final result = await service.syncAll();
       if (revision != _sessionRevision) throw StateError('同步已取消');
 
-      // 重新加载本地数据
-      final raw = await db.getAllBooks();
-      if (revision != _sessionRevision) throw StateError('同步已取消');
-      _books = raw.map((m) => Book.fromJson(m)).toList();
-      _applyFilter();
+      await _refresh;
+      if (_disposed || revision != _sessionRevision) throw StateError('同步已取消');
 
       lastSyncResult = result;
       final msg = result.summary;
@@ -100,7 +107,7 @@ class BookshelfProvider extends ChangeNotifier {
       notifyListeners();
       return msg;
     } catch (e) {
-      if (revision != _sessionRevision) rethrow;
+      if (_disposed || revision != _sessionRevision) rethrow;
       _error = e.toString();
       _loading = false;
       notifyListeners();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -13,10 +14,12 @@ void main() {
   const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
   final secrets = <String, String>{};
   bool failWrites = false;
+  int writes = 0;
 
   setUp(() {
     secrets.clear();
     failWrites = false;
+    writes = 0;
     SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
@@ -26,6 +29,7 @@ void main() {
         case 'read':
           return secrets[key];
         case 'write':
+          writes++;
           if (failWrites) throw PlatformException(code: 'storage_unavailable');
           secrets[key] = args['value'] as String;
           return null;
@@ -86,6 +90,40 @@ void main() {
     expect(secrets['weread_api_key'], 'key');
     expect(prefs.containsKey('weread_cookie'), isFalse);
     expect(prefs.containsKey('weread_api_key'), isFalse);
+  });
+
+  test('重复保存无安全存储写入，仅持久化发生变化的字段', () async {
+    final config = AppConfig(cookie: 'wr_vid=123', apiKey: 'key');
+    await config.save();
+    expect(writes, 2);
+    await config.save();
+    expect(writes, 2);
+    final restored = AppConfig();
+    await restored.load();
+    await restored.save();
+    expect(writes, 2);
+    restored.apiKey = 'changed';
+    await restored.save();
+    expect(writes, 3);
+  });
+
+  test('三个独立安全配置读取并发启动', () async {
+    final gate = Completer<void>();
+    final keys = <String>{};
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'read') {
+          keys.add((call.arguments as Map)['key'] as String);
+          await gate.future;
+        }
+        return null;
+      });
+    final load = AppConfig().load();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final started = keys.length;
+    gate.complete();
+    await load;
+    expect(started, 3);
   });
 
   test('拒绝不安全 AI 地址并停用旧 HTTP 配置', () async {
