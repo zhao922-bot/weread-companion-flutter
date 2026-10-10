@@ -10,7 +10,15 @@ import 'notes_page.dart';
 Future<void> generateSummary(BuildContext context, String title, String author,
     List<NoteItem> notes) async {
   final config = AppConfig();
-  await config.load();
+  try {
+    await config.load();
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI 配置加载失败: $e')));
+    }
+    return;
+  }
   if (!context.mounted) return;
   if (!AIService(config: config).isConfigured || notes.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
@@ -35,8 +43,8 @@ Future<void> generateSummary(BuildContext context, String title, String author,
   }
   if (!context.mounted) return;
   if (result == null || error != null) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('AI 摘要生成或保存失败，请检查 API 配置')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('AI 摘要生成或保存失败: ${error ?? '未返回摘要'}')));
     return;
   }
   await Navigator.of(context).push(MaterialPageRoute(

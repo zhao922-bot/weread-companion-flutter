@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 import '../models/ai_summary.dart';
+import '../models/note_item.dart';
+import '../models/reading_constants.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -50,7 +52,14 @@ class DatabaseService {
   Future<Database> get database async {
     if (_closed) throw StateError('账号会话已结束');
     if (_db != null) return _db!;
-    final db = await (_opening ??= _initDb());
+    final opening = _opening ??= _initDb();
+    late Database db;
+    try {
+      db = await opening;
+    } catch (_) {
+      if (identical(_opening, opening)) _opening = null;
+      rethrow;
+    }
     if (_closed) throw StateError('账号会话已结束');
     _db = db;
     return _db!;
@@ -221,18 +230,32 @@ class DatabaseService {
 
   /// 插入或更新书签，但保留已有的 is_fav 状态
   Future<void> insertBookmarkPreserveFav(Map<String, dynamic> bookmark) async {
-    final db = await database;
-    final existing = await db.query(
-      'bookmarks',
-      columns: ['is_fav'],
-      where: 'bookmark_id = ?',
-      whereArgs: [bookmark['bookmark_id']],
-    );
-    if (existing.isNotEmpty) {
-      bookmark['is_fav'] = existing.first['is_fav'] ?? 0;
-    }
-    await db.insert('bookmarks', bookmark, conflictAlgorithm: ConflictAlgorithm.replace);
+    await insertBookmarksPreserveFav([bookmark]);
   }
+
+  Future<void> _upsertPreserveFav(String table, String id,
+      List<Map<String, dynamic>> rows) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final row in rows) {
+        final values = {'is_fav': 0, ...row};
+        final columns = values.keys.toList();
+        final updates = columns.where((c) => c != 'is_fav' && c != id)
+            .map((c) => '$c = excluded.$c').join(', ');
+        batch.rawInsert('INSERT INTO $table (${columns.join(', ')}) '
+            'VALUES (${List.filled(columns.length, '?').join(', ')}) '
+            'ON CONFLICT($id) DO UPDATE SET $updates', values.values.toList());
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> insertBookmarksPreserveFav(List<Map<String, dynamic>> rows) =>
+      _upsertPreserveFav('bookmarks', 'bookmark_id', rows);
+
+  Future<void> insertNotesPreserveFav(List<Map<String, dynamic>> rows) =>
+      _upsertPreserveFav('notes', 'note_id', rows);
 
   Future<void> insertBookmarks(List<Map<String, dynamic>> bookmarks) async {
     final db = await database;
@@ -283,26 +306,26 @@ class DatabaseService {
       chapter_title, created_at, is_fav, 'note' AS source FROM notes
   ''';
 
-  (String, List<Object?>) _readingFilter(String query, String filter) {
-    final search = _itemFilter(query, null, 'content');
+  (String, List<Object?>) _readingFilter(String query, ReadingFilter filter, String? bookId) {
+    final search = _itemFilter(query, bookId, 'content');
     final clauses = <String>[if (search.$1 != null) search.$1!];
-    if (filter == '全部笔记') clauses.add("source = 'note'");
-    if (filter == '收藏') clauses.add('is_fav = 1');
+    if (filter == ReadingFilter.notes) clauses.add("source = 'note'");
+    if (filter == ReadingFilter.favorites) clauses.add('is_fav = 1');
     return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', search.$2);
   }
 
   Future<List<Map<String, dynamic>>> getReadingItems({int offset = 0,
-    int limit = 100, String query = '', String filter = '全部划线'}) async {
+    int limit = 100, String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
     final db = await database;
-    final where = _readingFilter(query, filter);
+    final where = _readingFilter(query, filter, bookId);
     return db.rawQuery('SELECT * FROM ($_readingItems) ${where.$1} '
         'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
         [...where.$2, limit, offset]);
   }
 
-  Future<int> countReadingItems({String query = '', String filter = '全部划线'}) async {
+  Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
     final db = await database;
-    final where = _readingFilter(query, filter);
+    final where = _readingFilter(query, filter, bookId);
     return Sqflite.firstIntValue(await db.rawQuery(
         'SELECT COUNT(*) FROM ($_readingItems) ${where.$1}', where.$2)) ?? 0;
   }
@@ -339,17 +362,7 @@ class DatabaseService {
 
   /// 插入或更新笔记，但保留已有的 is_fav 状态
   Future<void> insertNotePreserveFav(Map<String, dynamic> note) async {
-    final db = await database;
-    final existing = await db.query(
-      'notes',
-      columns: ['is_fav'],
-      where: 'note_id = ?',
-      whereArgs: [note['note_id']],
-    );
-    if (existing.isNotEmpty) {
-      note['is_fav'] = existing.first['is_fav'] ?? 0;
-    }
-    await db.insert('notes', note, conflictAlgorithm: ConflictAlgorithm.replace);
+    await insertNotesPreserveFav([note]);
   }
 
   Future<void> insertNotes(List<Map<String, dynamic>> notes) async {
@@ -398,8 +411,8 @@ class DatabaseService {
   Future<Map<String, dynamic>> getReadingStats() async {
     final db = await database;
     final totalBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books')) ?? 0;
-    final finishedBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= 100')) ?? 0;
-    final readingBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= 5 AND progress < 100')) ?? 0;
+    final finishedBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= ?', [finishedProgress])) ?? 0;
+    final readingBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= ? AND progress < ?', [readingStartedProgress, finishedProgress])) ?? 0;
     final totalBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks')) ?? 0;
     final totalNotes = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM notes')) ?? 0;
     final favBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks WHERE is_fav = 1')) ?? 0;
@@ -418,9 +431,18 @@ class DatabaseService {
 
   Future<void> close() async {
     _closed = true;
-    final db = _db ?? await _opening;
-    await db?.close();
+    final current = _db;
+    final opening = _opening;
     _db = null;
     _opening = null;
+    Database? db = current;
+    if (db == null && opening != null) {
+      try {
+        db = await opening;
+      } catch (_) {
+        return; // 打开失败时没有可关闭的连接。
+      }
+    }
+    await db?.close();
   }
 }

@@ -11,6 +11,7 @@ import 'package:weread_companion/providers/notes_provider.dart';
 import 'package:weread_companion/services/database.dart';
 import 'package:weread_companion/services/export_service.dart';
 import 'package:weread_companion/services/sync_service.dart';
+import 'support/wait_until.dart';
 
 class _TestPaths extends PathProviderPlatform {
   final String path;
@@ -88,11 +89,11 @@ void main() {
     await provider.loadNotes();
     expect(provider.matchedCount, 2);
     expect(provider.notes.map((n) => n.id).toSet(), {'bm0', 'nt0'});
-    provider.setFilter('全部笔记');
+    provider.setFilter(ReadingFilter.notes);
     await provider.loadNotes();
     expect(provider.notes.single.id, 'nt0');
     provider.setSearch('');
-    provider.setFilter('收藏');
+    provider.setFilter(ReadingFilter.favorites);
     await provider.loadNotes();
     expect(provider.matchedCount, 2);
     await provider.toggleFavorite(provider.notes.first);
@@ -119,16 +120,12 @@ void main() {
     expect(provider.totalCount, 0);
     await seed(620);
     SyncService.changes.publish(db);
-    while (provider.isLoading) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
+    await waitUntil(() => !provider.isLoading && provider.totalCount == 1240);
     expect(provider.totalCount, 1240);
     await db.insertNote({'note_id': 'new', 'book_id': 'main',
       'content': '新增笔记', 'created_at': 1000});
     SyncService.changes.publish(db);
-    while (provider.isLoading) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
+    await waitUntil(() => !provider.isLoading && provider.totalCount == 1241);
     expect(provider.totalCount, 1241);
     expect(provider.notes.first.id, 'new');
   });
@@ -136,14 +133,12 @@ void main() {
   testWidgets('报告订阅统一同步事件，统计包含全部历史', (tester) async {
     await tester.runAsync(() => seed(620));
     await tester.pumpWidget(const MaterialApp(home: ReportPage()));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('1240').evaluate().isNotEmpty);
     expect(find.text('1240'), findsOneWidget);
     await tester.runAsync(() => db.insertNote({'note_id': 'new',
       'book_id': 'main', 'content': '新增笔记', 'created_at': 1000}));
     SyncService.changes.publish(db);
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('1241').evaluate().isNotEmpty);
     expect(find.text('1241'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -151,17 +146,14 @@ void main() {
   testWidgets('卡片使用数据库翻页，搜索能命中旧内容，同步事件刷新', (tester) async {
     await tester.runAsync(() => seed(620));
     await tester.pumpWidget(const MaterialApp(home: CardsPage()));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('共 620 条').evaluate().isNotEmpty);
     expect(find.text('共 620 条'), findsOneWidget);
     expect(find.text('1/7'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.chevron_right_rounded));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('2/7').evaluate().isNotEmpty);
     expect(find.text('2/7'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '唯一历史引文');
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('共 1 条').evaluate().isNotEmpty);
     expect(find.text('共 1 条'), findsOneWidget);
     expect(find.text('唯一历史引文 100%_\\'), findsWidgets);
     await tester.runAsync(() => db.insertBookmark({
@@ -169,8 +161,7 @@ void main() {
       'mark_text': '唯一历史引文新增', 'created_at': 999,
     }));
     SyncService.changes.publish(db);
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 150)));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('共 2 条').evaluate().isNotEmpty);
     expect(find.text('共 2 条'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

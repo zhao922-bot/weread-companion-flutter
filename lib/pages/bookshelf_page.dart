@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/bookshelf_provider.dart';
 import '../providers/app_config_provider.dart';
 import '../models/book.dart';
+import '../models/bookshelf_filter.dart';
+import '../models/reading_constants.dart';
 import 'book_detail_page.dart';
 import 'sync_page.dart';
 
@@ -18,11 +20,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   static const _densityKey = 'bookshelf_columns';
   int _crossAxisCount = 3;
   bool _densityLoaded = false;
-  String _searchQuery = '';
-  String _selectedFilter = '全部';
   final TextEditingController _searchController = TextEditingController();
-
-  final List<String> _filters = ['全部', '读完', '在读中', '未读'];
 
   @override
   void initState() {
@@ -57,37 +55,14 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Color _getProgressColor(int progress) {
-    if (progress >= 100) return Colors.green;
-    if (progress >= 85) return Colors.orange;
-    if (progress > 0) return const Color(0xFF2196F3);
+    if (progress >= finishedProgress) return Colors.green;
+    if (progress >= nearlyFinishedProgress) return Colors.orange;
+    if (progress >= readingStartedProgress) return const Color(0xFF2196F3);
     return Colors.grey;
   }
 
   String _getStatusText(Book book) {
     return book.readingStatus;
-  }
-
-  List<Book> _filterBooks(List<Book> books) {
-    return books.where((book) {
-      final matchesSearch = _searchQuery.isEmpty ||
-          book.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          book.author.toLowerCase().contains(_searchQuery.toLowerCase());
-      bool matchesFilter;
-      switch (_selectedFilter) {
-        case '读完':
-          matchesFilter = book.isFinished;
-          break;
-        case '在读中':
-          matchesFilter = book.isReading;
-          break;
-        case '未读':
-          matchesFilter = book.isUnread;
-          break;
-        default:
-          matchesFilter = true;
-      }
-      return matchesSearch && matchesFilter;
-    }).toList();
   }
 
   /// 同步书架，带错误处理和反馈
@@ -182,7 +157,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
       ),
       body: Consumer<BookshelfProvider>(
         builder: (context, provider, _) {
-          final filteredBooks = _filterBooks(provider.books);
+          final filteredBooks = provider.books;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -202,14 +177,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
                           hintText: '搜索书名或作者...',
                           hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
                           prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 20),
-                          suffixIcon: _searchQuery.isNotEmpty
+                          suffixIcon: provider.searchQuery.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 18),
                                   onPressed: () {
-                                    setState(() {
-                                      _searchController.clear();
-                                      _searchQuery = '';
-                                    });
+                                    _searchController.clear();
+                                    provider.setSearch('');
                                   },
                                 )
                               : null,
@@ -223,11 +196,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                           isDense: true,
                         ),
                         style: const TextStyle(fontSize: 14),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
+                        onChanged: provider.setSearch,
                       ),
                     ),
                     // 过滤按钮
@@ -236,12 +205,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
-                          children: _filters.map((filter) {
-                            final isSelected = _selectedFilter == filter;
+                          children: BookshelfFilter.values.map((filter) {
+                            final isSelected = provider.filter == filter;
                             return Padding(
                               padding: const EdgeInsets.only(right: 8),
                               child: GestureDetector(
-                                onTap: () => setState(() => _selectedFilter = filter),
+                                onTap: () => provider.setFilter(filter),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                   decoration: BoxDecoration(
@@ -249,7 +218,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
-                                    filter,
+                                    filter.label,
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -352,10 +321,10 @@ class _BookshelfPageState extends State<BookshelfPage> {
                     Icon(Icons.menu_book, size: 64, color: Colors.grey[300]),
                     const SizedBox(height: 16),
                     Text(
-                      provider.books.isEmpty ? '暂无书籍，请先登录同步' : '没有匹配的书籍',
+                      provider.totalCount == 0 ? '暂无书籍，请先登录同步' : '没有匹配的书籍',
                       style: TextStyle(fontSize: 16, color: Colors.grey[400]),
                     ),
-                    if (provider.books.isEmpty) ...[
+                    if (provider.totalCount == 0) ...[
                       const SizedBox(height: 12),
                       TextButton.icon(
                         onPressed: () => _doSync(provider),
@@ -523,7 +492,7 @@ class _BookCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: book.progress / 100.0,
+                  value: (book.progress / finishedProgress).clamp(0.0, 1.0),
                   backgroundColor: Colors.grey[200],
                   valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                   minHeight: 4,

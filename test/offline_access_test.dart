@@ -132,6 +132,8 @@ void main() {
     final initialization = provider.init();
     await localReady.future;
     expect(provider.isBusy, isTrue);
+    expect(provider.isLoaded, isFalse);
+    expect(provider.isLoading, isTrue);
     expect(provider.isLoggedIn, isFalse);
     final db = await DatabaseService.instance.database;
     expect((await db.query('notes')).single['content'], '已同步笔记');
@@ -163,7 +165,8 @@ void main() {
     await seedTrustedAccount();
     storageUnavailable = true;
     await provider.init();
-    expect(provider.isLoaded, isTrue);
+    expect(provider.isLoaded, isFalse);
+    expect(provider.configLoadError, isNotNull);
     expect(provider.isBusy, isFalse);
     expect(provider.canBrowseLocal, isTrue);
     expect(provider.isLoggedIn, isFalse);

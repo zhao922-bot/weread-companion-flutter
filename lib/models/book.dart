@@ -1,3 +1,5 @@
+import 'reading_constants.dart';
+
 class Book {
   final String bookId;
   final String title;
@@ -6,10 +8,10 @@ class Book {
   final int progress;
   final int finished;
   // 旧缓存 finished 可能按 85% 生成；所有展示和统计以实际进度为准。
-  bool get isFinished => progress >= 100;
-  bool get isNearlyFinished => progress >= 85 && !isFinished;
-  bool get isReading => progress >= 5 && !isFinished;
-  bool get isUnread => progress < 5;
+  bool get isFinished => progress >= finishedProgress;
+  bool get isNearlyFinished => progress >= nearlyFinishedProgress && !isFinished;
+  bool get isReading => progress >= readingStartedProgress && !isFinished;
+  bool get isUnread => progress < readingStartedProgress;
   String get readingStatus => isFinished ? '已读完'
       : isNearlyFinished ? '接近读完' : isReading ? '在读中' : '未读';
   final String category;

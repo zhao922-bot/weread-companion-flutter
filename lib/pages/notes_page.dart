@@ -18,11 +18,11 @@ class NotesPage extends StatefulWidget {
 
 class _NotesPageState extends State<NotesPage> {
   String _searchQuery = '';
-  String _selectedFilter = '全部划线';
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  final List<String> _filters = ['全部划线', '全部笔记', '收藏'];
+  final _filters = ReadingFilter.values;
+  bool _preparingSummary = false;
   Future<Map<String, dynamic>?>? _target;
 
   @override
@@ -63,25 +63,36 @@ class _NotesPageState extends State<NotesPage> {
 
   /// AI 摘要
   Future<void> _aiSummarize() async {
-    final provider = context.read<NotesProvider>();
-    final notes = await provider.getAllMatchingNotes();
-    if (!mounted) return;
-    final bookTitles = notes.map((n) => n.bookTitle).where((t) => t.isNotEmpty).toSet().toList();
-    final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集';
-    await generateSummary(context, title, '', notes);
+    if (_preparingSummary) return;
+    setState(() => _preparingSummary = true);
+    try {
+      final provider = context.read<NotesProvider>();
+      final notes = await provider.getAllMatchingNotes();
+      if (!mounted) return;
+      final bookTitles = notes.map((n) => n.bookTitle).where((t) => t.isNotEmpty).toSet().toList();
+      final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集';
+      await generateSummary(context, title, '', notes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('摘要准备失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _preparingSummary = false);
+    }
   }
 
   /// 导出笔记
   Future<void> _exportNotes(BuildContext context) async {
     try {
       await ExportService.exportAndShare();
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('笔记已导出并分享'), backgroundColor: Color(0xFF07C160)),
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
         );
@@ -105,7 +116,7 @@ class _NotesPageState extends State<NotesPage> {
           IconButton(
             icon: const Icon(Icons.auto_awesome_rounded),
             tooltip: 'AI 摘要',
-            onPressed: _aiSummarize,
+            onPressed: _preparingSummary ? null : _aiSummarize,
           ),
           IconButton(icon: const Icon(Icons.history), tooltip: '历史摘要',
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
@@ -120,8 +131,8 @@ class _NotesPageState extends State<NotesPage> {
       ),
       body: Consumer<NotesProvider>(
         builder: (context, provider, _) {
-          // 同步搜索和过滤到 provider
-          final filteredNotes = _applyLocalFilter(provider.notes);
+          // 搜索和筛选由数据库执行，列表只展示 provider 已加载的页。
+          final filteredNotes = provider.notes;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -174,16 +185,15 @@ class _NotesPageState extends State<NotesPage> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Row(
                         children: _filters.map((filter) {
-                          final isSelected = _selectedFilter == filter;
-                          final color = filter == '收藏'
+                           final isSelected = provider.filter == filter;
+                           final color = filter == ReadingFilter.favorites
                               ? const Color(0xFFFFB74D)
                               : const Color(0xFF2196F3);
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: GestureDetector(
                               onTap: () {
-                                setState(() => _selectedFilter = filter);
-                                provider.setFilter(filter);
+                                 provider.setFilter(filter);
                               },
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -192,7 +202,7 @@ class _NotesPageState extends State<NotesPage> {
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  filter,
+                                   filter.label,
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -255,7 +265,8 @@ class _NotesPageState extends State<NotesPage> {
         source: NoteSource.values.byName(row['source']));
       return ListView(padding: const EdgeInsets.all(16), children: [
         Text('笔记 ID：${note.id}'),
-        _NoteCard(note: note, initiallyExpanded: true, onFavoriteToggle: () async {
+        _NoteCard(key: ValueKey('${note.source.name}:${note.id}'),
+          note: note, initiallyExpanded: true, onFavoriteToggle: () async {
           final db = DatabaseService.instance;
           if (note.source == NoteSource.bookmark) {
             await db.toggleBookmarkFavorite(note.id, !note.isFav);
@@ -263,16 +274,11 @@ class _NotesPageState extends State<NotesPage> {
             await db.toggleFavorite(note.id, !note.isFav);
           }
           if (!mounted || !db.isActive) return;
-          SyncService.changes.publish(db);
+          SyncService.changes.publish(db, favoritesOnly: true);
         }),
       ]);
     }),
   );
-
-  List<NoteItem> _applyLocalFilter(List<NoteItem> notes) {
-    // Provider 已经处理了搜索和过滤，这里直接返回
-    return notes;
-  }
 
   Widget _buildBody(BuildContext context, NotesProvider provider, List<NoteItem> filteredNotes) {
     // 加载中（首次）
@@ -336,7 +342,7 @@ class _NotesPageState extends State<NotesPage> {
                     Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey[300]),
                     const SizedBox(height: 16),
                     Text(
-                      provider.notes.isEmpty ? '暂无笔记，请先同步书架' : '没有匹配的笔记',
+                       provider.totalCount == 0 ? '暂无笔记，请先同步书架' : '没有匹配的笔记',
                       style: TextStyle(fontSize: 16, color: Colors.grey[400]),
                     ),
                     if (provider.notes.isEmpty) ...[
@@ -361,10 +367,21 @@ class _NotesPageState extends State<NotesPage> {
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: filteredNotes.length,
+        itemCount: filteredNotes.length + (provider.hasMore || provider.error != null ? 1 : 0),
+        findChildIndexCallback: (key) {
+          final index = filteredNotes.indexWhere((note) =>
+            ValueKey('${note.source.name}:${note.id}') == key);
+          return index < 0 ? null : index;
+        },
         itemBuilder: (context, index) {
+          if (index == filteredNotes.length) {
+            if (provider.isLoading) return const Center(child: CircularProgressIndicator());
+            return TextButton(onPressed: provider.loadMore,
+              child: Text(provider.error == null ? '加载更多' : '加载失败，点击重试: ${provider.error}'));
+          }
           final note = filteredNotes[index];
           return _NoteCard(
+            key: ValueKey('${note.source.name}:${note.id}'),
             note: note,
             onFavoriteToggle: () => provider.toggleFavorite(note),
           );
@@ -377,9 +394,10 @@ class _NotesPageState extends State<NotesPage> {
 class _NoteCard extends StatefulWidget {
   final bool initiallyExpanded;
   final NoteItem note;
-  final VoidCallback onFavoriteToggle;
+  final Future<void> Function() onFavoriteToggle;
 
   const _NoteCard({
+    super.key,
     this.initiallyExpanded = false,
     required this.note,
     required this.onFavoriteToggle,
@@ -391,11 +409,27 @@ class _NoteCard extends StatefulWidget {
 
 class _NoteCardState extends State<_NoteCard> {
   late bool _isExpanded = widget.initiallyExpanded;
+  bool _saving = false;
+
+  Future<void> _toggleFavorite() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onFavoriteToggle();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('收藏保存失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
-    // 内容较长视为笔记，较短视为划线
+    // 使用数据来源区分划线和笔记，与文本长度无关。
     final isHighlight = note.source == NoteSource.bookmark;
     final accentColor = isHighlight
         ? const Color(0xFFFF6B6B)
@@ -473,7 +507,7 @@ class _NoteCardState extends State<_NoteCard> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: widget.onFavoriteToggle,
+                         onTap: _saving ? null : _toggleFavorite,
                         child: Icon(
                           note.isFav ? Icons.star_rounded : Icons.star_border_rounded,
                           size: 22,

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
-import '../services/api.dart';
-import '../services/database.dart';
 import '../services/sync_service.dart';
 
 /// 同步进度页
@@ -37,7 +35,7 @@ class _SyncPageState extends State<SyncPage> {
         if (!mounted) return;
         final config = context.read<AppConfigProvider>();
         final revision = config.sessionRevision;
-        _service = SyncService.forApi(WeReadApi.instance, isCancelled: () =>
+        _service = SyncService.current(isCancelled: () =>
             _cancelled || !mounted || revision != config.sessionRevision);
         _result = widget.initialResult;
         _totalBooks = _result!.totalBooks;
@@ -102,14 +100,11 @@ class _SyncPageState extends State<SyncPage> {
       if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
       _addLog('🚀 开始同步...');
 
-      // 初始化 API
-      final api = await WeReadApi.init(config: config, db: DatabaseService.instance);
+      _service = await SyncService.connect(config: config, isCancelled: () =>
+          _cancelled || !mounted || revision != appConfig.sessionRevision);
       if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
-      api.updateCookie(config.cookie);
 
       _addLog('📚 正在同步书架...');
-      _service = SyncService.forApi(api, isCancelled: () =>
-          _cancelled || !mounted || revision != appConfig.sessionRevision);
       final result = await _service!.syncAll(
         onBooks: (total) {
           _totalBooks = total;

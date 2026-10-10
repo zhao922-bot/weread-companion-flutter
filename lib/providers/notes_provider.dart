@@ -1,32 +1,8 @@
 import 'package:flutter/foundation.dart';
 import '../services/database.dart';
 import '../services/sync_service.dart';
-
-/// 笔记数据源标记
-enum NoteSource { bookmark, note }
-
-/// 包装统一的笔记条目
-class NoteItem {
-  final String id;
-  final String bookId;
-  final String bookTitle;
-  final String content;
-  final String chapterTitle;
-  final int createdAt;
-  bool isFav;
-  final NoteSource source;
-
-  NoteItem({
-    required this.id,
-    required this.bookId,
-    required this.bookTitle,
-    required this.content,
-    required this.chapterTitle,
-    required this.createdAt,
-    required this.isFav,
-    required this.source,
-  });
-}
+import '../models/note_item.dart';
+export '../models/note_item.dart';
 
 class NotesProvider extends ChangeNotifier {
   NotesProvider() {
@@ -34,12 +10,25 @@ class NotesProvider extends ChangeNotifier {
   }
 
   void _onSyncChanged() {
-    if (SyncService.changes.value?.isActive == true) _refresh = loadNotes();
+    if (SyncService.changes.value?.isActive != true || _publishingFavorite) return;
+    final version = SyncService.changes.dataVersion;
+    if (version != _dataVersion) {
+      _dataVersion = version;
+      loadNotes();
+    } else {
+      _loadPage(reset: true, preserve: true,
+        limit: _notes.length < pageSize ? pageSize : _notes.length);
+    }
   }
-  Future<void>? _refresh;
+  int _dataVersion = SyncService.changes.dataVersion;
+  bool _publishingFavorite = false;
+  final Set<String> _savingFavorites = {};
+  int _favoriteRevision = 0;
+  bool _disposed = false;
 
   @override
   void dispose() {
+    _disposed = true;
     SyncService.changes.removeListener(_onSyncChanged);
     _request++;
     super.dispose();
@@ -50,7 +39,7 @@ class NotesProvider extends ChangeNotifier {
   Map<String, dynamic> _stats = {};
   static const pageSize = 100;
   String _searchQuery = '';
-  String _filter = '全部划线'; // 全部划线/全部笔记/收藏
+  ReadingFilter _filter = ReadingFilter.all;
   bool _loading = false;
   String? _error;
   int _sessionRevision = -1;
@@ -63,7 +52,8 @@ class NotesProvider extends ChangeNotifier {
     _matchedCount = 0;
     _stats = {};
     _searchQuery = '';
-    _filter = '全部划线';
+    _filter = ReadingFilter.all;
+    _dataVersion = SyncService.changes.dataVersion;
     _loading = false;
     _error = null;
     notifyListeners();
@@ -72,7 +62,7 @@ class NotesProvider extends ChangeNotifier {
   List<NoteItem> get notes => _notes;
   bool get isLoading => _loading;
   String? get error => _error;
-  String get filter => _filter;
+  ReadingFilter get filter => _filter;
   int get totalCount => bookmarkCount + noteCount;
   int get matchedCount => _matchedCount;
   bool get hasMore => _notes.length < _matchedCount;
@@ -91,13 +81,16 @@ class NotesProvider extends ChangeNotifier {
   /// 批量操作读取全部匹配项，不受列表已加载页数影响。
   Future<List<NoteItem>> getAllMatchingNotes() async {
     final db = DatabaseService.instance;
+    final revision = _sessionRevision;
     final query = _searchQuery;
     final filter = _filter;
     final items = <NoteItem>[];
     while (true) {
       final rows = await db.getReadingItems(offset: items.length,
           limit: pageSize, query: query, filter: filter);
-      if (!db.isActive) throw StateError('账号会话已结束');
+      if (!db.isActive || revision != _sessionRevision || _disposed) {
+        throw StateError('账号会话已结束');
+      }
       if (rows.isEmpty) return items;
       items.addAll(rows.map(_fromRow));
     }
@@ -111,10 +104,11 @@ class NotesProvider extends ChangeNotifier {
     await _loadPage(reset: false);
   }
 
-  Future<void> _loadPage({required bool reset}) async {
+  Future<void> _loadPage({required bool reset, bool preserve = false, int limit = pageSize}) async {
     final request = ++_request;
-    if (reset) _notes = [];
-    final offset = _notes.length;
+    final favoriteRevision = _favoriteRevision;
+    if (reset && !preserve) _notes = [];
+    final offset = reset ? 0 : _notes.length;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -127,10 +121,14 @@ class NotesProvider extends ChangeNotifier {
       final stats = await db.getReadingStats();
       if (request != _request || !db.isActive) return;
       final raw = await db.getReadingItems(offset: offset,
-          limit: pageSize, query: query, filter: filter);
+          limit: limit, query: query, filter: filter);
       if (request != _request || !db.isActive) return;
+      if (favoriteRevision != _favoriteRevision) {
+        await _loadPage(reset: reset, preserve: true, limit: limit);
+        return;
+      }
       final items = raw.map(_fromRow).toList();
-      _notes = [..._notes, ...items];
+      _notes = reset ? items : [..._notes, ...items];
       _matchedCount = count;
       _stats = stats;
     } catch (e) {
@@ -149,24 +147,48 @@ class NotesProvider extends ChangeNotifier {
     loadNotes();
   }
 
-  void setFilter(String filter) {
+  void setFilter(ReadingFilter filter) {
     _filter = filter;
     loadNotes();
   }
 
   Future<void> toggleFavorite(NoteItem note) async {
+    final key = '${note.source.name}:${note.id}';
+    if (!_savingFavorites.add(key)) return;
     final revision = _sessionRevision;
-    final db = DatabaseService.instance;
-    if (note.source == NoteSource.bookmark) {
-      await db.toggleBookmarkFavorite(note.id, !note.isFav);
-    } else {
-      await db.toggleFavorite(note.id, !note.isFav);
-    }
+    final favorite = !note.isFav;
+    try {
+      final db = DatabaseService.instance;
+      if (note.source == NoteSource.bookmark) {
+        await db.toggleBookmarkFavorite(note.id, favorite);
+      } else {
+        await db.toggleFavorite(note.id, favorite);
+      }
 
-    if (revision != _sessionRevision || !db.isActive) return;
-    // 统一事件同时刷新详情、收藏列表、卡片和统计；保留可等待的完成语义。
-    SyncService.changes.publish(db);
-    await _refresh;
+      if (revision != _sessionRevision || !db.isActive || _disposed) return;
+      _favoriteRevision++;
+      note.isFav = favorite;
+      for (final item in _notes) {
+        if (item.id == note.id && item.source == note.source) item.isFav = favorite;
+      }
+      final stat = note.source == NoteSource.bookmark ? 'favoriteBookmarks' : 'favoriteNotes';
+      _stats[stat] = (_stats[stat] as int? ?? 0) + (favorite ? 1 : -1);
+      if (_filter == ReadingFilter.favorites && !favorite &&
+          _notes.any((item) => item.id == note.id && item.source == note.source)) {
+        _notes.removeWhere((item) => item.id == note.id && item.source == note.source);
+        _matchedCount--;
+      }
+      notifyListeners();
+      // 本列表直接更新；其他详情接收收藏事件，报告的数据版本不变。
+      _publishingFavorite = true;
+      try {
+        SyncService.changes.publish(db, favoritesOnly: true);
+      } finally {
+        _publishingFavorite = false;
+      }
+    } finally {
+      _savingFavorites.remove(key);
+    }
   }
   int get favCount => (_stats['favoriteBookmarks'] as int? ?? 0) +
       (_stats['favoriteNotes'] as int? ?? 0);

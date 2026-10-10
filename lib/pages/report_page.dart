@@ -4,6 +4,8 @@ import '../services/database.dart';
 import '../models/book.dart';
 import '../services/sync_service.dart';
 
+class _ReportLoadCancelled implements Exception {}
+
 class ReportPage extends StatefulWidget {
   const ReportPage({super.key});
 
@@ -19,6 +21,10 @@ class _ReportPageState extends State<ReportPage> {
   int _totalNotes = 0;
   List<MapEntry<String, int>> _topHighlights = [];
   List<MapEntry<DateTime, int>> _monthlyActivity = [];
+  int _dataVersion = SyncService.changes.dataVersion;
+  int _loadRequest = 0;
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -28,37 +34,49 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   void _onSyncChanged() {
-    if (SyncService.changes.value?.isActive == true) _loadStats();
+    if (SyncService.changes.value?.isActive != true ||
+        _dataVersion == SyncService.changes.dataVersion) {
+      return;
+    }
+    _dataVersion = SyncService.changes.dataVersion;
+    _loadStats();
   }
 
   @override
   void dispose() {
     SyncService.changes.removeListener(_onSyncChanged);
+    _loadRequest++;
     super.dispose();
   }
 
   // 数据库列表接口默认只返回 500 条，报告需读取全部本地记录。
   Future<List<Map<String, dynamic>>> _loadAllItems(
     Future<List<Map<String, dynamic>>> Function({required int offset, required int limit}) load,
+    bool Function() isCurrent,
   ) async {
     final items = <Map<String, dynamic>>[];
     const pageSize = 500;
     while (true) {
       final page = await load(offset: items.length, limit: pageSize);
+      if (!isCurrent()) throw _ReportLoadCancelled();
       items.addAll(page);
       if (page.length < pageSize) return items;
     }
   }
 
   Future<void> _loadStats() async {
+    final request = ++_loadRequest;
+    setState(() { _loading = true; _error = null; });
     try {
       final db = DatabaseService.instance;
+      bool isCurrent() => mounted && request == _loadRequest && db.isActive;
       final rawBooks = await db.getAllBooks();
+      if (!isCurrent()) return;
       final books = rawBooks.map((m) => Book.fromJson(m)).toList();
 
       // 统计划线 + 笔记（两个表都要查）
-      final rawBookmarks = await _loadAllItems(db.getAllBookmarks);
-      final rawNotes = await _loadAllItems(db.getAllNotes);
+      final rawBookmarks = await _loadAllItems(db.getAllBookmarks, isCurrent);
+      final rawNotes = await _loadAllItems(db.getAllNotes, isCurrent);
       final totalItemCount = rawBookmarks.length + rawNotes.length;
 
       final read = books.where((b) => b.isFinished).length;
@@ -93,7 +111,7 @@ class _ReportPageState extends State<ReportPage> {
         if (months.containsKey(month)) months[month] = months[month]! + 1;
       }
 
-      if (!mounted || !db.isActive) return;
+      if (!isCurrent()) return;
       setState(() {
         _totalBooks = books.length;
         _readBooks = read;
@@ -106,8 +124,14 @@ class _ReportPageState extends State<ReportPage> {
         }).toList();
         _monthlyActivity = months.entries.toList();
       });
-    } catch (_) {
-      // 退出登录时数据库会关闭，丢弃该会话的加载结果。
+    } on _ReportLoadCancelled {
+      // 页面退出、账号结束或被新请求替代属于取消，真实读取异常仍显示。
+      return;
+    } catch (e) {
+      if (!mounted || request != _loadRequest) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted && request == _loadRequest) setState(() => _loading = false);
     }
   }
 
@@ -123,6 +147,11 @@ class _ReportPageState extends State<ReportPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
+            if (_loading) const LinearProgressIndicator(),
+            if (_error != null) ...[
+              Text('报告加载失败: $_error'),
+              TextButton(onPressed: _loadStats, child: const Text('重试')),
+            ],
             // 统计卡片
             Row(
               children: [

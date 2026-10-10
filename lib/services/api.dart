@@ -3,10 +3,11 @@ import 'dart:async';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'config.dart';
 import 'credentials.dart';
 import 'database.dart';
-import 'sync_service.dart';
+import '../models/reading_constants.dart';
 import '../models/book.dart';
 import '../models/bookmark.dart';
 
@@ -47,10 +48,8 @@ class WeReadApi {
   factory WeReadApi.forLogin({required AppConfig config, Dio? dio}) =>
       WeReadApi._(config: config, dio: dio);
 
-  static Future<WeReadApi> init({required AppConfig config, required DatabaseService db}) async {
-    if (_instance == null) {
-      _instance = WeReadApi._(config: config, db: db);
-    }
+  static Future<WeReadApi> init({required AppConfig config, required DatabaseService db, Dio? dio}) async {
+    _instance ??= WeReadApi._(config: config, db: db, dio: dio);
     return _instance!;
   }
 
@@ -323,6 +322,32 @@ class WeReadApi {
     }
   }
 
+  List<dynamic> _requiredList(dynamic data, String field) {
+    final value = data[field];
+    if (value is! List) throw FormatException('同步响应缺少有效的 $field 列表');
+    return value;
+  }
+
+  int _integer(dynamic value, {int fallback = 0}) {
+    if (value == null) return fallback;
+    if (value is num && value.isFinite) return value.toInt();
+    throw const FormatException('数值字段类型无效');
+  }
+
+  String _text(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    throw const FormatException('文本字段类型无效');
+  }
+
+  String _id(dynamic value) {
+    if (value == null) return '';
+    if (value is String || value is int) return value.toString();
+    throw const FormatException('ID 字段类型无效');
+  }
+
+  void _invalidRow(String kind, Object error) => debugPrint('同步跳过无效$kind：$error');
+
   /// 书架同步 — GET /web/shelf/sync
   Future<List<Book>> fetchBookshelf() async {
     try {
@@ -331,54 +356,61 @@ class WeReadApi {
 
       _checkSyncResponse(data);
 
-      final booksData = data['books'] ?? [];
+      final booksData = _requiredList(data, 'books');
       final progressData = data['bookProgress'] ?? [];
-
-      if (booksData is! List) return [];
 
       // 构建 bookId -> progress 的映射
       final progressMap = <String, int>{};
       if (progressData is List) {
         for (final p in progressData) {
-          if (p is Map) {
-            final bookId = (p['bookId'] ?? '').toString();
+          try {
+            if (p is! Map) throw const FormatException('阅读进度条目类型无效');
+            final bookId = _id(p['bookId']);
             final progress = p['progress'] ?? 0;
-            if (bookId.isNotEmpty) {
-              progressMap[bookId] = progress is int ? progress : (progress as num).toInt();
-            }
+            if (bookId.isEmpty) throw const FormatException('阅读进度缺少 bookId');
+            progressMap[bookId] = _integer(progress);
+          } on FormatException catch (e) {
+            _invalidRow('阅读进度', e);
           }
         }
       }
 
       final books = <Book>[];
       for (final item in booksData) {
-        if (item is! Map) continue;
+        try {
+          if (item is! Map) throw const FormatException('书籍条目类型无效');
 
-        final b = item.containsKey('bookId') && item.containsKey('title')
-            ? item as Map<String, dynamic>
-            : (item['book'] ?? item) as Map<String, dynamic>;
+          final b = item.containsKey('bookId') && item.containsKey('title')
+              ? item
+              : (item['book'] ?? item);
+          if (b is! Map) throw const FormatException('book 字段类型无效');
 
-        final bookId = (b['bookId'] ?? '').toString();
-        if (bookId.isEmpty) continue;
+          final bookId = _id(b['bookId']);
+          if (bookId.isEmpty) throw const FormatException('书籍缺少 bookId');
 
-        final progress = progressMap[bookId] ?? (b['progress'] ?? 0);
-        final progressInt = progress is int ? progress : (progress as num).toInt();
+          final progress = progressMap[bookId] ?? (b['progress'] ?? 0);
+          final progressInt = _integer(progress);
 
-        // finished 语义修正：API 的 finished=1 表示「在书架上」，不是「读完了」
-        // 实际判断是否读完用 progress >= 100
-        final book = Book(
-          bookId: bookId,
-          title: b['title'] ?? '',
-          author: b['author'] ?? '',
-          cover: b['cover'] ?? '',
-          progress: progressInt,
-          finished: progressInt >= 100 ? 1 : 0,
-          category: b['category'] ?? '',
-          updatedAt: b['updateTime'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        );
+          // finished 语义修正：API 的 finished=1 表示「在书架上」，不是「读完了」
+          // 实际判断是否读完用 progress >= 100
+          final book = Book(
+            bookId: bookId,
+            title: _text(b['title']),
+            author: _text(b['author']),
+            cover: _text(b['cover']),
+            progress: progressInt,
+            finished: progressInt >= finishedProgress ? 1 : 0,
+            category: _text(b['category']),
+            updatedAt: _integer(
+              b['updateTime'],
+              fallback: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            ),
+          );
 
-        books.add(book);
-        await db.insertOrUpdateBook(book.toJson());
+          books.add(book);
+        } on FormatException catch (e) {
+          _invalidRow('书籍', e);
+        }
       }
       return books;
     } on DioException catch (e) {
@@ -392,7 +424,10 @@ class WeReadApi {
   /// 划线/书签 — GET /web/book/bookmarklist?bookId=xxx
   Future<List<Bookmark>> fetchBookmarks(String bookId, String bookTitle) async {
     try {
-      final resp = await _dio.get('/book/bookmarklist', queryParameters: {'bookId': bookId});
+      final resp = await _dio.get(
+        '/book/bookmarklist',
+        queryParameters: {'bookId': bookId},
+      );
       final data = resp.data;
       _checkSyncResponse(data);
 
@@ -401,39 +436,46 @@ class WeReadApi {
       final chapters = data['chapters'] ?? [];
       if (chapters is List) {
         for (final c in chapters) {
-          if (c is Map) {
-            final uid = c['chapterUid'] ?? 0;
-            final title = c['title'] ?? '';
-            if (uid != 0) chMap[uid as int] = title.toString();
+          try {
+            if (c is! Map) throw const FormatException('章节条目类型无效');
+            final uid = _integer(c['chapterUid']);
+            final title = _text(c['title']);
+            if (uid != 0) chMap[uid] = title;
+          } on FormatException catch (e) {
+            _invalidRow('章节', e);
           }
         }
       }
 
-      final updated = data['updated'] ?? [];
-      if (updated is! List) return [];
+      final updated = _requiredList(data, 'updated');
 
       final bookmarks = <Bookmark>[];
       for (final item in updated) {
-        if (item is! Map) continue;
+        try {
+          if (item is! Map) throw const FormatException('划线条目类型无效');
 
-        final bmId = (item['bookmarkId'] ?? '').toString();
-        if (bmId.isEmpty) continue;
+          final bmId = _id(item['bookmarkId']);
+          if (bmId.isEmpty) throw const FormatException('划线缺少 bookmarkId');
 
-        final chapterUid = item['chapterUid'] ?? 0;
-        final chapterTitle = chMap[chapterUid as int] ?? item['chapterName'] ?? '';
+          final chapterUid = _integer(item['chapterUid']);
+          final chapterTitle = chMap[chapterUid] ?? _text(item['chapterName']);
 
-        final bookmark = Bookmark(
-          bookmarkId: bmId,
-          bookId: bookId,
-          bookTitle: bookTitle,
-          markText: item['markText'] ?? '',
-          chapterTitle: chapterTitle,
-          createdAt: item['createTime'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        );
+          final bookmark = Bookmark(
+            bookmarkId: bmId,
+            bookId: bookId,
+            bookTitle: bookTitle,
+            markText: _text(item['markText']),
+            chapterTitle: chapterTitle,
+            createdAt: _integer(
+              item['createTime'],
+              fallback: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            ),
+          );
 
-        bookmarks.add(bookmark);
-        // 使用 insertOrUpdate 但保留已有的 is_fav 状态
-        await db.insertBookmarkPreserveFav(bookmark.toJson());
+          bookmarks.add(bookmark);
+        } on FormatException catch (e) {
+          _invalidRow('划线', e);
+        }
       }
       return bookmarks;
     } on DioException catch (e) {
@@ -442,7 +484,10 @@ class WeReadApi {
   }
 
   /// 笔记/想法 — GET /web/review/list?bookId=xxx&listType=11&mine=1&synckey=0
-  Future<List<Map<String, dynamic>>> fetchNotes(String bookId, String bookTitle) async {
+  Future<List<Map<String, dynamic>>> fetchNotes(
+    String bookId,
+    String bookTitle,
+  ) async {
     try {
       final resp = await _dio.get('/review/list', queryParameters: {
         'bookId': bookId,
@@ -452,38 +497,39 @@ class WeReadApi {
       });
       final data = resp.data;
       _checkSyncResponse(data);
-      final reviews = data['reviews'] ?? [];
-      if (reviews is! List) return [];
+      final reviews = _requiredList(data, 'reviews');
 
       final notes = <Map<String, dynamic>>[];
       for (final item in reviews) {
-        if (item is! Map) continue;
+        try {
+          if (item is! Map) throw const FormatException('笔记条目类型无效');
 
-        final rv = item['review'] ?? item;
-        if (rv is! Map) continue;
+          final rv = item['review'] ?? item;
+          if (rv is! Map) throw const FormatException('review 字段类型无效');
 
-        final reviewId = (rv['reviewId'] ?? '').toString();
-        if (reviewId.isEmpty) continue;
+          final reviewId = _id(rv['reviewId']);
+          if (reviewId.isEmpty) throw const FormatException('笔记缺少 reviewId');
 
-        final note = {
-          'note_id': reviewId,
-          'book_id': bookId,
-          'book_title': bookTitle,
-          'content': rv['content'] ?? '',
-          'chapter_title': rv['chapterName'] ?? '',
-          'created_at': rv['createTime'] ?? DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'is_fav': 0,
-        };
-        notes.add(note);
-        // 保留已有的 is_fav 状态
-        await db.insertNotePreserveFav(note);
+          final note = {
+            'note_id': reviewId,
+            'book_id': bookId,
+            'book_title': bookTitle,
+            'content': _text(rv['content']),
+            'chapter_title': _text(rv['chapterName']),
+            'created_at': _integer(
+              rv['createTime'],
+              fallback: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            ),
+            'is_fav': 0,
+          };
+          notes.add(note);
+        } on FormatException catch (e) {
+          _invalidRow('笔记', e);
+        }
       }
       return notes;
     } on DioException catch (e) {
       throw Exception('获取笔记失败: ${e.message}');
     }
   }
-
-  /// 全量同步
-  Future<SyncResult> syncAll() => SyncService.forApi(this).syncAll();
 }

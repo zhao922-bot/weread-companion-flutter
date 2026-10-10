@@ -31,9 +31,16 @@ class QrLoginRequest {
 class QrLoginService {
   static const _versionHeaders = mobileVersionHeaders;
   final Dio _dio;
+  final Duration pollDeadline;
+  final Duration requestTimeout;
+  final Duration pollInterval;
   final Random _random = Random.secure();
 
-  QrLoginService({Dio? dio})
+  QrLoginService({Dio? dio,
+    this.pollDeadline = const Duration(minutes: 5),
+    this.requestTimeout = const Duration(seconds: 65),
+    this.pollInterval = const Duration(seconds: 1),
+  })
       : _dio = dio ??
             Dio(BaseOptions(
               connectTimeout: const Duration(seconds: 30),
@@ -113,7 +120,7 @@ class QrLoginService {
     void Function(QrLoginStatus)? onStatus,
   }) async {
     final elapsed = Stopwatch()..start();
-    const deadline = Duration(minutes: 5);
+    final deadline = pollDeadline;
     int? last;
     bool scanned = false;
     while (true) {
@@ -122,9 +129,9 @@ class QrLoginService {
       if (remaining <= Duration.zero) {
         throw const QrLoginException('二维码已过期，请重新扫码', expired: true);
       }
-      final timeout = remaining < const Duration(seconds: 65)
+      final timeout = remaining < requestTimeout
           ? remaining
-          : const Duration(seconds: 65);
+          : requestTimeout;
       // 独立计时器保证连接和接收阶段合计不超过单次/总时限。
       final requestToken = CancelToken();
       final timer = Timer(timeout, () => requestToken.cancel('poll timeout'));
@@ -186,9 +193,9 @@ class QrLoginService {
       final delay = deadline - elapsed.elapsed;
       if (delay > Duration.zero) {
         await _delay(
-            delay < const Duration(seconds: 1)
+            delay < pollInterval
                 ? delay
-                : const Duration(seconds: 1),
+                : pollInterval,
             cancelToken);
       }
     }

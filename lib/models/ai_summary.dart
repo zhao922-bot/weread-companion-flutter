@@ -1,4 +1,4 @@
-import '../providers/notes_provider.dart';
+import 'note_item.dart';
 
 class SummaryReference {
   final String label;

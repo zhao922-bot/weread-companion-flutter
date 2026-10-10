@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/book.dart';
 import 'api.dart';
 import 'database.dart';
+import 'config.dart';
 
 class BookSyncResult {
   final Book book;
@@ -40,14 +41,31 @@ class SyncResult {
 /// 所有同步入口共享的编排与本地数据刷新通知。
 class SyncChanges extends ChangeNotifier {
   DatabaseService? value;
+  int dataVersion = 0;
+  bool favoritesOnly = false;
 
-  void publish(DatabaseService db) {
+  void publish(DatabaseService db, {bool favoritesOnly = false}) {
     value = db;
+    this.favoritesOnly = favoritesOnly;
+    if (!favoritesOnly) dataVersion++;
     notifyListeners();
   }
 }
 
 class SyncService {
+  static Future<SyncService> connect({AppConfig? config,
+      bool Function()? isCancelled}) async {
+    final resolved = config ?? AppConfig();
+    if (config == null) await resolved.load();
+    if (isCancelled?.call() ?? false) throw StateError('同步已取消');
+    if (!resolved.isConfigured) throw StateError('请先登录后同步');
+    final api = await WeReadApi.init(config: resolved, db: DatabaseService.instance);
+    api.updateCookie(resolved.cookie);
+    return SyncService.forApi(api, isCancelled: isCancelled);
+  }
+
+  static SyncService current({bool Function()? isCancelled}) =>
+      SyncService.forApi(WeReadApi.instance, isCancelled: isCancelled);
   static final SyncChanges changes = SyncChanges();
   final Future<List<Book>> Function() loadBooks;
   final Future<int> Function(Book) loadBookmarks;
@@ -68,9 +86,24 @@ class SyncService {
   factory SyncService.forApi(WeReadApi api, {bool Function()? isCancelled}) {
     final db = api.db;
     return SyncService(
-      loadBooks: api.fetchBookshelf,
-      loadBookmarks: (book) async => (await api.fetchBookmarks(book.bookId, book.title)).length,
-      loadNotes: (book) async => (await api.fetchNotes(book.bookId, book.title)).length,
+      loadBooks: () async {
+        final books = await api.fetchBookshelf();
+        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
+        await db.insertBooks(books.map((b) => b.toJson()).toList());
+        return books;
+      },
+      loadBookmarks: (book) async {
+        final rows = await api.fetchBookmarks(book.bookId, book.title);
+        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
+        await db.insertBookmarksPreserveFav(rows.map((r) => r.toJson()).toList());
+        return rows.length;
+      },
+      loadNotes: (book) async {
+        final rows = await api.fetchNotes(book.bookId, book.title);
+        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
+        await db.insertNotesPreserveFav(rows);
+        return rows.length;
+      },
       isCancelled: () => api.syncCancelled || !db.isActive || (isCancelled?.call() ?? false),
       onChanged: () {
         if (db.isActive) {

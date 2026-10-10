@@ -3,7 +3,24 @@ import 'package:dio/dio.dart';
 import 'config.dart';
 import 'database.dart';
 import '../models/ai_summary.dart';
-import '../providers/notes_provider.dart';
+import '../models/note_item.dart';
+
+/// 保留底层原因，调用方可以展示 message 或按 cause 判断错误类型。
+class AIServiceException implements Exception {
+  final String message;
+  final Object? cause;
+
+  const AIServiceException(this.message, {this.cause});
+
+  @override
+  String toString() => cause == null ? message : '$message: $cause';
+}
+
+/// 用户取消或账号会话结束，与请求失败分别处理。
+class AICancelledException extends AIServiceException {
+  const AICancelledException([super.message = 'AI 请求已取消', Object? cause])
+      : super(cause: cause);
+}
 
 /// AI 服务 — 调用 OpenAI 兼容 API（DeepSeek/Qwen/MiniMax 等）
 class AIService {
@@ -29,8 +46,10 @@ class AIService {
   bool get isConfigured => config.apiKey.isNotEmpty && AppConfig.isHttpsUrl(config.baseUrl);
 
   /// 通用 API 调用
-  Future<String?> _callApi(String prompt, {String system = ''}) async {
-    if (!isConfigured) return null;
+  Future<String> _callApi(String prompt, {String system = ''}) async {
+    if (!isConfigured) {
+      throw const AIServiceException('请先配置 AI API Key 和有效的 HTTPS 接口地址');
+    }
 
     final messages = <Map<String, String>>[];
     if (system.isNotEmpty) {
@@ -59,23 +78,54 @@ class AIService {
         },
       );
 
+      if (task.isCancelled) {
+        throw AICancelledException('AI 请求已取消', task.cancelError);
+      }
       final data = resp.data;
-      return data['choices'][0]['message']['content'] as String?;
-    } catch (e) {
-      return null;
+      if (data is! Map || data['choices'] is! List ||
+          (data['choices'] as List).isEmpty) {
+        throw const FormatException('AI 响应缺少 choices');
+      }
+      final choice = (data['choices'] as List).first;
+      if (choice is! Map || choice['message'] is! Map) {
+        throw const FormatException('AI 响应缺少 message');
+      }
+      final content = choice['message']['content'];
+      if (content is! String || content.trim().isEmpty) {
+        throw const FormatException('AI 返回内容为空或格式无效');
+      }
+      return content;
+    } on AIServiceException {
+      rethrow;
+    } catch (e, stack) {
+      final AIServiceException error;
+      if (task.isCancelled || e is DioException && CancelToken.isCancel(e)) {
+        error = AICancelledException('AI 请求已取消', e);
+      } else {
+        final status = e is DioException ? e.response?.statusCode : null;
+        error = AIServiceException(
+          status == null ? 'AI 请求失败' : 'AI 请求失败（HTTP $status）', cause: e);
+      }
+      Error.throwWithStackTrace(error, stack);
     } finally {
       _tasks.remove(task);
     }
   }
 
   /// 根据划线生成书籍摘要
-  Future<AISummary?> summarizeBook(String title, String author, List<NoteItem> notes) async {
-    final db = DatabaseService.instance;
+  Future<AISummary> summarizeBook(String title, String author, List<NoteItem> notes) async {
+    final DatabaseService db;
+    try {
+      db = DatabaseService.instance;
+    } on StateError catch (e, stack) {
+      Error.throwWithStackTrace(AICancelledException('账号会话已结束', e), stack);
+    }
+    if (!db.isActive) throw const AICancelledException('账号会话已结束');
     final selected = notes.where((n) => n.content.trim().isNotEmpty).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final references = selected.take(30).toList().asMap().entries
         .map((e) => SummaryReference.fromNote(e.value, e.key)).toList();
-    if (references.isEmpty) return null;
+    if (references.isEmpty) throw const AIServiceException('没有可用于生成摘要的笔记');
     final highlightsText = jsonEncode(references.map((r) => r.toJson()).toList());
     final prompt = '''请根据以下书籍的划线内容，生成一份简洁的书籍摘要：
 
@@ -94,15 +144,22 @@ $highlightsText
 4. 一句话读后感''';
 
     final text = await _callApi(prompt, system: '你是一位专业的读书笔记助手，擅长从划线中提炼书籍精华。');
-    if (text == null || text.trim().isEmpty || !db.isActive) return null;
+    if (!db.isActive) throw const AICancelledException('账号会话已结束');
     final result = AISummary(createdAt: DateTime.now().millisecondsSinceEpoch,
         title: title, text: text, references: references);
-    await db.saveSummary(result);
-    return db.isActive ? result : null;
+    try {
+      await db.saveSummary(result);
+    } catch (e, stack) {
+      Error.throwWithStackTrace(db.isActive
+          ? AIServiceException('AI 摘要保存失败', cause: e)
+          : AICancelledException('账号会话已结束', e), stack);
+    }
+    if (!db.isActive) throw const AICancelledException('账号会话已结束');
+    return result;
   }
 
   /// 分析阅读习惯
-  Future<String?> analyzeReading(List<String> bookTitles, int bookmarkCount) async {
+  Future<String> analyzeReading(List<String> bookTitles, int bookmarkCount) async {
     final bookList = bookTitles.take(20).map((t) => '- $t').join('\n');
     final prompt = '''请分析以下阅读数据，给出阅读习惯洞察：
 
@@ -120,7 +177,7 @@ $bookList
   }
 
   /// 为金句生成解读
-  Future<String?> interpretQuote(String text, String bookTitle) async {
+  Future<String> interpretQuote(String text, String bookTitle) async {
     final prompt = '''请为以下金句写一段简短的解读（100字以内）：
 
 「$text」

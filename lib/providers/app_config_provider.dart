@@ -17,6 +17,8 @@ class AppConfigProvider extends ChangeNotifier {
   String? _loginError;
   String _userName = '';
   bool _isLoaded = false;
+  bool _isLoading = false;
+  String? _configLoadError;
   int _sessionRevision = 0;
   bool _canBrowseLocal = false;
   final WeReadApi Function(AppConfig) _loginApi;
@@ -45,10 +47,18 @@ class AppConfigProvider extends ChangeNotifier {
   String get userName => _userName;
   String get cookie => config.cookie;
   bool get isLoaded => _isLoaded;
+  bool get isLoading => _isLoading;
+  String? get configLoadError => _configLoadError;
 
   /// 初始化：从存储加载配置
   Future<void> init() async {
+    if (_busy) return;
     _busy = true;
+    _isLoading = true;
+    _isLoaded = false;
+    _configLoadError = null;
+    _loginError = null;
+    notifyListeners();
     try {
       await config.loadTrustedAccount();
       final trustedId = config.trustedAccountId;
@@ -56,10 +66,12 @@ class AppConfigProvider extends ChangeNotifier {
         await DatabaseService.selectAccount(trustedId);
         await DatabaseService.instance.database;
         _canBrowseLocal = true;
-        _isLoaded = true;
         notifyListeners();
       }
       await config.load();
+      _isLoaded = true;
+      _isLoading = false;
+      notifyListeners();
       if (config.isConfigured) {
         _loginStatus = LoginStatus.saved;
         try {
@@ -75,9 +87,10 @@ class AppConfigProvider extends ChangeNotifier {
         await _verifyCredentials();
       }
     } catch (_) {
+      if (!_isLoaded) _configLoadError = '配置加载失败，请重试';
       _loginError = canBrowseLocal ? '凭据或配置加载失败，本地数据可浏览；请重试后同步' : '配置加载失败，请重试';
     } finally {
-      _isLoaded = true;
+      _isLoading = false;
       _busy = false;
       notifyListeners();
     }
@@ -246,10 +259,14 @@ class AppConfigProvider extends ChangeNotifier {
     String? baseUrl,
     String? modelName,
   }) async {
+    if (!_isLoaded) throw StateError('配置尚未加载完成，请重试');
     if (baseUrl != null && !AppConfig.isHttpsUrl(baseUrl.trim())) {
       throw const FormatException('AI 服务地址必须是有效的 HTTPS 地址');
     }
     _beginOperation();
+    final previousApiKey = config.apiKey;
+    final previousBaseUrl = config.baseUrl;
+    final previousModelName = config.modelName;
     try {
       if (apiKey != null) config.apiKey = apiKey;
       if (baseUrl != null) {
@@ -257,6 +274,11 @@ class AppConfigProvider extends ChangeNotifier {
       }
       if (modelName != null) config.modelName = modelName;
       await config.save();
+    } catch (_) {
+      config.apiKey = previousApiKey;
+      config.baseUrl = previousBaseUrl;
+      config.modelName = previousModelName;
+      rethrow;
     } finally {
       _busy = false;
       notifyListeners();

@@ -1,8 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:weread_companion/models/bookshelf_filter.dart';
+import 'package:weread_companion/models/note_item.dart';
 import 'package:weread_companion/providers/bookshelf_provider.dart';
-import 'package:weread_companion/providers/notes_provider.dart';
+import 'package:weread_companion/providers/notes_provider.dart' show NotesProvider;
 import 'package:weread_companion/services/database.dart';
 
 void main() {
@@ -55,14 +57,15 @@ void main() {
     final notes = NotesProvider();
     books.resetSession(1);
     notes.resetSession(1);
-    books.setFilter('读完');
+    books.setFilter(BookshelfFilter.finished);
     books.setSearch('旧账号');
-    notes.setFilter('收藏');
+    notes.setFilter(ReadingFilter.favorites);
     notes.setSearch('旧账号');
     books.resetSession(2);
     notes.resetSession(2);
-    expect(books.filter, '全部');
-    expect(notes.filter, '全部划线');
+    expect(books.filter, BookshelfFilter.all);
+    expect(books.searchQuery, isEmpty);
+    expect(notes.filter, ReadingFilter.all);
     expect(books.books, isEmpty);
     expect(notes.notes, isEmpty);
     expect(books.isLoading, isFalse);

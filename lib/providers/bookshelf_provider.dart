@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/book.dart';
+import '../models/bookshelf_filter.dart';
 import '../services/database.dart';
-import '../services/api.dart';
 import '../services/config.dart';
 import '../services/sync_service.dart';
 
@@ -11,7 +11,7 @@ class BookshelfProvider extends ChangeNotifier {
   }
 
   void _onSyncChanged() {
-    if (SyncService.changes.value?.isActive == true) loadBooks();
+    if (!SyncService.changes.favoritesOnly && SyncService.changes.value?.isActive == true) loadBooks();
   }
 
   @override
@@ -24,7 +24,7 @@ class BookshelfProvider extends ChangeNotifier {
   List<Book> _books = [];
   List<Book> _filtered = [];
   String _searchQuery = '';
-  String _filter = '全部'; // 全部/读完/在读中/未读
+  BookshelfFilter _filter = BookshelfFilter.all;
   bool _loading = false;
   String? _error;
   int _sessionRevision = -1;
@@ -35,7 +35,7 @@ class BookshelfProvider extends ChangeNotifier {
     _books = [];
     _filtered = [];
     _searchQuery = '';
-    _filter = '全部';
+    _filter = BookshelfFilter.all;
     _loading = false;
     _error = null;
     lastSyncResult = null;
@@ -45,7 +45,8 @@ class BookshelfProvider extends ChangeNotifier {
   List<Book> get books => _filtered;
   bool get isLoading => _loading;
   String? get error => _error;
-  String get filter => _filter;
+  BookshelfFilter get filter => _filter;
+  String get searchQuery => _searchQuery;
   int get totalCount => _books.length;
 
   Future<void> loadBooks() async {
@@ -80,25 +81,10 @@ class BookshelfProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 使用传入的 config 或从存储加载
-      final appConfig = config ?? AppConfig();
-      if (config == null) await appConfig.load();
-      if (revision != _sessionRevision) throw StateError('同步已取消');
       final db = DatabaseService.instance;
-
-      if (!appConfig.isConfigured) {
-        throw Exception('请先登录（扫码或导入 Cookie）再同步');
-      }
-
-      final api = await WeReadApi.init(config: appConfig, db: db);
-      if (revision != _sessionRevision) throw StateError('同步已取消');
-
-      // 更新 Cookie
-      api.updateCookie(appConfig.cookie);
-
-      // 执行同步
-      final result = await SyncService.forApi(api,
-          isCancelled: () => revision != _sessionRevision).syncAll();
+      final service = await SyncService.connect(config: config,
+          isCancelled: () => revision != _sessionRevision);
+      final result = await service.syncAll();
       if (revision != _sessionRevision) throw StateError('同步已取消');
 
       // 重新加载本地数据
@@ -127,7 +113,7 @@ class BookshelfProvider extends ChangeNotifier {
     _applyFilter();
   }
 
-  void setFilter(String filter) {
+  void setFilter(BookshelfFilter filter) {
     _filter = filter;
     _applyFilter();
   }
@@ -143,17 +129,7 @@ class BookshelfProvider extends ChangeNotifier {
       ).toList();
     }
 
-    switch (_filter) {
-      case '读完':
-        list = list.where((b) => b.isFinished).toList();
-        break;
-      case '在读中':
-        list = list.where((b) => b.isReading).toList();
-        break;
-      case '未读':
-        list = list.where((b) => b.isUnread).toList();
-        break;
-    }
+    list = list.where(_filter.matches).toList();
 
     _filtered = list;
     notifyListeners();
