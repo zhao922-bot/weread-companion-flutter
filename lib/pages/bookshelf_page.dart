@@ -10,7 +10,8 @@ import 'book_detail_page.dart';
 import 'sync_page.dart';
 
 class BookshelfPage extends StatefulWidget {
-  const BookshelfPage({super.key});
+  final bool isActive;
+  const BookshelfPage({super.key, this.isActive = true});
 
   @override
   State<BookshelfPage> createState() => _BookshelfPageState();
@@ -21,6 +22,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   int _crossAxisCount = 3;
   bool _densityLoaded = false;
   final TextEditingController _searchController = TextEditingController();
+  BookshelfProvider? _provider;
 
   @override
   void initState() {
@@ -28,8 +30,23 @@ class _BookshelfPageState extends State<BookshelfPage> {
     _loadDensity();
     // 首次加载数据
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<BookshelfProvider>().loadBooks();
+      if (!mounted) return;
+      _provider = context.read<BookshelfProvider>();
+      _provider!.setActive(widget.isActive);
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant BookshelfPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    if (!widget.isActive) {
+      _provider?.setActive(false);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _provider?.setActive(widget.isActive);
+      });
+    }
   }
 
   Future<void> _loadDensity() async {
@@ -50,6 +67,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   @override
   void dispose() {
+    _provider?.setActive(false);
     _searchController.dispose();
     super.dispose();
   }
@@ -419,22 +437,27 @@ class _BookCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       if (book.cover.isNotEmpty)
-                        Image.network(
-                          book.cover,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return _buildCoverFallback();
-                          },
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Center(
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.grey[300],
-                              ),
-                            );
-                          },
-                        )
+                        LayoutBuilder(builder: (context, constraints) {
+                          final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+                          return Image.network(
+                            book.cover,
+                            fit: BoxFit.cover,
+                            cacheWidth: (constraints.maxWidth * pixelRatio).ceil(),
+                            cacheHeight: (constraints.maxHeight * pixelRatio).ceil(),
+                            errorBuilder: (context, error, stackTrace) {
+                              return _buildCoverFallback();
+                            },
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.grey[300],
+                                ),
+                              );
+                            },
+                          );
+                        })
                       else
                         _buildCoverFallback(),
                       // 已读完标记

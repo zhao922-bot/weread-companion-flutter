@@ -232,6 +232,53 @@ void main() {
     expect((await db.getAllNotes()).single['content'], '想法');
   });
 
+  test('无效删除拒绝整批，两来源保留数据和游标，修复响应后可重试', () async {
+    final responses = <String, Object?>{'/shelf/sync': {'books': [
+      {'bookId': 'b', 'title': '书'}
+    ]}};
+    final api = await apiWith(responses);
+    final service = SyncService.forApi(api);
+    for (final source in ['bookmark', 'note']) {
+      final isNote = source == 'note';
+      final id = isNote ? 'note_id' : 'bookmark_id';
+      final content = isNote ? 'content' : 'mark_text';
+      await db.applySyncDelta('b', source, [
+        {id: 'old', 'book_id': 'b', content: '原文', 'created_at': 1}
+      ], [], 'previous');
+    }
+    for (final key in ['deleted', 'removed']) {
+      for (final invalid in ['', '  ', null, {}, [], {'wrongId': 'old'}]) {
+        responses['/book/bookmarklist'] = {'updated': [], key: ['old', invalid], 'synckey': 'next'};
+        responses['/review/list'] = {'reviews': [], key: ['old', invalid], 'synckey': 'next'};
+        var callbacks = 0;
+        await expectLater(api.fetchBookmarks('b', '书'), throwsA(isA<FormatException>()));
+        await expectLater(api.fetchNotes('b', '书'), throwsA(isA<FormatException>()));
+        await expectLater(api.fetchBookmarks('b', '书', onDelta: (_, __) => callbacks++),
+          throwsA(isA<FormatException>()));
+        await expectLater(api.fetchNotes('b', '书', onDelta: (_, __) => callbacks++),
+          throwsA(isA<FormatException>()));
+        expect(callbacks, 0);
+        final failed = await service.syncAll();
+        expect(failed.failures.single.errors, hasLength(2));
+        expect(failed.failures.single.reason, contains('请重试'));
+        for (final source in ['bookmark', 'note']) {
+          expect(await db.getSyncCursor('b', source), 'previous');
+          await expectLater(db.applySyncDelta('b', source, [], ['old', ' '], 'next'),
+            throwsA(isA<FormatException>()));
+        }
+        expect(await db.getAllBookmarks(), hasLength(1));
+        expect(await db.getAllNotes(), hasLength(1));
+      }
+    }
+    responses['/book/bookmarklist'] = {'updated': [], 'deleted': [{'bookmarkId': 'old'}], 'synckey': 'next'};
+    responses['/review/list'] = {'reviews': [], 'removed': [{'reviewId': 'old'}], 'synckey': 'next'};
+    expect((await service.syncAll()).successCount, 1);
+    expect(await db.getAllBookmarks(), isEmpty);
+    expect(await db.getAllNotes(), isEmpty);
+    expect(await db.getSyncCursor('b', 'bookmark'), 'next');
+    expect(await db.getSyncCursor('b', 'note'), 'next');
+  });
+
   for (final field in ['books', 'updated', 'reviews']) {
     test('$field非列表明确失败而非空成功', () async {
       final api = await apiWith({

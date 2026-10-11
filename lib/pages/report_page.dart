@@ -5,7 +5,8 @@ import '../services/sync_service.dart';
 
 
 class ReportPage extends StatefulWidget {
-  const ReportPage({super.key});
+  final bool isActive;
+  const ReportPage({super.key, this.isActive = true});
 
   @override
   State<ReportPage> createState() => _ReportPageState();
@@ -23,6 +24,13 @@ class _ReportPageState extends State<ReportPage> {
   int _loadRequest = 0;
   bool _loading = true;
   String? _error;
+  bool _refreshPending = false;
+
+  @override
+  void didUpdateWidget(covariant ReportPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive && _refreshPending) _loadStats();
+  }
 
   @override
   void initState() {
@@ -48,6 +56,8 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _loadStats() async {
+    if (!widget.isActive) { _refreshPending = true; return; }
+    _refreshPending = false;
     final request = ++_loadRequest;
     setState(() { _loading = true; _error = null; });
     try {

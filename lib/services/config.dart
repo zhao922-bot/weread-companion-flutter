@@ -156,8 +156,14 @@ class AppConfig {
     ]);
     if (prefs.containsKey(_keys['cookie']!)) await prefs.remove(_keys['cookie']!);
     if (prefs.containsKey(_keys['apiKey']!)) await prefs.remove(_keys['apiKey']!);
-    if (prefs.getString(_keys['baseUrl']!) != baseUrl) await prefs.setString(_keys['baseUrl']!, baseUrl);
-    if (prefs.getString(_keys['modelName']!) != modelName) await prefs.setString(_keys['modelName']!, modelName);
+    // setString updates the preferences cache even when the platform write fails.
+    // Always write on retry rather than treating that cache as persisted state.
+    if (!await prefs.setString(_keys['baseUrl']!, baseUrl)) {
+      throw StateError('AI 服务地址保存失败，请重试');
+    }
+    if (!await prefs.setString(_keys['modelName']!, modelName)) {
+      throw StateError('AI 模型名称保存失败，请重试');
+    }
   }
 
   Future<void> clear() async {

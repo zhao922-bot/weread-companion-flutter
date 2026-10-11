@@ -10,7 +10,8 @@ import 'ai_summary_page.dart';
 
 class NotesPage extends StatefulWidget {
   final SummaryReference? reference;
-  const NotesPage({super.key, this.reference});
+  final bool isActive;
+  const NotesPage({super.key, this.reference, this.isActive = true});
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -24,6 +25,7 @@ class _NotesPageState extends State<NotesPage> {
   final _filters = ReadingFilter.values;
   bool _preparingSummary = false;
   Future<Map<String, dynamic>?>? _target;
+  NotesProvider? _provider;
 
   @override
   void initState() {
@@ -42,12 +44,27 @@ class _NotesPageState extends State<NotesPage> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<NotesProvider>().loadNotes();
+      _provider = context.read<NotesProvider>();
+      _provider!.setActive(widget.isActive);
     });
   }
 
   @override
+  void didUpdateWidget(covariant NotesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reference != null || oldWidget.isActive == widget.isActive) return;
+    if (!widget.isActive) {
+      _provider?.setActive(false);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _provider?.setActive(widget.isActive);
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _provider?.setActive(false);
     SyncService.changes.removeListener(_reloadReference);
     _searchController.dispose();
     _scrollController.dispose();
@@ -67,7 +84,7 @@ class _NotesPageState extends State<NotesPage> {
     setState(() => _preparingSummary = true);
     try {
       final provider = context.read<NotesProvider>();
-      final notes = await provider.getAllMatchingNotes();
+      final notes = await provider.getSummaryNotes();
       if (!mounted) return;
       final bookTitles = notes.map((n) => n.bookTitle).where((t) => t.isNotEmpty).toSet().toList();
       final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集';

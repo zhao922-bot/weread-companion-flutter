@@ -249,6 +249,9 @@ class DatabaseService {
   Future<void> applySyncDelta(String bookId, String source,
       List<Map<String, dynamic>> rows, List<String> deleted, String? cursor,
       {String? expectedCursor}) async {
+    if (deleted.any((id) => id.trim().isEmpty)) {
+      throw const FormatException('增量包含无效删除 ID，未提交数据或推进同步游标，请重试');
+    }
     final table = source == 'note' ? 'notes' : 'bookmarks';
     final id = source == 'note' ? 'note_id' : 'bookmark_id';
     final db = await database;
@@ -506,6 +509,23 @@ class DatabaseService {
     final where = _readingFilter(query, filter, bookId);
     return Sqflite.firstIntValue(await db.rawQuery(
         'SELECT COUNT(*) FROM ($_readingItems) AS reading_items ${where.$1}', where.$2)) ?? 0;
+  }
+
+  static const summaryItemLimit = 30;
+
+  /// Match Dart String.trim whitespace, before applying the bounded selection.
+  static const _summaryWhitespace = 'char(9,10,11,12,13,32,133,160,5760,'
+      '8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,'
+      '8232,8233,8239,8287,12288,65279)';
+
+  Future<List<Map<String, dynamic>>> getSummaryItems({String query = '',
+    ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
+    final where = _readingFilter(query, filter, bookId);
+    return (await database).rawQuery(
+      'SELECT * FROM ($_readingItems) AS reading_items ${where.$1} '
+      '${where.$1.isEmpty ? 'WHERE' : 'AND'} trim(content, $_summaryWhitespace) <> ? '
+      'ORDER BY created_at DESC, source DESC, id DESC LIMIT ?',
+      [...where.$2, '', summaryItemLimit]);
   }
 
   Future<List<Map<String, dynamic>>> getBookmarksByBook(String bookId) async {

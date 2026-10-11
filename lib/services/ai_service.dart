@@ -121,9 +121,10 @@ class AIService {
       Error.throwWithStackTrace(AICancelledException('账号会话已结束', e), stack);
     }
     if (!db.isActive) throw const AICancelledException('账号会话已结束');
-    final selected = notes.where((n) => n.content.trim().isNotEmpty).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final references = selected.take(30).toList().asMap().entries
+    // Callers use the database's stable, nonempty LIMIT 30 selection.
+    final selected = notes.take(DatabaseService.summaryItemLimit)
+        .where((n) => n.content.trim().isNotEmpty).toList();
+    final references = selected.asMap().entries
         .map((e) => SummaryReference.fromNote(e.value, e.key)).toList();
     if (references.isEmpty) throw const AIServiceException('没有可用于生成摘要的笔记');
     final highlightsText = jsonEncode(references.map((r) => r.toJson()).toList());

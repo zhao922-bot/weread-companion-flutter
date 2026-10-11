@@ -6,12 +6,17 @@ import '../models/note_item.dart';
 export '../models/note_item.dart';
 
 class NotesProvider extends ChangeNotifier {
-  NotesProvider() {
+  NotesProvider({bool isActive = true}) : _active = isActive {
     SyncService.changes.addListener(_onSyncChanged);
   }
 
   void _onSyncChanged() {
     if (SyncService.changes.value?.isActive != true || _publishingFavorite) return;
+    if (!_active) {
+      _refreshPending = true;
+      _statsDirty = true;
+      return;
+    }
     final event = SyncService.changes;
     if (event.kind == SyncChangeKind.bookshelf ||
         (_filter == ReadingFilter.notes && event.sources.isNotEmpty && !event.sources.contains('note'))) {
@@ -33,6 +38,20 @@ class NotesProvider extends ChangeNotifier {
     }
   }
   int _dataVersion = SyncService.changes.dataVersion;
+  bool _active;
+  bool _refreshPending = true;
+
+  Future<void> setActive(bool active) async {
+    _active = active;
+    if (!active && (_loading || _searchTimer?.isActive == true)) {
+      _refreshPending = true;
+      _searchTimer?.cancel();
+    }
+    if (active && _refreshPending) {
+      _dataVersion = SyncService.changes.dataVersion;
+      await loadNotes();
+    }
+  }
   int _statsRequest = 0;
 
   Future<void> _refreshStats() async {
@@ -126,6 +145,7 @@ class NotesProvider extends ChangeNotifier {
   void resetSession(int revision) {
     if (_sessionRevision == revision) return;
     _sessionRevision = revision;
+    _refreshPending = true;
     _statsRequest++;
     _searchTimer?.cancel();
     _statsDirty = true;
@@ -178,6 +198,17 @@ class NotesProvider extends ChangeNotifier {
     }
   }
 
+  /// 摘要只读取数据库最终入选的最多 30 条。
+  Future<List<NoteItem>> getSummaryNotes() async {
+    final db = DatabaseService.instance;
+    final revision = _sessionRevision;
+    final rows = await db.getSummaryItems(query: _searchQuery, filter: _filter);
+    if (!db.isActive || revision != _sessionRevision || _disposed) {
+      throw StateError('账号会话已结束');
+    }
+    return rows.map(_fromRow).toList();
+  }
+
   /// 搜索和筛选在全库执行，只加载当前批次。
   Future<void> loadNotes() {
     _searchTimer?.cancel();
@@ -191,6 +222,9 @@ class NotesProvider extends ChangeNotifier {
   }
 
   Future<void> _loadPage({required bool reset, bool preserve = false, int limit = pageSize}) async {
+    if (_disposed) return;
+    if (!_active) { _refreshPending = true; return; }
+    _refreshPending = false;
     final request = ++_request;
     final favoriteRevision = _favoriteRevision;
     if (reset && !preserve) _notes = [];
@@ -204,6 +238,7 @@ class NotesProvider extends ChangeNotifier {
       final query = _searchQuery;
       final filter = _filter;
       final count = await db.countReadingItems(query: query, filter: filter);
+      if (!_active) { _refreshPending = true; return; }
       final statsRequest = _statsDirty ? ++_statsRequest : _statsRequest;
       final stats = _statsDirty ? await db.getReadingStats() : _stats;
       if (request != _request || !db.isActive) return;

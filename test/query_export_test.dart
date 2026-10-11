@@ -173,6 +173,31 @@ void main() {
     }
   });
 
+  test('摘要数据库先排除空白再LIMIT30，稳定跨来源排序且保留搜索/收藏/书籍范围', () async {
+    await seed(160);
+    final blanks = ['', ' ', '\t\r\n', '\u00a0\u3000\ufeff', '\u2000\u2028'];
+    await db.insertNotes(List.generate(blanks.length, (i) => {
+      'note_id': 'blank$i', 'book_id': 'main', 'content': blanks[i], 'created_at': 10000,
+    }));
+    final provider = NotesProvider();
+    addTearDown(provider.dispose);
+    final selected = await provider.getSummaryNotes();
+    final expected = await db.getReadingItems(limit: 1000);
+    expect(selected.map((n) => '${n.source.name}:${n.id}'), expected
+      .where((r) => (r['content'] as String).trim().isNotEmpty).take(30)
+      .map((r) => '${r['source']}:${r['id']}'));
+    expect(selected, hasLength(30));
+    expect(selected.map((n) => n.bookId).toSet(), {'main'});
+    expect(await db.getSummaryItems(), await db.getSummaryItems());
+    final old = await db.getSummaryItems(bookId: 'old');
+    expect(old, hasLength(2));
+    expect(old.every((r) => r['book_id'] == 'old'), isTrue);
+    expect(await db.getSummaryItems(query: '唯一历史', filter: ReadingFilter.notes),
+      [old.singleWhere((r) => r['source'] == 'note')]);
+    expect(await db.getSummaryItems(filter: ReadingFilter.favorites), old);
+    expect(await db.getSummaryItems(bookId: 'missing'), isEmpty);
+  });
+
   test('摘要元数据分页按书过滤不漏旧项且正文详情单独读取', () async {
     for (var i = 0; i < 65; i++) {
       await db.saveSummary(AISummary(createdAt: i, title: '摘要$i', text: '正文$i',

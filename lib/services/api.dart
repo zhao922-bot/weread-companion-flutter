@@ -544,7 +544,8 @@ class WeReadApi {
         }
       }
       _checkDeltaRows(data, invalidRows);
-      onDelta?.call(data['synckey']?.toString(), _deletedIds(data, 'bookmarkId'));
+      final deleted = _deletedIds(data, 'bookmarkId');
+      onDelta?.call(data['synckey']?.toString(), deleted);
       return bookmarks;
     } on DioException {
       rethrow;
@@ -599,7 +600,8 @@ class WeReadApi {
         }
       }
       _checkDeltaRows(data, invalidRows);
-      onDelta?.call(data['synckey']?.toString(), _deletedIds(data, 'reviewId'));
+      final deleted = _deletedIds(data, 'reviewId');
+      onDelta?.call(data['synckey']?.toString(), deleted);
       return notes;
     } on DioException {
       rethrow;
@@ -613,9 +615,21 @@ class WeReadApi {
   }
 
   List<String> _deletedIds(dynamic data, String field) {
-    final deleted = data['deleted'] ?? data['removed'] ?? [];
-    if (deleted is! List) throw const FormatException('删除记录格式无效');
-    return deleted.map((row) => _id(row is Map ? row[field] : row))
-        .where((id) => id.isNotEmpty).toList();
+    final ids = <String>[];
+    for (final key in ['deleted', 'removed']) {
+      if (!data.containsKey(key)) continue;
+      final deleted = data[key];
+      try {
+        if (deleted is! List) throw const FormatException('删除记录格式无效');
+        for (final row in deleted) {
+          final id = _id(row is Map ? row[field] : row);
+          if (id.trim().isEmpty) throw const FormatException('删除记录缺少有效 ID');
+          ids.add(id);
+        }
+      } on FormatException catch (e) {
+        throw FormatException('增量响应包含无效删除记录：${e.message}，未提交数据或推进同步游标，请重试');
+      }
+    }
+    return ids;
   }
 }

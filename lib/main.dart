@@ -28,12 +28,12 @@ class WeReadCompanionApp extends StatelessWidget {
           create: (_) => AppConfigProvider(config: appConfig)..init(),
         ),
         ChangeNotifierProxyProvider<AppConfigProvider, BookshelfProvider>(
-          create: (_) => BookshelfProvider(),
+          create: (_) => BookshelfProvider(isActive: false),
           update: (_, config, provider) => provider!
             ..resetSession(config.sessionRevision),
         ),
         ChangeNotifierProxyProvider<AppConfigProvider, NotesProvider>(
-          create: (_) => NotesProvider(),
+          create: (_) => NotesProvider(isActive: false),
           update: (_, config, provider) => provider!
             ..resetSession(config.sessionRevision),
         ),
@@ -89,17 +89,29 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _pages = const [
-    BookshelfPage(),
-    NotesPage(),
-    CardsPage(),
-    ReportPage(),
-    SettingsPage(),
-  ];
+  final Set<int> _visited = {0};
+  int? _sessionRevision;
+  bool? _canBrowseLocal;
+
+  Widget _page(int index) {
+    final active = index == _currentIndex;
+    return switch (index) {
+      0 => BookshelfPage(isActive: active),
+      1 => NotesPage(isActive: active),
+      2 => CardsPage(isActive: active),
+      3 => ReportPage(isActive: active),
+      _ => SettingsPage(isActive: active),
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
     final config = context.watch<AppConfigProvider>();
+    if (_sessionRevision != config.sessionRevision || _canBrowseLocal != config.canBrowseLocal) {
+      _sessionRevision = config.sessionRevision;
+      _canBrowseLocal = config.canBrowseLocal;
+      _visited..clear()..add(_currentIndex);
+    }
     return Scaffold(
       body: Column(
         children: [
@@ -116,11 +128,11 @@ class _MainScreenState extends State<MainScreen> {
               key: ValueKey('${config.sessionRevision}:${config.canBrowseLocal}'),
               index: _currentIndex,
               children: [
-                for (var i = 0; i < _pages.length; i++)
-                  if (i == 4)
-                    SettingsPage(isActive: _currentIndex == 4)
-                  else if (config.canBrowseLocal)
-                    _pages[i]
+                for (var i = 0; i < 5; i++)
+                  if (!_visited.contains(i))
+                    const SizedBox.shrink()
+                  else if (i == 4 || config.canBrowseLocal)
+                    _page(i)
                   else
                     const Center(child: Text('请先在设置中验证登录')),
               ],
@@ -133,6 +145,7 @@ class _MainScreenState extends State<MainScreen> {
         onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
+            _visited.add(index);
           });
         },
         destinations: const [

@@ -201,12 +201,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (_preparingSummary) return;
     setState(() => _preparingSummary = true);
     try {
-      // 摘要显式读取该书全部条目，不受详情已加载页数影响。
+      // 数据库筛选最新非空条目，最多读取 30 条，不受详情分页影响。
       final db = DatabaseService.instance;
-      final connection = await db.database;
-      final rows = await connection.rawQuery(
-        'SELECT * FROM ($_bookItems) WHERE book_id = ? '
-        'ORDER BY created_at DESC, source DESC, id DESC', [widget.book.bookId]);
+      final rows = await db.getSummaryItems(bookId: widget.book.bookId);
       if (!mounted || !db.isActive) return;
       final notes = rows.map((m) => NoteItem(
         id: m['id'] as String, bookId: m['book_id'] as String,

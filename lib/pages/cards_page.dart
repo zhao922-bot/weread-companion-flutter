@@ -11,7 +11,8 @@ import '../services/database.dart';
 import '../services/sync_service.dart';
 
 class CardsPage extends StatefulWidget {
-  const CardsPage({super.key});
+  final bool isActive;
+  const CardsPage({super.key, this.isActive = true});
 
   @override
   State<CardsPage> createState() => _CardsPageState();
@@ -32,6 +33,12 @@ class _CardsPageState extends State<CardsPage> {
   int _request = 0;
   bool _exporting = false;
   bool _refreshPending = false;
+
+  @override
+  void didUpdateWidget(covariant CardsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive && _refreshPending) _loadBookmarks();
+  }
 
   void _onExportChanged(bool exporting) {
     if (!mounted) return;
@@ -59,10 +66,11 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   Future<void> _loadBookmarks() async {
-    if (_exporting) {
+    if (_exporting || !widget.isActive) {
       _refreshPending = true;
       return;
     }
+    _refreshPending = false;
     final request = ++_request;
     final query = _searchQuery;
     setState(() {
@@ -72,6 +80,7 @@ class _CardsPageState extends State<CardsPage> {
     try {
       final db = DatabaseService.instance;
       final count = await db.countBookmarks(query: query);
+      if (!widget.isActive) { _refreshPending = true; return; }
       if (!mounted || request != _request || !db.isActive) return;
       final totalPages = (count / _itemsPerPage).ceil();
       final page = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);

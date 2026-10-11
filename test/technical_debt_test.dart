@@ -64,8 +64,14 @@ void main() {
         'choices': [{'message': {'content': '观点 [R1]；另一个观点 [R30]'}}],
       }));
     }));
+    await db.insertNotes(List.generate(35, (i) => {
+      'note_id': 'n$i', 'book_id': 'b${i % 2}', 'book_title': '书${i % 2}',
+      'content': '原文$i', 'chapter_title': '章节$i', 'created_at': i,
+    }));
+    final provider = NotesProvider();
+    addTearDown(provider.dispose);
     final summary = await AIService(config: AppConfig(apiKey: 'test'), dio: dio)
-        .summarizeBook('合集', '', List.generate(35, item));
+        .summarizeBook('合集', '', await provider.getSummaryNotes());
     expect(summary.coverage, contains('2 本书 30 条笔记'));
     expect(summary.references.first.noteId, 'n34');
     expect(summary.references.last.noteId, 'n5');

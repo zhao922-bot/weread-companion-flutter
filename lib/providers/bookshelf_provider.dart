@@ -6,7 +6,7 @@ import '../services/config.dart';
 import '../services/sync_service.dart';
 
 class BookshelfProvider extends ChangeNotifier {
-  BookshelfProvider() {
+  BookshelfProvider({bool isActive = true}) : _active = isActive {
     SyncService.changes.addListener(_onSyncChanged);
   }
 
@@ -17,6 +17,14 @@ class BookshelfProvider extends ChangeNotifier {
     }
   }
   Future<void>? _refresh;
+  bool _active;
+  bool _refreshPending = true;
+
+  Future<void> setActive(bool active) async {
+    _active = active;
+    if (!active && _loading) _refreshPending = true;
+    if (active && _refreshPending) await loadBooks();
+  }
   bool _disposed = false;
   int _request = 0;
 
@@ -40,6 +48,8 @@ class BookshelfProvider extends ChangeNotifier {
   void resetSession(int revision) {
     if (_sessionRevision == revision) return;
     _sessionRevision = revision;
+    _request++;
+    _refreshPending = true;
     _books = [];
     _filtered = [];
     _searchQuery = '';
@@ -59,6 +69,8 @@ class BookshelfProvider extends ChangeNotifier {
 
   Future<void> loadBooks() async {
     if (_disposed) return;
+    if (!_active) { _refreshPending = true; return; }
+    _refreshPending = false;
     final request = ++_request;
     final revision = _sessionRevision;
     _loading = true;

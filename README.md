@@ -1,4 +1,4 @@
-# 微信读书伴侣 (WeRead Companion) - Flutter 版本 v2.6.3
+# 微信读书伴侣 (WeRead Companion) - Flutter 版本 v2.6.4
 
 微信读书的移动伴侣工具，支持书架管理、笔记浏览、金句卡片和阅读报告。
 

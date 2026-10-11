@@ -4,10 +4,24 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:weread_companion/pages/cookie_login_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
 import 'package:weread_companion/services/api.dart';
 import 'package:weread_companion/services/config.dart';
+
+class FailingPreferencesStore extends InMemorySharedPreferencesStore {
+  FailingPreferencesStore() : super.empty();
+  String? failedKey;
+  final writes = <String>[];
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    writes.add(key);
+    if (key == failedKey) return false;
+    return super.setValue(valueType, key, value);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -91,6 +105,27 @@ void main() {
     expect(prefs.containsKey('weread_cookie'), isFalse);
     expect(prefs.containsKey('weread_api_key'), isFalse);
   });
+
+  for (final key in ['weread_base_url', 'weread_model_name']) {
+    test('$key返回false明确失败，缓存已更新仍真正重试持久化', () async {
+      final store = FailingPreferencesStore()..failedKey = 'flutter.$key';
+      SharedPreferencesStorePlatform.instance = store;
+      final config = AppConfig(baseUrl: 'https://new.example.com', modelName: 'new-model');
+      await expectLater(config.save(), throwsA(isA<StateError>().having(
+        (e) => e.message, 'message', contains('保存失败'))));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(key), key == 'weread_base_url' ? config.baseUrl : config.modelName);
+      expect((await store.getAll()).containsKey('flutter.$key'), isFalse);
+      store.failedKey = null;
+      await config.save();
+      expect(store.writes.where((k) => k == 'flutter.$key'), hasLength(2));
+      await prefs.reload();
+      final restored = AppConfig();
+      await restored.load();
+      expect(restored.baseUrl, config.baseUrl);
+      expect(restored.modelName, config.modelName);
+    });
+  }
 
   test('重复保存无安全存储写入，仅持久化发生变化的字段', () async {
     final config = AppConfig(cookie: 'wr_vid=123', apiKey: 'key');
