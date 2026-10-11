@@ -48,6 +48,7 @@ class _SyncPageState extends State<SyncPage> {
   @override
   void dispose() {
     _cancelled = true;
+    _service?.cancel();
     _logScrollController.dispose();
     super.dispose();
   }
@@ -70,6 +71,7 @@ class _SyncPageState extends State<SyncPage> {
   }
 
   Future<void> _startSync() async {
+    _service = null;
     setState(() {
       _syncing = true;
       _cancelled = false;
@@ -141,6 +143,7 @@ class _SyncPageState extends State<SyncPage> {
 
   Future<void> _retryBook(BookSyncResult failure) async {
     if (_syncing || _service == null) return;
+    _service!.resetCancellation();
     setState(() {
       _syncing = true;
       _cancelled = false;
@@ -214,7 +217,10 @@ class _SyncPageState extends State<SyncPage> {
                   width: double.infinity,
                   child: _syncing
                       ? OutlinedButton.icon(
-                          onPressed: () => setState(() => _cancelled = true),
+                          onPressed: () {
+                            setState(() => _cancelled = true);
+                            _service?.cancel();
+                          },
                           icon: const Icon(Icons.stop_rounded),
                           label: const Text('取消同步'),
                           style: OutlinedButton.styleFrom(

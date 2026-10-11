@@ -133,6 +133,32 @@ void main() {
     expect(plan.toString(), contains('idx_notes_book_time'));
   });
 
+  test('三字符搜索混合来源同ID和同时间游标分页无遗漏', () async {
+    await db.insertBookmarks(List.generate(8, (i) => {
+      'bookmark_id': '$i', 'book_id': 'b', 'mark_text': 'abc引文', 'created_at': i ~/ 4,
+    }));
+    await db.insertNotes(List.generate(8, (i) => {
+      'note_id': '$i', 'book_id': 'b', 'content': i == 0 ? '不匹配' : 'abc笔记', 'created_at': i ~/ 4,
+    }));
+    for (final filter in [ReadingFilter.all, ReadingFilter.notes]) {
+      final expected = await db.getReadingItems(query: 'abc', filter: filter);
+      final actual = <Map<String, dynamic>>[];
+      NoteItem? cursor;
+      while (true) {
+        final page = await db.getReadingItems(query: 'abc', filter: filter, limit: 2, after: cursor);
+        if (page.isEmpty) break;
+        actual.addAll(page);
+        final row = page.last;
+        cursor = NoteItem(id: row['id'] as String, bookId: row['book_id'] as String,
+          bookTitle: row['book_title'] as String, content: row['content'] as String,
+          chapterTitle: row['chapter_title'] as String, createdAt: row['created_at'] as int,
+          isFav: row['is_fav'] == 1, source: NoteSource.values.byName(row['source'] as String));
+      }
+      expect(actual, expected);
+      expect(actual.length, await db.countReadingItems(query: 'abc', filter: filter));
+    }
+  });
+
   test('摘要元数据分页按书过滤不漏旧项且正文详情单独读取', () async {
     for (var i = 0; i < 65; i++) {
       await db.saveSummary(AISummary(createdAt: i, title: '摘要$i', text: '正文$i',
@@ -398,6 +424,45 @@ void main() {
       });
       await tester.pumpWidget(const SizedBox());
     }
+  });
+
+  testWidgets('窄屏长卡片第一分片落盘时旋转，中止分享并清理分片', (tester) async {
+    tester.view.physicalSize = const ui.Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() => db.insertBookmark({'bookmark_id': 'rotate', 'book_id': 'book',
+      'book_title': '旋转测试', 'mark_text': List.filled(120, '超长引文内容').join('\n'),
+      'created_at': 1}));
+    var shared = false;
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel, (_) async { shared = true; return 'success'; });
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(const MaterialApp(home: CardsPage()));
+    await pumpUntil(tester, () => find.textContaining('超长引文内容').evaluate().isNotEmpty);
+    await tester.tap(find.textContaining('超长引文内容').first);
+    await tester.pumpAndSettle();
+    var rotated = false;
+    final watcher = await tester.runAsync(() async => directory.watch().listen((event) {
+      if (!rotated && event.path.endsWith('_1.png')) {
+        rotated = true;
+        tester.view.physicalSize = const ui.Size(800, 400);
+      }
+    }));
+    addTearDown(watcher!.cancel);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('导出图片'));
+      await waitUntil(() => rotated);
+    });
+    await pumpUntil(tester, () => find.textContaining('请勿在导出时旋转屏幕').evaluate().isNotEmpty);
+    expect(shared, isFalse);
+    await tester.runAsync(() async {
+      expect(await directory.list().where((f) => f.path.endsWith('.png')).isEmpty, isTrue);
+    });
+    expect(find.text('导出图片'), findsWidgets);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('宽屏导出A异步等待时点击B及字号不会改变图片与分享内容', (tester) async {

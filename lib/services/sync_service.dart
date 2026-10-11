@@ -6,6 +6,12 @@ import 'api.dart';
 import 'database.dart';
 import 'config.dart';
 
+class SyncCancelledException implements Exception {
+  const SyncCancelledException();
+  @override
+  String toString() => '同步已取消';
+}
+
 class BookSyncResult {
   final Book book;
   final int bookmarks;
@@ -87,24 +93,69 @@ class SyncService {
   final bool Function() isCancelled;
   final VoidCallback onChanged;
   final Duration requestInterval;
-  static DateTime _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  final ValueNotifier<bool> _cancelSignal = ValueNotifier(false);
+  bool get _isCancelled => _cancelSignal.value || isCancelled();
+
+  void cancel() {
+    _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+    _cancelSignal.value = true;
+  }
+
+  void resetCancellation() {
+    _cancelSignal.value = false;
+  }
+
+  // Legacy entry points expose a predicate (including account-session changes).
+  // Observe it while waiting; explicit UI cancellation wakes the wait immediately.
+  Future<T> _waitFor<T>(Future<T> future) async {
+    if (_isCancelled) { cancel(); throw const SyncCancelledException(); }
+    final cancelled = Completer<T>();
+    void check() {
+      if (_isCancelled && !cancelled.isCompleted) {
+        cancelled.completeError(const SyncCancelledException());
+        cancel();
+      }
+    }
+    final timer = Timer.periodic(const Duration(milliseconds: 10), (_) => check());
+    _cancelSignal.addListener(check);
+    try {
+      return await Future.any([future, cancelled.future]);
+    } finally {
+      timer.cancel();
+      _cancelSignal.removeListener(check);
+    }
+  }
+
+  Future<void> _delay(Duration duration) async {
+    final done = Completer<void>();
+    final timer = Timer(duration, () => done.complete());
+    try { await _waitFor(done.future); } finally { timer.cancel(); }
+  }
   static int _activeRequests = 0;
   static final _waiting = <Completer<void>>[];
-  static final _accountTasks = <String, Future<void>>{};
+  static final _accountTasks = <String, List<Completer<void>>>{};
   final String? accountId;
 
   Future<T> _exclusive<T>(Future<T> Function() task) async {
     final account = accountId;
     if (account == null) return task();
-    final previous = _accountTasks[account];
+    final queue = _accountTasks.putIfAbsent(account, () => []);
     final gate = Completer<void>();
-    _accountTasks[account] = gate.future;
+    queue.add(gate);
+    if (queue.length == 1) gate.complete();
     try {
-      await previous;
+      await _waitFor(gate.future);
+      if (_isCancelled) throw const SyncCancelledException();
       return await task();
     } finally {
-      gate.complete();
-      if (identical(_accountTasks[account], gate.future)) _accountTasks.remove(account);
+      final wasHead = identical(queue.first, gate);
+      queue.remove(gate);
+      if (queue.isEmpty) {
+        _accountTasks.remove(account);
+      } else if (wasHead) {
+        queue.first.complete();
+      }
     }
   }
 
@@ -183,25 +234,34 @@ class SyncService {
     } else {
       final gate = Completer<void>();
       _waiting.add(gate);
-      await gate.future;
+      try {
+        await _waitFor(gate.future);
+      } catch (_) {
+        if (!_waiting.remove(gate)) _releaseRequest();
+        rethrow;
+      }
     }
     try {
       return await _retryRequest(load);
     } finally {
-      if (_waiting.isEmpty) {
-        _activeRequests--;
-      } else {
-        _waiting.removeAt(0).complete();
-      }
+      _releaseRequest();
+    }
+  }
+
+  static void _releaseRequest() {
+    if (_waiting.isEmpty) {
+      _activeRequests--;
+    } else {
+      _waiting.removeAt(0).complete();
     }
   }
 
   Future<T> _retryRequest<T>(Future<T> Function() load) async {
     for (var attempt = 0; ; attempt++) {
-      while (_blockedUntil.isAfter(DateTime.now()) && !isCancelled()) {
-        await Future<void>.delayed(_blockedUntil.difference(DateTime.now()));
+      while (_blockedUntil.isAfter(DateTime.now())) {
+        await _delay(_blockedUntil.difference(DateTime.now()));
       }
-      if (isCancelled()) throw StateError('同步已取消');
+      if (_isCancelled) throw const SyncCancelledException();
       try {
         return await load();
       } on DioException catch (e) {
@@ -233,7 +293,7 @@ class SyncService {
     }
     final first = bookmarksTask();
     Future<void> notesTask() async {
-      if (isCancelled()) return;
+      if (_isCancelled) return;
       try {
         notes = await _request(() => loadNotes(book));
       } catch (e) {
@@ -241,25 +301,31 @@ class SyncService {
       }
     }
     await Future.wait([first, notesTask()]);
-    if (isCancelled()) errors.add('同步已取消');
+    if (_isCancelled) errors.add('同步已取消');
     return BookSyncResult(book, bookmarks, notes, errors);
   }
 
   Future<SyncResult> syncAll({
     void Function(int total)? onBooks,
     void Function(BookSyncResult result, int processed)? onProgress,
-  }) => _exclusive(() => _syncAll(onBooks: onBooks, onProgress: onProgress));
+  }) async {
+    try {
+      return await _exclusive(() => _syncAll(onBooks: onBooks, onProgress: onProgress));
+    } on SyncCancelledException {
+      return SyncResult([], 0, cancelled: true);
+    }
+  }
 
   Future<SyncResult> _syncAll({void Function(int total)? onBooks,
     void Function(BookSyncResult result, int processed)? onProgress}) async {
-    if (isCancelled()) return SyncResult([], 0, cancelled: true);
+    if (_isCancelled) return SyncResult([], 0, cancelled: true);
     try {
       final books = await _request(loadBooks);
       onBooks?.call(books.length);
       final results = <BookSyncResult>[];
       var next = 0;
       Future<void> worker() async {
-        while (!isCancelled() && next < books.length) {
+        while (!_isCancelled && next < books.length) {
           final book = books[next++];
           final result = await _syncBook(book);
           results.add(result);
@@ -268,7 +334,9 @@ class SyncService {
       }
       // Two books, each with two overlapping requests: at most four in flight.
       await Future.wait([worker(), worker()]);
-      return SyncResult(results, books.length, cancelled: isCancelled());
+      return SyncResult(results, books.length, cancelled: _isCancelled);
+    } on SyncCancelledException {
+      return SyncResult([], 0, cancelled: true);
     } finally {
       onChanged();
     }
@@ -277,7 +345,7 @@ class SyncService {
   Future<BookSyncResult> retryBook(Book book) => _exclusive(() => _retryBook(book));
 
   Future<BookSyncResult> _retryBook(Book book) async {
-    if (isCancelled()) throw StateError('同步已取消');
+    if (_isCancelled) throw const SyncCancelledException();
     try {
       return await _syncBook(book);
     } finally {

@@ -27,7 +27,23 @@ class AppConfigProvider extends ChangeNotifier {
   AppConfigProvider(
       {required this.config, WeReadApi Function(AppConfig)? loginApi})
       : _loginApi =
-            loginApi ?? ((config) => WeReadApi.forLogin(config: config));
+            loginApi ?? ((config) => WeReadApi.forLogin(config: config)) {
+    config.credentialRevalidation.addListener(_requireRevalidation);
+  }
+
+  void _requireRevalidation() {
+    final error = config.credentialRevalidation.value;
+    if (error == null) return;
+    _loginStatus = LoginStatus.saved;
+    _loginError = error;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    config.credentialRevalidation.removeListener(_requireRevalidation);
+    super.dispose();
+  }
 
   bool get isLoggedIn => _loginStatus == LoginStatus.verified;
   bool get canBrowseLocal => _canBrowseLocal;
@@ -164,9 +180,9 @@ class AppConfigProvider extends ChangeNotifier {
       // 首次验证若未能持久化可信账号，不留下可访问的数据库会话。
       if (!_canBrowseLocal) await DatabaseService.endSession();
       _loginStatus = LoginStatus.saved;
-      _loginError = canBrowseLocal
+      _loginError = config.credentialRevalidation.value ?? (canBrowseLocal
           ? '暂时无法联网验证，本地数据可浏览；同步需要联网后重试'
-          : '已保存凭据，暂时无法完成验证，请检查网络后重试';
+          : '已保存凭据，暂时无法完成验证，请检查网络后重试');
     } finally {
       api.dispose();
     }
@@ -181,6 +197,7 @@ class AppConfigProvider extends ChangeNotifier {
         _loginError = '本地数据可浏览；同步需要联网并重新登录';
         return false;
       }
+      config.credentialRevalidation.value = null;
       await _verifyCredentials();
       return isLoggedIn;
     } finally {
@@ -217,6 +234,7 @@ class AppConfigProvider extends ChangeNotifier {
       await DatabaseService.endSession();
       config.cookie = cookie;
       config.credentials = credentials;
+      config.credentialRevalidation.value = null;
       await config.save();
       _loginStatus = LoginStatus.saved;
       notifyListeners();
@@ -240,6 +258,7 @@ class AppConfigProvider extends ChangeNotifier {
       _loginError = null;
       config.cookie = '';
       config.credentials = null;
+      config.credentialRevalidation.value = null;
       config.apiKey = '';
       config.baseUrl = 'https://api.deepseek.com';
       config.modelName = 'deepseek-chat';

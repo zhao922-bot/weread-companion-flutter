@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'credentials.dart';
@@ -7,6 +8,7 @@ class AppConfig {
   static const _secureStorage = FlutterSecureStorage();
   String cookie;
   Credentials? credentials;
+  final ValueNotifier<String?> credentialRevalidation = ValueNotifier(null);
   String apiKey;
   String baseUrl;
   String modelName;
@@ -34,6 +36,10 @@ class AppConfig {
 
   Future<void> saveCredentials() => _saveSecret(_keys['credentials']!,
       credentials == null ? '' : jsonEncode(credentials!.toJson()));
+
+  /// Persist a rotated credential before publishing it to request interceptors.
+  Future<void> persistCredentials(Credentials next) =>
+      _saveSecret(_keys['credentials']!, jsonEncode(next.toJson()));
 
   static bool isHttpsUrl(String value) {
     final uri = Uri.tryParse(value);

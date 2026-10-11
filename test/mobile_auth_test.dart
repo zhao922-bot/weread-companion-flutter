@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:weread_companion/services/api.dart';
 import 'package:weread_companion/services/config.dart';
 import 'package:weread_companion/services/credentials.dart';
+import 'package:weread_companion/providers/app_config_provider.dart';
 
 class AuthAdapter implements HttpClientAdapter {
   final FutureOr<ResponseBody> Function(RequestOptions) respond;
@@ -125,6 +126,55 @@ void main() {
     expect(await Future.wait([api.checkLogin(), api.checkLogin()]), [true, true]);
     expect(mints, 1);
   });
+
+  for (final permanent in [false, true]) {
+    test('刷新落盘${permanent ? '持续失败降级登录' : '失败两次后成功'}且内存不提前发布', () async {
+      final config = AppConfig(credentials: initial);
+      await config.saveCredentials();
+      final provider = AppConfigProvider(config: config);
+      addTearDown(provider.dispose);
+      var writes = 0;
+      var newTokenRequests = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        final args = Map<String, dynamic>.from(call.arguments as Map);
+        if (call.method == 'read') return secrets[args['key']];
+        if (call.method == 'write') {
+          writes++;
+          expect(config.credentials, same(initial));
+          if (permanent || writes < 3) throw PlatformException(code: 'write-failed');
+          secrets[args['key'] as String] = args['value'] as String;
+        }
+        return null;
+      });
+      final api = apiFor(config, AuthAdapter((options) {
+        if (options.path == '/login') {
+          return jsonResponse({'accessToken': 'new', 'refreshToken': 'rotated'});
+        }
+        if (options.headers['accessToken'] == 'new') {
+          newTokenRequests++;
+          return jsonResponse({'books': []});
+        }
+        return jsonResponse({'errCode': -2012});
+      }));
+      if (permanent) {
+        await expectLater(api.checkLogin(), throwsA(isA<DioException>().having(
+          (e) => e.error, '明确落盘异常', isA<CredentialPersistenceException>())));
+        expect(config.credentials, same(initial));
+        expect(provider.isLoggedIn, isFalse);
+        expect(provider.loginStatus, LoginStatus.saved);
+        expect(provider.loginError, contains('刷新凭据保存失败'));
+        expect(api.authenticatedAccountId, isNull);
+        expect(newTokenRequests, 0);
+      } else {
+        expect(await api.checkLogin(), isTrue);
+        expect(config.credentials!.accessToken, 'new');
+        expect(newTokenRequests, 1);
+      }
+      expect(writes, 3);
+      expect(jsonDecode(secrets['weread_mobile_credentials']!), config.credentials!.toJson());
+    });
+  }
 
   test('refreshToken 失效才返回登录失效', () async {
     final api = apiFor(AppConfig(credentials: initial), AuthAdapter((options) =>

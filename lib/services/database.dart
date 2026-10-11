@@ -480,7 +480,8 @@ class DatabaseService {
     if (filter == ReadingFilter.favorites) clauses.add('is_fav = 1');
     final args = [...search.$2];
     if (query.runes.length >= 3) {
-      clauses.add('(source, id) IN (SELECT source, id FROM item_trigrams WHERE term = ?)');
+      clauses.add('EXISTS (SELECT 1 FROM item_trigrams t WHERE term = ? '
+          'AND t.source = reading_items.source AND t.id = reading_items.id)');
       args.add(_searchTerm(query));
     }
     return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', args);
@@ -492,17 +493,19 @@ class DatabaseService {
     final db = await database;
     final where = _readingFilter(query, filter, bookId);
     final cursor = after == null ? '' : '${where.$1.isEmpty ? 'WHERE' : 'AND'} '
-        '(created_at, source, id) < (?, ?, ?)';
-    return db.rawQuery('SELECT * FROM ($_readingItems) ${where.$1} $cursor '
+        '(created_at < ? OR (created_at = ? AND source < ?) '
+        'OR (created_at = ? AND source = ? AND id < ?))';
+    return db.rawQuery('SELECT * FROM ($_readingItems) AS reading_items ${where.$1} $cursor '
         'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
-        [...where.$2, if (after != null) ...[after.createdAt, after.source.name, after.id], limit, offset]);
+        [...where.$2, if (after != null) ...[after.createdAt, after.createdAt,
+          after.source.name, after.createdAt, after.source.name, after.id], limit, offset]);
   }
 
   Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
     final db = await database;
     final where = _readingFilter(query, filter, bookId);
     return Sqflite.firstIntValue(await db.rawQuery(
-        'SELECT COUNT(*) FROM ($_readingItems) ${where.$1}', where.$2)) ?? 0;
+        'SELECT COUNT(*) FROM ($_readingItems) AS reading_items ${where.$1}', where.$2)) ?? 0;
   }
 
   Future<List<Map<String, dynamic>>> getBookmarksByBook(String bookId) async {

@@ -5,6 +5,86 @@ import 'package:weread_companion/models/book.dart';
 import 'package:weread_companion/services/sync_service.dart';
 
 void main() {
+  test('四个长退避占满请求槽后取消，排队请求获得释放槽', () async {
+    var failures = 0;
+    final services = List.generate(4, (i) => SyncService(accountId: 'slots-$i',
+      loadBooks: () async {
+        failures++;
+        final options = RequestOptions(path: '/shelf');
+        throw DioException(requestOptions: options, response: Response(
+          requestOptions: options, statusCode: 503,
+          headers: Headers.fromMap({'retry-after': ['3600']})));
+      }, loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+      isCancelled: () => false, onChanged: () {}));
+    final tasks = services.map((s) => s.syncAll()).toList();
+    while (failures < 4) { await Future<void>.delayed(Duration.zero); }
+    var nextStarted = false;
+    final next = SyncService(loadBooks: () async { nextStarted = true; return []; },
+      loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+      isCancelled: () => false, onChanged: () {}).syncAll();
+    await Future<void>.delayed(Duration.zero);
+    expect(nextStarted, isFalse);
+    for (final service in services) { service.cancel(); }
+    expect((await Future.wait(tasks).timeout(const Duration(seconds: 1)))
+      .every((r) => r.cancelled), isTrue);
+    await next.timeout(const Duration(seconds: 1));
+    expect(nextStarted, isTrue);
+  });
+
+  test('取消队列中间任务立即返回且后继不越过运行中任务', () async {
+    final running = Completer<void>();
+    final started = Completer<void>();
+    final calls = <String>[];
+    SyncService service(String name) => SyncService(accountId: 'queue-cancel',
+      loadBooks: () async {
+        calls.add(name);
+        if (name == 'first') { started.complete(); await running.future; }
+        return [];
+      }, loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+      isCancelled: () => false, onChanged: () {});
+    final first = service('first').syncAll();
+    await started.future;
+    final middleService = service('middle');
+    final middle = middleService.syncAll();
+    final last = service('last').syncAll();
+    middleService.cancel();
+    expect((await middle.timeout(const Duration(seconds: 1))).cancelled, isTrue);
+    expect(calls, ['first']);
+    running.complete();
+    await Future.wait([first, last]);
+    expect(calls, ['first', 'last']);
+    await service('next').syncAll();
+    expect(calls, ['first', 'last', 'next']);
+  });
+
+  test('长Retry-After取消立即释放账号锁和请求槽，新账号不继承退避', () async {
+    var requests = 0;
+    var cancelled = false;
+    final started = Completer<void>();
+    final service = SyncService(accountId: 'backoff',
+      loadBooks: () async {
+        requests++;
+        started.complete();
+        final options = RequestOptions(path: '/shelf');
+        throw DioException(requestOptions: options, response: Response(
+          requestOptions: options, statusCode: 429,
+          headers: Headers.fromMap({'retry-after': ['3600']})));
+      }, loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+      isCancelled: () => cancelled, onChanged: () {});
+    final first = service.syncAll();
+    await started.future;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    cancelled = true; // Also covers session revision / old account invalidation.
+    expect((await first.timeout(const Duration(seconds: 1))).cancelled, isTrue);
+    expect(requests, 1);
+    for (final account in ['backoff', 'new-account']) {
+      final next = SyncService(accountId: account, loadBooks: () async => [],
+        loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+        isCancelled: () => false, onChanged: () {});
+      expect((await next.syncAll().timeout(const Duration(seconds: 1))).cancelled, isFalse);
+    }
+  });
+
   test('同账号两入口及重试排队，前一个结束后才读取游标', () async {
     final gate = Completer<void>();
     final started = Completer<void>();

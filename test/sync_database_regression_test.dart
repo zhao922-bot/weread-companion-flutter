@@ -12,6 +12,7 @@ import 'package:weread_companion/services/api.dart';
 import 'package:weread_companion/services/config.dart';
 import 'package:weread_companion/services/database.dart';
 import 'package:weread_companion/services/sync_service.dart';
+import 'package:weread_companion/models/note_item.dart';
 import 'mobile_auth_test.dart' show AuthAdapter, jsonResponse;
 
 class FaultFactory implements SqfliteDatabaseFactory {
@@ -20,6 +21,7 @@ class FaultFactory implements SqfliteDatabaseFactory {
   bool failOpen = false;
   bool failClose = false;
   bool legacySqlite = false;
+  String legacyVersion = '3.22.0';
   CloseFailureDatabase? wrapped;
   FaultFactory(this.delegate);
   @override
@@ -32,7 +34,7 @@ class FaultFactory implements SqfliteDatabaseFactory {
     if (failOpen) { failOpen = false; throw StateError('open failed'); }
     final database = await delegate.openDatabase(path, options: options);
     if (failClose) return wrapped = CloseFailureDatabase(database);
-    if (legacySqlite) return LegacyDatabase(database);
+    if (legacySqlite) return LegacyDatabase(database, legacyVersion);
     return database;
   }
   @override
@@ -41,7 +43,8 @@ class FaultFactory implements SqfliteDatabaseFactory {
 
 class LegacyDatabase implements Database {
   final Database delegate;
-  LegacyDatabase(this.delegate);
+  final String version;
+  LegacyDatabase(this.delegate, this.version);
   @override
   Future<List<Map<String, Object?>>> query(String table, {bool? distinct,
     List<String>? columns, String? where, List<Object?>? whereArgs,
@@ -51,7 +54,10 @@ class LegacyDatabase implements Database {
       limit: limit, offset: offset);
   @override
   Future<List<Map<String, Object?>>> rawQuery(String sql, [List<Object?>? arguments]) async {
-    if (sql.contains('sqlite_version()')) return [{'version': '3.22.0'}];
+    if (sql.contains('sqlite_version()')) return [{'version': version}];
+    if (version == '3.8.10' && RegExp(r'\(\s*(source|created_at)\s*,').hasMatch(sql)) {
+      throw StateError('SQLite 3.8 does not support row values');
+    }
     return delegate.rawQuery(sql, arguments);
   }
   @override
@@ -103,6 +109,21 @@ void main() {
   ], 'bookProgress': [
     {'bookId': 'b', 'progress': 99}, {'bookId': 'ignored', 'progress': 'bad'},
   ]};
+
+  test('SQLite 3.8拒绝行值表达式时三字符搜索和笔记第二页仍可用', () async {
+    databaseFactory = FaultFactory(databaseFactory)..legacySqlite = true..legacyVersion = '3.8.10';
+    await db.insertNotesPreserveFav(List.generate(5, (i) => {
+      'note_id': '$i', 'book_id': 'b', 'content': 'abc笔记', 'created_at': 1,
+    }));
+    expect(await db.countReadingItems(query: 'abc'), 5);
+    final first = await db.getReadingItems(query: 'abc', filter: ReadingFilter.notes, limit: 2);
+    final last = first.last;
+    final second = await db.getReadingItems(query: 'abc', filter: ReadingFilter.notes,
+      limit: 2, after: NoteItem(id: last['id'] as String, bookId: 'b', bookTitle: '',
+        content: '', chapterTitle: '', createdAt: 1, isFav: false, source: NoteSource.note));
+    expect(first.map((r) => r['id']), ['4', '3']);
+    expect(second.map((r) => r['id']), ['2', '1']);
+  });
 
   test('SQLite 3.22 两来源先查后写保留收藏、重复ID及失败回滚', () async {
     databaseFactory = FaultFactory(databaseFactory)..legacySqlite = true;

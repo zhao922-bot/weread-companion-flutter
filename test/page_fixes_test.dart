@@ -1,5 +1,7 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,7 +17,18 @@ import 'package:weread_companion/pages/report_page.dart';
 import 'package:weread_companion/providers/notes_provider.dart';
 import 'package:weread_companion/services/database.dart';
 import 'package:weread_companion/services/sync_service.dart';
+import 'package:weread_companion/services/api.dart';
+import 'package:weread_companion/services/config.dart';
+import 'package:weread_companion/providers/app_config_provider.dart';
+import 'package:weread_companion/pages/sync_page.dart';
+import 'mobile_auth_test.dart' show AuthAdapter, jsonResponse;
 import 'support/wait_until.dart';
+
+class _VerifiedConfigProvider extends AppConfigProvider {
+  _VerifiedConfigProvider() : super(config: AppConfig(cookie: 'wr_vid=123'));
+  @override
+  bool get isLoggedIn => true;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +47,7 @@ void main() {
     db = DatabaseService.instance;
   });
   tearDown(() async {
+    WeReadApi.reset();
     await DatabaseService.endSession();
     await directory.delete(recursive: true);
   });
@@ -42,6 +56,53 @@ void main() {
     'content': '笔记$i ${List.filled(100, '文').join()}',
     'created_at': i, 'is_fav': 1,
   }));
+
+  for (final exitPage in [false, true]) {
+    testWidgets('同步页排队时${exitPage ? '退出' : '取消'}立即结束等待且不抢占账号锁', (tester) async {
+      final provider = _VerifiedConfigProvider();
+      addTearDown(provider.dispose);
+      var requests = 0;
+      await WeReadApi.init(config: provider.config, db: db,
+        dio: Dio()..httpClientAdapter = AuthAdapter((_) {
+          requests++;
+          return jsonResponse({'books': []});
+        }));
+      final hold = Completer<void>();
+      addTearDown(() { if (!hold.isCompleted) hold.complete(); });
+      var firstStarted = false;
+      final first = SyncService(accountId: '123', loadBooks: () async {
+        firstStarted = true; await hold.future; return [];
+      }, loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+        isCancelled: () => false, onChanged: () {}).syncAll();
+      await tester.pump();
+      expect(firstStarted, isTrue);
+      await tester.pumpWidget(ChangeNotifierProvider<AppConfigProvider>.value(value: provider,
+        child: const MaterialApp(home: SyncPage())));
+      await tester.tap(find.text('开始同步'));
+      await pumpUntil(tester, () => find.textContaining('正在同步书架').evaluate().isNotEmpty);
+      if (exitPage) {
+        await tester.pumpWidget(const SizedBox());
+      } else {
+        await tester.tap(find.text('取消同步'));
+        await pumpUntil(tester, () => find.textContaining('同步已取消').evaluate().isNotEmpty);
+        expect(find.text('取消同步'), findsNothing);
+      }
+      var nextStarted = false;
+      final next = SyncService(accountId: '123', loadBooks: () async {
+        nextStarted = true; return [];
+      }, loadBookmarks: (_) async => 0, loadNotes: (_) async => 0,
+        isCancelled: () => false, onChanged: () {}).syncAll();
+      await tester.pump();
+      expect(nextStarted, isFalse);
+      expect(requests, 0);
+      hold.complete();
+      await tester.pump();
+      await Future.wait([first, next]);
+      expect(nextStarted, isTrue);
+      expect(requests, 0);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 
   test('notes筛选忽略无关列表刷新但更新划线及书架全局统计', () async {
     await seed(2);

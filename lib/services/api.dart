@@ -18,6 +18,12 @@ class LoginExpiredException implements Exception {
   String toString() => '登录凭据已失效，请重新登录';
 }
 
+class CredentialPersistenceException implements Exception {
+  const CredentialPersistenceException();
+  @override
+  String toString() => '刷新凭据保存失败，请检查安全存储并重新验证登录';
+}
+
 class WeReadApi {
   late Dio _dio;
   final AppConfig config;
@@ -84,6 +90,11 @@ class WeReadApi {
 
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
+        if (config.credentialRevalidation.value != null) {
+          handler.reject(DioException(requestOptions: options,
+            error: const CredentialPersistenceException()));
+          return;
+        }
         if (_cancelled) {
           handler.reject(DioException(
             requestOptions: options,
@@ -155,6 +166,10 @@ class WeReadApi {
 
   Future<Response<dynamic>> _retryAuthenticated(Response<dynamic> response) async {
     final options = response.requestOptions;
+    if (_refreshing != null) await _refreshing;
+    if (config.credentialRevalidation.value != null) {
+      throw const CredentialPersistenceException();
+    }
     // 迟到的旧 token 响应复用已刷新的凭据，多个并发请求只刷新一次。
     if (options.headers['accessToken'] == config.credentials?.accessToken) {
       await _refreshToken();
@@ -226,8 +241,29 @@ class WeReadApi {
     if (_cancelled || !identical(config.credentials, previous)) {
       throw StateError('账号会话已结束');
     }
-    config.credentials = next;
-    await config.saveCredentials();
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (_cancelled || !identical(config.credentials, previous)) {
+        throw StateError('账号会话已结束');
+      }
+      try {
+        await config.persistCredentials(next);
+        if (_cancelled || !identical(config.credentials, previous)) {
+          throw StateError('账号会话已结束');
+        }
+        config.credentials = next;
+        return;
+      } catch (_) {
+        if (_cancelled || !identical(config.credentials, previous)) rethrow;
+        if (attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          continue;
+        }
+        authenticatedAccountId = null;
+        _clearSnapshot();
+        config.credentialRevalidation.value = const CredentialPersistenceException().toString();
+        throw const CredentialPersistenceException();
+      }
+    }
   }
 
   void updateCookie(String cookie) {

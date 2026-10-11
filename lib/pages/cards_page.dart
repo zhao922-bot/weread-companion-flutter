@@ -606,21 +606,31 @@ class _CardPreviewState extends State<_CardPreview> {
     _exportFontSize = _fontSize;
     setState(() => _exporting = true);
     onExportChanged(true);
+    final files = <XFile>[];
+    var shared = false;
     try {
       final boundary = _cardKey.currentContext?.findRenderObject() as _ExportRenderBoundary?;
       if (boundary == null) return;
 
-      final tempDir = await getTemporaryDirectory();
-      final files = <XFile>[];
-      final stamp = DateTime.now().millisecondsSinceEpoch;
       final size = boundary.size;
+      final view = View.of(context);
+      final screenSize = view.physicalSize;
+      final pixelRatio = view.devicePixelRatio;
+      void checkLayout() {
+        if (!boundary.attached || boundary.size != size ||
+            view.physicalSize != screenSize || view.devicePixelRatio != pixelRatio) {
+          throw StateError('布局已变化，请勿在导出时旋转屏幕，请重试');
+        }
+      }
+      final tempDir = await getTemporaryDirectory();
+      final stamp = DateTime.now().millisecondsSinceEpoch;
       // Render one bounded region at a time, never allocate a full long image.
       const pageHeight = 1600.0;
       for (var top = 0.0; top < size.height; top += pageHeight) {
         if (!mounted || !db.isActive) {
-          for (final file in files) { await File(file.path).delete(); }
           return;
         }
+        checkLayout();
         final height = math.min(pageHeight, size.height - top);
         var ratio = math.min(4.0, math.sqrt(8000000 / (size.width * height)));
         // Raster dimensions are rounded up; include that rounding in the budget.
@@ -632,18 +642,21 @@ class _CardPreviewState extends State<_CardPreview> {
         try {
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           if (bytes == null) throw StateError('图片编码失败');
+          checkLayout();
           final file = File('${tempDir.path}/weread_card_${stamp}_${files.length + 1}.png');
-          await file.writeAsBytes(bytes.buffer.asUint8List());
           files.add(XFile(file.path));
+          await file.writeAsBytes(bytes.buffer.asUint8List());
         } finally {
           image.dispose();
         }
       }
       if (!mounted || !db.isActive) return;
+      checkLayout();
       await Share.shareXFiles(
         files,
         text: '「${snapshot.markText}」—— ${snapshot.bookTitle}',
       );
+      shared = true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -651,6 +664,16 @@ class _CardPreviewState extends State<_CardPreview> {
         );
       }
     } finally {
+      if (!shared) {
+        for (final file in files) {
+          final partial = File(file.path);
+          try {
+            if (await partial.exists()) await partial.delete();
+          } on FileSystemException {
+            // Cleanup failure must not leave the preview interaction locked.
+          }
+        }
+      }
       if (mounted) {
         setState(() {
           _exporting = false;
