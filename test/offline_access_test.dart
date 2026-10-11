@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite/sqflite.dart' show databaseFactorySqflitePlugin;
 import 'package:sqlite3/open.dart';
@@ -37,6 +38,21 @@ class _UnpersistableTrustConfig extends AppConfig {
   @override
   Future<void> trustAccount(String accountId) async {
     throw StateError('可信账号保存失败');
+  }
+}
+
+class _TrustPreferencesStore extends InMemorySharedPreferencesStore {
+  _TrustPreferencesStore() : super.empty();
+  bool failTrust = true;
+  int trustWrites = 0;
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key == 'flutter.weread_trusted_account_id') {
+      trustWrites++;
+      if (failTrust) return false;
+    }
+    return super.setValue(valueType, key, value);
   }
 }
 
@@ -206,6 +222,67 @@ void main() {
     expect(provider.isLoggedIn, isFalse);
     expect(provider.config.trustedAccountId, isNull);
     expect(() => DatabaseService.instance, throwsStateError);
+  });
+
+  test('可信账号首次落盘返回false，同账号重验证必须真写入，离线重启恢复笔记', () async {
+    final store = _TrustPreferencesStore();
+    SharedPreferencesStorePlatform.instance = store;
+    await AppConfig(cookie: 'wr_vid=123; wr_skey=test').save();
+    online = true;
+    await provider.init();
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('weread_trusted_account_id'), '123');
+    expect((await store.getAll())['flutter.weread_trusted_account_id'], isNull);
+    expect(provider.config.trustedAccountId, isNull);
+    expect(provider.canBrowseLocal, isFalse);
+    expect(provider.isLoggedIn, isFalse);
+    expect(() => DatabaseService.instance, throwsStateError);
+    expect(store.trustWrites, 1);
+
+    // The cache contains the same ID, but another failed write is not success.
+    expect(await provider.verifyForSync(), isFalse);
+    expect(store.trustWrites, 2);
+    expect(provider.canBrowseLocal, isFalse);
+    expect(() => DatabaseService.instance, throwsStateError);
+    store.failTrust = false;
+    expect(await provider.verifyForSync(), isTrue);
+    expect(store.trustWrites, 3);
+    expect((await store.getAll())['flutter.weread_trusted_account_id'], '123');
+    await DatabaseService.instance.insertNotes([
+      {'note_id': 'retry-note', 'book_id': 'book', 'content': '重试后持久化的笔记', 'created_at': 1},
+    ]);
+
+    // No unrelated preferences write occurs between trust persistence and death.
+    provider.dispose();
+    await DatabaseService.endSession();
+    await prefs.reload();
+    online = false;
+    provider = createProvider();
+    await provider.init();
+    expect(provider.canBrowseLocal, isTrue);
+    expect(provider.isLoggedIn, isFalse);
+    expect(provider.config.trustedAccountId, '123');
+    expect((await DatabaseService.instance.getAllNotes()).single['content'],
+        '重试后持久化的笔记');
+  });
+
+  test('未落盘可信账号不能由缓存恢复，启动加载会重试待保存账号', () async {
+    final store = _TrustPreferencesStore();
+    SharedPreferencesStorePlatform.instance = store;
+    final config = AppConfig();
+    await expectLater(config.trustAccount('123'), throwsStateError);
+    expect((await SharedPreferences.getInstance()).getString('weread_trusted_account_id'), '123');
+    final fresh = AppConfig();
+    await fresh.loadTrustedAccount();
+    expect(fresh.trustedAccountId, isNull);
+    await expectLater(config.loadTrustedAccount(), throwsStateError);
+    expect(store.trustWrites, 2);
+    store.failTrust = false;
+    await config.loadTrustedAccount();
+    expect(store.trustWrites, 3);
+    expect(config.trustedAccountId, '123');
+    await fresh.loadTrustedAccount();
+    expect(fresh.trustedAccountId, '123');
   });
 
   test('仅有可信账号而无凭据时可离线浏览，重启和退出行为一致', () async {

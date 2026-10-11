@@ -108,7 +108,8 @@ class AppConfigProvider extends ChangeNotifier {
           await Future<void>.delayed(Duration.zero);
         }
       }
-      await Future.wait([restoreLocal(), config.load()]);
+      await restoreLocal();
+      await config.load();
       _isLoaded = true;
       _isLoading = false;
       notifyListeners();

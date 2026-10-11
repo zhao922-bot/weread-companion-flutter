@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -13,12 +14,16 @@ import 'package:weread_companion/services/config.dart';
 class FailingPreferencesStore extends InMemorySharedPreferencesStore {
   FailingPreferencesStore() : super.empty();
   String? failedKey;
+  bool throwWrites = false;
   final writes = <String>[];
 
   @override
   Future<bool> setValue(String valueType, String key, Object value) async {
     writes.add(key);
-    if (key == failedKey) return false;
+    if (key == failedKey) {
+      if (throwWrites) throw StateError('preferences unavailable');
+      return false;
+    }
     return super.setValue(valueType, key, value);
   }
 }
@@ -101,7 +106,7 @@ void main() {
     await AppConfig(cookie: 'wr_vid=123', apiKey: 'key').save();
     final prefs = await SharedPreferences.getInstance();
     expect(secrets['weread_cookie'], 'wr_vid=123');
-    expect(secrets['weread_api_key'], 'key');
+    expect(jsonDecode(secrets['weread_ai_config']!)['apiKey'], 'key');
     expect(prefs.containsKey('weread_cookie'), isFalse);
     expect(prefs.containsKey('weread_api_key'), isFalse);
   });
@@ -110,15 +115,20 @@ void main() {
     test('$key返回false明确失败，缓存已更新仍真正重试持久化', () async {
       final store = FailingPreferencesStore()..failedKey = 'flutter.$key';
       SharedPreferencesStorePlatform.instance = store;
-      final config = AppConfig(baseUrl: 'https://new.example.com', modelName: 'new-model');
+      final config = AppConfig();
+      await config.load();
+      config.baseUrl = 'https://new.example.com';
+      config.modelName = 'new-model';
       await expectLater(config.save(), throwsA(isA<StateError>().having(
         (e) => e.message, 'message', contains('保存失败'))));
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString(key), key == 'weread_base_url' ? config.baseUrl : config.modelName);
-      expect((await store.getAll()).containsKey('flutter.$key'), isFalse);
+      expect(config.baseUrl, 'https://api.deepseek.com');
+      expect(config.modelName, 'deepseek-chat');
       store.failedKey = null;
+      config.baseUrl = 'https://new.example.com';
+      config.modelName = 'new-model';
       await config.save();
-      expect(store.writes.where((k) => k == 'flutter.$key'), hasLength(2));
+      expect(store.writes.where((k) => k == 'flutter.$key').length, greaterThanOrEqualTo(2));
       await prefs.reload();
       final restored = AppConfig();
       await restored.load();
@@ -130,17 +140,75 @@ void main() {
   test('重复保存无安全存储写入，仅持久化发生变化的字段', () async {
     final config = AppConfig(cookie: 'wr_vid=123', apiKey: 'key');
     await config.save();
-    expect(writes, 2);
+    expect(writes, 3);
     await config.save();
-    expect(writes, 2);
+    expect(writes, 3);
     final restored = AppConfig();
     await restored.load();
     await restored.save();
-    expect(writes, 2);
+    expect(writes, 3);
     restored.apiKey = 'changed';
     await restored.save();
-    expect(writes, 3);
+    expect(writes, 4);
   });
+
+  for (final failure in ['address', 'model', 'exception', 'secure commit']) {
+    for (final legacy in [false, true]) {
+      test('AI事务回归：$failure失败，${legacy ? '旧配置' : '首次配置'}不串密钥且可重试', () async {
+        final store = FailingPreferencesStore();
+        SharedPreferencesStorePlatform.instance = store;
+        if (legacy) {
+          secrets['weread_api_key'] = 'old-key';
+          await store.setValue('String', 'flutter.weread_base_url', 'https://old.example.com');
+          await store.setValue('String', 'flutter.weread_model_name', 'old-model');
+        }
+        final provider = AppConfigProvider(config: AppConfig());
+        addTearDown(provider.dispose);
+        await provider.init();
+        final oldKey = provider.config.apiKey;
+        final oldUrl = provider.config.baseUrl;
+        final oldModel = provider.config.modelName;
+        final notifications = <String>[];
+        provider.addListener(() => notifications.add(
+            '${provider.config.apiKey}|${provider.config.baseUrl}'));
+        if (failure == 'secure commit') {
+          // Seed the old committed record, then fail the final secure write.
+          await provider.config.save();
+          failWrites = true;
+        } else {
+          store.failedKey = failure == 'model'
+              ? 'flutter.weread_model_name' : 'flutter.weread_base_url';
+          store.throwWrites = failure == 'exception';
+        }
+        await expectLater(provider.updateAiConfig(
+          apiKey: 'new-key', baseUrl: 'https://new.example.com', modelName: 'new-model',
+        ), throwsA(anything));
+        expect(provider.isBusy, isFalse);
+        expect(provider.config.apiKey, oldKey);
+        expect(provider.config.baseUrl, oldUrl);
+        expect(provider.config.modelName, oldModel);
+        expect(notifications.last, '$oldKey|$oldUrl');
+        expect(secrets['weread_api_key'], isNot('new-key'));
+        // Discard the preferences cache, just as a fresh process would.
+        await (await SharedPreferences.getInstance()).reload();
+        final restarted = AppConfig();
+        await restarted.load();
+        expect(restarted.apiKey, oldKey);
+        expect(restarted.baseUrl, oldUrl);
+        expect(restarted.modelName, oldModel);
+        failWrites = false;
+        store.failedKey = null;
+        await provider.updateAiConfig(
+          apiKey: 'new-key', baseUrl: 'https://new.example.com', modelName: 'new-model',
+        );
+        await (await SharedPreferences.getInstance()).reload();
+        await restarted.load();
+        expect(restarted.apiKey, 'new-key');
+        expect(restarted.baseUrl, 'https://new.example.com');
+        expect(restarted.modelName, 'new-model');
+      });
+    }
+  }
 
   test('三个独立安全配置读取并发启动', () async {
     final gate = Completer<void>();

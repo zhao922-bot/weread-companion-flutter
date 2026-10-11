@@ -19,6 +19,8 @@ class AppConfig {
   String? trustedAccountId;
   bool logoutPending = false;
   static const _logoutPendingKey = 'weread_logout_pending';
+  static const _aiConfigKey = 'weread_ai_config';
+  String? _pendingTrustedAccountId;
   final Map<String, String> _persistedSecrets = {};
 
   AppConfig({
@@ -114,7 +116,13 @@ class AppConfig {
 
   /// 本地账号恢复独立于安全存储，凭据暂时不可读时仍可浏览缓存。
   Future<void> loadTrustedAccount() async {
+    final pending = _pendingTrustedAccountId;
+    if (pending != null) {
+      await trustAccount(pending);
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final trustedId = prefs.getString(_keys['trustedAccountId']!);
     trustedAccountId = trustedId != null &&
             RegExp(r'^[0-9]+$').hasMatch(trustedId) &&
@@ -126,11 +134,13 @@ class AppConfig {
   Future<void> load() async {
     await retryPendingCredentials();
     final prefs = await SharedPreferences.getInstance();
+    // Reload preferences before secret migration removes legacy plaintext.
+    // A concurrent reload could otherwise restore stale cache entries.
+    await loadTrustedAccount();
     final values = await Future.wait<String?>([
       _loadSecret(prefs, _keys['cookie']!),
       _secureStorage.read(key: _keys['credentials']!),
       _loadSecret(prefs, _keys['apiKey']!),
-      loadTrustedAccount().then((_) => null),
     ]);
     cookie = values[0] ?? '';
     final mobile = values[1];
@@ -143,6 +153,59 @@ class AppConfig {
     baseUrl = prefs.getString(_keys['baseUrl']!) ?? 'https://api.deepseek.com';
     if (!isHttpsUrl(baseUrl)) baseUrl = '';
     modelName = prefs.getString(_keys['modelName']!) ?? 'deepseek-chat';
+    final committedAi = await _secureStorage.read(key: _aiConfigKey);
+    if (committedAi != null) _restoreAiConfig(committedAi);
+  }
+
+  void _restoreAiConfig(String value) {
+    final ai = jsonDecode(value) as Map<String, dynamic>;
+    apiKey = ai['apiKey'] as String;
+    baseUrl = ai['baseUrl'] as String;
+    if (baseUrl.isNotEmpty && !isHttpsUrl(baseUrl)) baseUrl = '';
+    modelName = ai['modelName'] as String;
+  }
+
+  Future<void> _saveAiConfig(SharedPreferences prefs) async {
+    final next = jsonEncode({
+      'apiKey': apiKey, 'baseUrl': baseUrl, 'modelName': modelName,
+    });
+    var previous = await _secureStorage.read(key: _aiConfigKey);
+    // Establish a committed legacy snapshot before modifying preferences.
+    // The single secure record is authoritative, even if a mirror write or
+    // its rollback fails. Never persist a new key separately from its URL.
+    if (previous == null) {
+      await prefs.reload();
+      previous = jsonEncode({
+        'apiKey': await _secureStorage.read(key: _keys['apiKey']!) ??
+            prefs.getString(_keys['apiKey']!) ?? '',
+        'baseUrl': prefs.getString(_keys['baseUrl']!) ?? 'https://api.deepseek.com',
+        'modelName': prefs.getString(_keys['modelName']!) ?? 'deepseek-chat',
+      });
+      await _secureStorage.write(key: _aiConfigKey, value: previous);
+    }
+    try {
+      // Always retry actual writes: SharedPreferences caches failed writes.
+      if (!await prefs.setString(_keys['baseUrl']!, baseUrl)) {
+        throw StateError('AI 服务地址保存失败，请重试');
+      }
+      if (!await prefs.setString(_keys['modelName']!, modelName)) {
+        throw StateError('AI 模型名称保存失败，请重试');
+      }
+      if (next != previous) {
+        await _secureStorage.write(key: _aiConfigKey, value: next);
+      }
+    } catch (_) {
+      _restoreAiConfig(previous);
+      // Mirrors are best-effort; load() always uses the committed record.
+      try {
+        await prefs.setString(_keys['baseUrl']!, baseUrl);
+        await prefs.setString(_keys['modelName']!, modelName);
+        await prefs.reload();
+      } catch (_) {
+        // A storage outage cannot change the committed key/URL pair.
+      }
+      rethrow;
+    }
   }
 
   Future<void> save() async {
@@ -152,18 +215,9 @@ class AppConfig {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       _saveSecret(_keys['cookie']!, cookie), saveCredentials(),
-      _saveSecret(_keys['apiKey']!, apiKey),
     ]);
     if (prefs.containsKey(_keys['cookie']!)) await prefs.remove(_keys['cookie']!);
-    if (prefs.containsKey(_keys['apiKey']!)) await prefs.remove(_keys['apiKey']!);
-    // setString updates the preferences cache even when the platform write fails.
-    // Always write on retry rather than treating that cache as persisted state.
-    if (!await prefs.setString(_keys['baseUrl']!, baseUrl)) {
-      throw StateError('AI 服务地址保存失败，请重试');
-    }
-    if (!await prefs.setString(_keys['modelName']!, modelName)) {
-      throw StateError('AI 模型名称保存失败，请重试');
-    }
+    await _saveAiConfig(prefs);
   }
 
   Future<void> clear() async {
@@ -183,6 +237,7 @@ class AppConfig {
     await _secureStorage.delete(key: _keys['cookie']!);
     await _secureStorage.delete(key: _keys['credentials']!);
     await _secureStorage.delete(key: _keys['apiKey']!);
+    await _secureStorage.delete(key: _aiConfigKey);
     _persistedSecrets.clear();
   }
 
@@ -192,17 +247,16 @@ class AppConfig {
       throw ArgumentError('无效的账号 ID');
     }
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString(_keys['trustedAccountId']!) == accountId) {
-      trustedAccountId = accountId;
-      return;
-    }
+    _pendingTrustedAccountId = accountId;
     if (!await prefs.setString(_keys['trustedAccountId']!, accountId)) {
       throw StateError('可信账号保存失败');
     }
+    _pendingTrustedAccountId = null;
     trustedAccountId = accountId;
   }
 
   Future<void> clearTrustedAccount() async {
+    _pendingTrustedAccountId = null;
     final prefs = await SharedPreferences.getInstance();
     if (!await prefs.remove(_keys['trustedAccountId']!)) {
       throw StateError('可信账号清除失败');
