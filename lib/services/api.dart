@@ -224,6 +224,11 @@ class WeReadApi {
     );
     final data = response.data;
     if (_authFailed(response)) {
+      if (!_cancelled && identical(config.credentials, previous)) {
+        authenticatedAccountId = null;
+        _clearSnapshot();
+        config.credentialsInvalid.value = true;
+      }
       throw const LoginExpiredException();
     }
     final code = data is Map ? data['errCode'] ?? data['errcode'] : null;
@@ -260,6 +265,7 @@ class WeReadApi {
         }
         authenticatedAccountId = null;
         _clearSnapshot();
+        config.pendingCredentials = next;
         config.credentialRevalidation.value = const CredentialPersistenceException().toString();
         throw const CredentialPersistenceException();
       }
@@ -330,6 +336,7 @@ class WeReadApi {
   Future<bool> checkLogin() async {
     _clearSnapshot();
     authenticatedAccountId = null;
+    await config.retryPendingCredentials();
     try {
       if (config.credentials != null) {
         // 书架同步是需要认证的接口，不用公开用户资料接口验证移动端 token。

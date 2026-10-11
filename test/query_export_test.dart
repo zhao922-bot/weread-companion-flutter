@@ -94,6 +94,20 @@ void main() {
     }));
   }
 
+  test('退出清理递归删除中断导出的暂存目录，保留其他文件', () async {
+    final staging = await directory.createTemp('.weread-export-');
+    final nested = await Directory('${staging.path}/nested').create();
+    await File('${staging.path}/notes.md').writeAsString('明文笔记');
+    await File('${nested.path}/partial.md').writeAsString('未完成笔记');
+    final unrelated = await File('${directory.path}/user-notes.md')
+        .writeAsString('用户文件');
+    final unrelatedDir = await Directory('${directory.path}/other').create();
+    await ExportService.clearLocalExports();
+    expect(await staging.exists(), isFalse);
+    expect(await unrelated.readAsString(), '用户文件');
+    expect(await unrelatedDir.exists(), isTrue);
+  });
+
   test('增量事务保留收藏、删除及游标原子提交，失败全部回滚且中文索引一致', () async {
     await seed(3);
     await db.applySyncDelta('old', 'bookmark', [{

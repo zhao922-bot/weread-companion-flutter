@@ -7,6 +7,21 @@ import 'settings_section.dart';
 class AccountSettingsSection extends StatelessWidget {
   const AccountSettingsSection({super.key});
 
+  Future<void> _continueCleanup(BuildContext context, AppConfigProvider config) async {
+    try {
+      await config.logout();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本地数据清理完成')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(config.loginError ?? '清理失败，请重试')),
+      );
+    }
+  }
+
   Future<void> _logout(BuildContext context, AppConfigProvider config) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -45,7 +60,17 @@ class AccountSettingsSection extends StatelessWidget {
     void login() => Navigator.push(context,
       MaterialPageRoute(builder: (_) => const CookieLoginPage()));
     return SettingsSection(title: '账号', children: [
-      if (config.hasSavedCredentials || config.canBrowseLocal)
+      if (config.cleanupPending)
+        ListTile(
+          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          title: const Text('清理未完成'),
+          subtitle: Text(config.loginError ?? '请继续清除本地数据'),
+          trailing: TextButton(
+            onPressed: config.isBusy ? null : () => _continueCleanup(context, config),
+            child: const Text('继续清理'),
+          ),
+        )
+      else if (config.hasSavedCredentials || config.canBrowseLocal)
         ListTile(
           leading: const CircleAvatar(
             backgroundColor: Color(0xFF07C160),

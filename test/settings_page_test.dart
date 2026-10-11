@@ -12,9 +12,14 @@ import 'package:weread_companion/widgets/settings/about_settings_section.dart';
 
 import 'app_config_settings_test.dart' show SettingsTestConfig;
 
-class _LogoutFailureConfig extends SettingsTestConfig {
+class _LogoutFailureProvider extends AppConfigProvider {
+  _LogoutFailureProvider() : super(config: SettingsTestConfig()..cookie = 'invalid-cookie');
   @override
-  Future<void> clearTrustedAccount() async => throw StateError('delete failed');
+  Future<void> logout() async {
+    config.logoutPending = true;
+    notifyListeners();
+    throw StateError('delete failed');
+  }
 }
 
 void main() {
@@ -120,8 +125,7 @@ void main() {
   });
 
   testWidgets('退出失败有反馈且busy复位，不误报退出成功', (tester) async {
-    final config = _LogoutFailureConfig()..cookie = 'invalid-cookie';
-    final provider = AppConfigProvider(config: config);
+    final provider = _LogoutFailureProvider();
     addTearDown(provider.dispose);
     await provider.init();
     await showSettings(tester, provider);
@@ -132,6 +136,9 @@ void main() {
     expect(find.text('退出登录失败，部分本地数据可能未清除，请重试'), findsOneWidget);
     expect(find.text('已退出登录'), findsNothing);
     expect(provider.isBusy, isFalse);
+    expect(provider.cleanupPending, isTrue);
+    expect(find.text('继续清理'), findsOneWidget);
+    expect(find.text('登录'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

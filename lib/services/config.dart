@@ -8,11 +8,17 @@ class AppConfig {
   static const _secureStorage = FlutterSecureStorage();
   String cookie;
   Credentials? credentials;
+  // Keep server-rotated tokens until secure storage recovers; never send them
+  // before persistence succeeds.
+  Credentials? pendingCredentials;
   final ValueNotifier<String?> credentialRevalidation = ValueNotifier(null);
+  final ValueNotifier<bool> credentialsInvalid = ValueNotifier(false);
   String apiKey;
   String baseUrl;
   String modelName;
   String? trustedAccountId;
+  bool logoutPending = false;
+  static const _logoutPendingKey = 'weread_logout_pending';
   final Map<String, String> _persistedSecrets = {};
 
   AppConfig({
@@ -34,12 +40,43 @@ class AppConfig {
 
   bool get isConfigured => credentials != null || cookie.isNotEmpty;
 
+  Future<void> loadLogoutPending() async {
+    final prefs = await SharedPreferences.getInstance();
+    logoutPending = prefs.getBool(_logoutPendingKey) ?? false;
+  }
+
+  Future<void> beginLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setBool(_logoutPendingKey, true)) {
+      throw StateError('退出标记保存失败，请重试');
+    }
+    logoutPending = true;
+  }
+
+  Future<void> finishLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.remove(_logoutPendingKey)) {
+      throw StateError('退出标记清除失败，请重试');
+    }
+    logoutPending = false;
+  }
+
   Future<void> saveCredentials() => _saveSecret(_keys['credentials']!,
       credentials == null ? '' : jsonEncode(credentials!.toJson()));
 
   /// Persist a rotated credential before publishing it to request interceptors.
   Future<void> persistCredentials(Credentials next) =>
       _saveSecret(_keys['credentials']!, jsonEncode(next.toJson()));
+
+  Future<void> retryPendingCredentials() async {
+    final pending = pendingCredentials;
+    if (pending == null) return;
+    await persistCredentials(pending);
+    if (!identical(pendingCredentials, pending)) return;
+    credentials = pending;
+    pendingCredentials = null;
+    credentialRevalidation.value = null;
+  }
 
   static bool isHttpsUrl(String value) {
     final uri = Uri.tryParse(value);
@@ -87,6 +124,7 @@ class AppConfig {
   }
 
   Future<void> load() async {
+    await retryPendingCredentials();
     final prefs = await SharedPreferences.getInstance();
     final values = await Future.wait<String?>([
       _loadSecret(prefs, _keys['cookie']!),
@@ -126,6 +164,8 @@ class AppConfig {
     await clearTrustedAccount();
     cookie = '';
     credentials = null;
+    pendingCredentials = null;
+    credentialsInvalid.value = false;
     apiKey = '';
     baseUrl = 'https://api.deepseek.com';
     modelName = 'deepseek-chat';

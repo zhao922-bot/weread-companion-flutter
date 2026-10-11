@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'database.dart';
 
@@ -23,8 +24,12 @@ class ExportService {
   static Future<void> clearLocalExports() async {
     for (final directory in [await getApplicationDocumentsDirectory(), await getTemporaryDirectory()]) {
       if (!await directory.exists()) continue;
-      await for (final entry in directory.list()) {
-        final name = entry.uri.pathSegments.last;
+      await for (final entry in directory.list(followLinks: false)) {
+        final name = p.basename(entry.path);
+        if (entry is Directory && name.startsWith('.weread-export-')) {
+          await entry.delete(recursive: true);
+          continue;
+        }
         if (entry is File && (RegExp(r'^微信读书笔记_[0-9]+\.md$').hasMatch(name) ||
             RegExp(r'^weread_card_[0-9]+(?:_[0-9]+)?\.png$').hasMatch(name))) {
           await entry.delete();

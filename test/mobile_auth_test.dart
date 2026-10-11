@@ -173,12 +173,44 @@ void main() {
       }
       expect(writes, 3);
       expect(jsonDecode(secrets['weread_mobile_credentials']!), config.credentials!.toJson());
+      if (permanent) {
+        expect(config.pendingCredentials!.refreshToken, 'rotated');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+          final args = Map<String, dynamic>.from(call.arguments as Map);
+          if (call.method == 'read') return secrets[args['key']];
+          if (call.method == 'write') {
+            secrets[args['key'] as String] = args['value'] as String;
+          }
+          return null;
+        });
+        api.dispose();
+        final retryApi = apiFor(config, AuthAdapter((options) {
+          expect(options.path, '/shelf/sync');
+          expect(options.headers['accessToken'], 'new');
+          expect(jsonDecode(secrets['weread_mobile_credentials']!)['refreshToken'],
+              'rotated');
+          return jsonResponse({'books': []});
+        }));
+        expect(await retryApi.checkLogin(), isTrue);
+        expect(config.pendingCredentials, isNull);
+        expect(config.credentialRevalidation.value, isNull);
+      }
     });
   }
 
   test('refreshToken 失效才返回登录失效', () async {
-    final api = apiFor(AppConfig(credentials: initial), AuthAdapter((options) =>
+    final config = AppConfig(credentials: initial);
+    final provider = AppConfigProvider(config: config);
+    addTearDown(provider.dispose);
+    final api = apiFor(config, AuthAdapter((options) =>
         jsonResponse({'errCode': -2012})));
+    await expectLater(api.fetchBookshelf(), throwsA(isA<DioException>().having(
+        (e) => e.error, '刷新明确失效', isA<LoginExpiredException>())));
+    expect(provider.loginStatus, LoginStatus.invalid);
+    expect(provider.isLoggedIn, isFalse);
+    expect(provider.loginStatusText, contains('凭据失效'));
+    expect(provider.loginError, contains('重新登录'));
     expect(await api.checkLogin(), isFalse);
   });
 
@@ -193,6 +225,7 @@ void main() {
     }));
     await expectLater(api.checkLogin(), throwsA(isA<DioException>()));
     expect(config.credentials, same(initial));
+    expect(config.credentialsInvalid.value, isFalse);
   });
 
   test('刷新后仍拒绝认证不循环重试', () async {

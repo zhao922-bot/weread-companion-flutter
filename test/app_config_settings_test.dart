@@ -5,6 +5,9 @@ import 'package:weread_companion/providers/app_config_provider.dart';
 import 'package:weread_companion/services/config.dart';
 
 class SettingsTestConfig extends AppConfig {
+  @override
+  Future<void> loadLogoutPending() async {}
+
   Completer<void>? loadGate;
   Completer<void>? saveGate;
   bool failLoad = false;

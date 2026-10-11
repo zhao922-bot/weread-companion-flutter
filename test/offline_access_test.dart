@@ -4,14 +4,34 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart' show databaseFactorySqflitePlugin;
 import 'package:sqlite3/open.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
 import 'package:weread_companion/services/api.dart';
 import 'package:weread_companion/services/config.dart';
+import 'package:weread_companion/services/credentials.dart';
 import 'package:weread_companion/services/database.dart';
+import 'package:weread_companion/widgets/settings/account_settings_section.dart';
+
+class _MobileAdapter implements HttpClientAdapter {
+  bool expired = false;
+  int mints = 0;
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? body,
+      Future<void>? cancel) async {
+    if (options.path == '/login') mints++;
+    return ResponseBody.fromString(expired ? '{"errCode":-2012}' : '{"books":[]}', 200,
+        headers: {Headers.contentTypeHeader: ['application/json']});
+  }
+  @override
+  void close({bool force = false}) {}
+}
+
 
 class _UnpersistableTrustConfig extends AppConfig {
   @override
@@ -242,5 +262,99 @@ void main() {
     await restored.load();
     expect(restored.trustedAccountId, isNull);
     expect(() => DatabaseService.instance, throwsStateError);
+  });
+
+  test('退出标记落盘后中断，重启先完成清理且不恢复旧账号', () async {
+    await seedTrustedAccount();
+    final interrupted = AppConfig();
+    await interrupted.beginLogout();
+    // Simulate process death before either credentials or cached data is removed.
+    expect(secrets['weread_cookie'], isNotNull);
+    online = true;
+    await provider.init();
+    expect(provider.isLoaded, isTrue);
+    expect(provider.isLoggedIn, isFalse);
+    expect(provider.canBrowseLocal, isFalse);
+    expect(provider.hasSavedCredentials, isFalse);
+    expect(secrets, isEmpty);
+    expect(() => DatabaseService.instance, throwsStateError);
+    expect((await SharedPreferences.getInstance())
+        .containsKey('weread_logout_pending'), isFalse);
+    expect(await directory.list().isEmpty, isTrue);
+  });
+
+  test('已验证账号在同步刷新失效后立即降级，下一次同步重新验证', () async {
+    final config = AppConfig(credentials: const Credentials(
+        vid: '123', accessToken: 'old', refreshToken: 'refresh', deviceId: 'device'));
+    await config.save();
+    final adapter = _MobileAdapter();
+    provider.dispose();
+    provider = AppConfigProvider(config: config, loginApi: (config) =>
+        WeReadApi.forLogin(config: config, dio: Dio()..httpClientAdapter = adapter));
+    await provider.init();
+    expect(provider.isLoggedIn, isTrue);
+    adapter.expired = true;
+    final syncApi = WeReadApi.forLogin(config: config,
+        dio: Dio()..httpClientAdapter = adapter);
+    await expectLater(syncApi.fetchNotes('book', '书名'), throwsA(isA<DioException>()));
+    expect(provider.loginStatus, LoginStatus.invalid);
+    expect(provider.isLoggedIn, isFalse);
+    expect(provider.canBrowseLocal, isTrue);
+    expect(provider.loginStatusText, contains('凭据失效'));
+    expect(await provider.verifyForSync(), isFalse);
+    expect(adapter.mints, 2);
+    syncApi.dispose();
+  });
+
+  testWidgets('数据库清理失败但凭据已清除，重启保留继续清理入口并可重试成功', (tester) async {
+    await tester.runAsync(() async {
+    await seedTrustedAccount();
+    await provider.init();
+    await DatabaseService.endSession();
+    final originalFactory = databaseFactory;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('com.tekartik.sqflite'), (call) async {
+      if (call.method == 'getDatabasesPath') return directory.path;
+      if (call.method == 'deleteDatabase') throw PlatformException(code: 'delete-failed');
+      throw UnsupportedError(call.method);
+    });
+    databaseFactory = databaseFactorySqflitePlugin;
+    addTearDown(() { databaseFactory = originalFactory; });
+    await expectLater(provider.logout(), throwsStateError);
+    expect(provider.cleanupPending, isTrue);
+    expect(provider.loginStatus, LoginStatus.cleanupPending);
+    expect(provider.loginError, contains('本地数据库'));
+    expect(provider.hasSavedCredentials, isFalse);
+    expect(secrets, isEmpty);
+    expect(await directory.list().isEmpty, isFalse);
+
+    provider.dispose();
+    provider = createProvider();
+    await provider.init();
+    expect(provider.cleanupPending, isTrue);
+    expect(provider.canBrowseLocal, isFalse);
+    expect(await provider.verifyForSync(), isFalse);
+    });
+    await tester.pumpWidget(ChangeNotifierProvider.value(
+      value: provider,
+      child: const MaterialApp(home: Scaffold(body: AccountSettingsSection())),
+    ));
+    expect(find.text('继续清理'), findsOneWidget);
+    expect(find.text('登录'), findsNothing);
+
+    databaseFactory = databaseFactoryFfiNoIsolate;
+    await tester.runAsync(() async {
+      await tester.tap(find.text('继续清理'));
+      // Wait for the asynchronous filesystem/database cleanup to finish.
+      while (provider.isBusy) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(provider.cleanupPending, isFalse);
+    expect(provider.loginStatus, LoginStatus.signedOut);
+    expect(await tester.runAsync(() => directory.list().isEmpty), isTrue);
+    expect(find.text('继续清理'), findsNothing);
+    expect(find.text('登录'), findsOneWidget);
   });
 }
