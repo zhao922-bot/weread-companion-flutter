@@ -1,10 +1,32 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/ai_summary.dart';
 import '../models/note_item.dart';
 import '../models/reading_constants.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
+String _indexText(Map<String, dynamic> row, String content) =>
+    '${row[content] ?? ''}\n${row['book_title'] ?? ''}\n${row['chapter_title'] ?? ''}';
+
+List<List<String>> _generateTrigrams(List<String> texts) => texts.map((text) {
+  final terms = <String>{};
+  int? first;
+  int? second;
+  for (var rune in text.runes) {
+    // Match SQLite's built-in lower()/LIKE: ASCII case folding only.
+    if (rune >= 65 && rune <= 90) rune += 32;
+    if (first != null && second != null) {
+      terms.add(String.fromCharCodes([first, second, rune]));
+    }
+    first = second;
+    second = rune;
+  }
+  return terms.toList();
+}).toList();
+
+class _IndexChanged implements Exception {}
 
 class DatabaseService {
   Database? _db;
@@ -106,7 +128,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -127,8 +149,28 @@ class DatabaseService {
           );
         }
         if (oldVersion < 6) await _createItemIndexes(db);
-        if (oldVersion < 7) await _createSearchIndex(db);
+        if (oldVersion < 7) {
+          await _createSearchIndex(db);
+          // Persist pending work so a failed/interrupted onOpen can retry it.
+          await db.execute('CREATE TABLE search_index_backfill (pending INTEGER)');
+        }
         if (oldVersion < 8) await _upgradeSummaryMetadata(db);
+        if (oldVersion < 9) {
+          for (final table in ['bookmarks', 'notes']) {
+            for (final event in ['insert', 'update']) {
+              await db.execute('DROP TRIGGER IF EXISTS search_${table}_$event');
+            }
+          }
+        }
+      },
+      onOpen: (db) async {
+        if (!await _tableExists(db, 'search_index_backfill')) return;
+        for (final table in ['bookmarks', 'notes']) {
+          if (!await _tableExists(db, table)) continue;
+          final rows = await db.query(table);
+          await _writeIndexed(db, table, rows, preserveFav: false);
+        }
+        await db.execute('DROP TABLE search_index_backfill');
       },
     );
   }
@@ -194,30 +236,69 @@ class DatabaseService {
   Future<void> _createSearchIndex(Database db) async {
     await db.execute('CREATE TABLE item_trigrams (term TEXT NOT NULL, source TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(term, source, id)) WITHOUT ROWID');
     await db.execute('CREATE INDEX idx_trigrams_item ON item_trigrams(source, id)');
-    for (final (table, id, content, source) in [
-      ('bookmarks', 'bookmark_id', 'mark_text', 'bookmark'),
-      ('notes', 'note_id', 'content', 'note')]) {
+    for (final (table, id, source) in [
+      ('bookmarks', 'bookmark_id', 'bookmark'),
+      ('notes', 'note_id', 'note')]) {
       if (!await _tableExists(db, table)) continue;
-      String terms(String prefix) => '''
-        SELECT DISTINCT lower(substr(text, n, 3)), '$source', $prefix$id FROM (
-          WITH RECURSIVE positions(n) AS (
-            SELECT 1 UNION ALL SELECT n + 1 FROM positions
-            WHERE n < length($prefix$content || char(10) || $prefix book_title || char(10) || $prefix chapter_title) - 2)
-          SELECT n, $prefix$content || char(10) || $prefix book_title || char(10) || $prefix chapter_title AS text FROM positions
-        ) WHERE length(substr(text, n, 3)) = 3
-      '''.replaceAll('$prefix ', prefix);
-      // Ordinary SQLite tables/triggers work on Android without FTS5 extensions.
-      // Backfill needs a row from the source table for each term.
-      // Trigger inserts and updates are in the same transaction as the source row.
-      for (final event in ['INSERT', 'UPDATE']) {
-        await db.execute('''CREATE TRIGGER search_${table}_${event.toLowerCase()}
-          AFTER ${event == 'UPDATE' ? 'UPDATE OF $content, book_title, chapter_title, $id' : event} ON $table BEGIN
-          DELETE FROM item_trigrams WHERE source = '$source' AND id = new.$id;
-          INSERT OR IGNORE INTO item_trigrams ${terms('new.')}; END''');
-      }
+      // Deletions remain transactional, including cascading book deletion.
       await db.execute('''CREATE TRIGGER search_${table}_delete AFTER DELETE ON $table BEGIN
         DELETE FROM item_trigrams WHERE source = '$source' AND id = old.$id; END''');
-      await db.execute('UPDATE $table SET $content = $content');
+    }
+  }
+
+  Future<void> _writeIndexed(Database db, String table,
+      List<Map<String, dynamic>> input, {required bool preserveFav,
+      Future<void> Function(Transaction)? before,
+      Future<void> Function(Transaction)? after}) async {
+    final id = table == 'notes' ? 'note_id' : 'bookmark_id';
+    final content = table == 'notes' ? 'content' : 'mark_text';
+    final source = table == 'notes' ? 'note' : 'bookmark';
+    final rows = input.map((row) => Map<String, dynamic>.from(row)).toList();
+    final supportsUpsert = preserveFav && await _supportsUpsert(db);
+    while (true) {
+      final expected = <Object?, Map<String, dynamic>>{};
+      for (final row in rows) {
+        final key = row[id];
+        if (preserveFav && !expected.containsKey(key)) {
+          final existing = await db.query(table, where: '$id = ?', whereArgs: [key], limit: 1);
+          expected[key] = existing.isEmpty ? {} : Map<String, dynamic>.from(existing.single);
+        }
+        expected[key] = {...?expected[key], ...row};
+        if (!preserveFav) expected[key] = row;
+      }
+      final texts = expected.values.map((row) => _indexText(row, content)).toList();
+      final terms = await compute(_generateTrigrams, texts);
+      try {
+        await db.transaction((txn) async {
+          await before?.call(txn);
+          if (preserveFav) {
+            await _writePreservingFav(txn, table, id, rows, supportsUpsert);
+          } else {
+            final batch = txn.batch();
+            for (final row in rows) {
+              batch.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
+            }
+            await batch.commit(noResult: true);
+          }
+          final batch = txn.batch();
+          var i = 0;
+          for (final key in expected.keys) {
+            final actual = await txn.query(table, where: '$id = ?', whereArgs: [key], limit: 1);
+            // A concurrent partial update may have changed retained metadata.
+            // Roll back and regenerate outside the transaction in that case.
+            if (_indexText(actual.single, content) != texts[i]) throw _IndexChanged();
+            batch.delete('item_trigrams', where: 'source = ? AND id = ?', whereArgs: [source, key]);
+            for (final term in terms[i++]) {
+              batch.insert('item_trigrams', {'term': term, 'source': source, 'id': key});
+            }
+          }
+          await batch.commit(noResult: true);
+          await after?.call(txn);
+        });
+        return;
+      } on _IndexChanged {
+        // Retry only index snapshot conflicts; all other errors propagate.
+      }
     }
   }
 
@@ -255,15 +336,14 @@ class DatabaseService {
     final table = source == 'note' ? 'notes' : 'bookmarks';
     final id = source == 'note' ? 'note_id' : 'bookmark_id';
     final db = await database;
-    final supportsUpsert = await _supportsUpsert(db);
-    await db.transaction((txn) async {
+    await _writeIndexed(db, table, rows, preserveFav: true, before: (txn) async {
       if (expectedCursor != null) {
         final current = await txn.query('sync_cursors',
           where: 'book_id = ? AND source = ?', whereArgs: [bookId, source]);
         final key = current.isEmpty ? '0' : current.single['synckey'];
         if (key != expectedCursor) throw StateError('同步游标已更新，请重试');
       }
-      await _writePreservingFav(txn, table, id, rows, supportsUpsert);
+    }, after: (txn) async {
       for (final key in deleted) {
         await txn.delete(table, where: 'book_id = ? AND $id = ?', whereArgs: [bookId, key]);
       }
@@ -393,8 +473,7 @@ class DatabaseService {
   // ── Bookmarks ──
 
   Future<void> insertBookmark(Map<String, dynamic> bookmark) async {
-    final db = await database;
-    await db.insert('bookmarks', bookmark, conflictAlgorithm: ConflictAlgorithm.replace);
+    await insertBookmarks([bookmark]);
   }
 
   /// 插入或更新书签，但保留已有的 is_fav 状态
@@ -405,10 +484,7 @@ class DatabaseService {
   Future<void> _upsertPreserveFav(String table, String id,
       List<Map<String, dynamic>> rows) async {
     final db = await database;
-    final supportsUpsert = await _supportsUpsert(db);
-    await db.transaction((txn) async {
-      await _writePreservingFav(txn, table, id, rows, supportsUpsert);
-    });
+    await _writeIndexed(db, table, rows, preserveFav: true);
   }
 
   Future<void> insertBookmarksPreserveFav(List<Map<String, dynamic>> rows) =>
@@ -419,11 +495,7 @@ class DatabaseService {
 
   Future<void> insertBookmarks(List<Map<String, dynamic>> bookmarks) async {
     final db = await database;
-    final batch = db.batch();
-    for (final bm in bookmarks) {
-      batch.insert('bookmarks', bm, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await _writeIndexed(db, 'bookmarks', bookmarks, preserveFav: false);
   }
 
   Future<List<Map<String, dynamic>>> getAllBookmarks({int offset = 0, int limit = 500,
@@ -554,8 +626,7 @@ class DatabaseService {
   // ── Notes ──
 
   Future<void> insertNote(Map<String, dynamic> note) async {
-    final db = await database;
-    await db.insert('notes', note, conflictAlgorithm: ConflictAlgorithm.replace);
+    await insertNotes([note]);
   }
 
   /// 插入或更新笔记，但保留已有的 is_fav 状态
@@ -565,11 +636,7 @@ class DatabaseService {
 
   Future<void> insertNotes(List<Map<String, dynamic>> notes) async {
     final db = await database;
-    final batch = db.batch();
-    for (final note in notes) {
-      batch.insert('notes', note, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await _writeIndexed(db, 'notes', notes, preserveFav: false);
   }
 
   Future<List<Map<String, dynamic>>> getNotesByBook(String bookId) async {

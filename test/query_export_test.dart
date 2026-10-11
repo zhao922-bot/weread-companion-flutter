@@ -14,6 +14,7 @@ import 'package:weread_companion/pages/cards_page.dart';
 import 'package:weread_companion/pages/report_page.dart';
 import 'package:weread_companion/providers/notes_provider.dart';
 import 'package:weread_companion/services/database.dart';
+import 'package:weread_companion/services/ai_service.dart';
 import 'package:weread_companion/services/export_service.dart';
 import 'package:weread_companion/services/sync_service.dart';
 import 'package:weread_companion/models/ai_summary.dart';
@@ -25,11 +26,13 @@ import 'support/wait_until.dart';
 class _TestPaths extends PathProviderPlatform {
   final String path;
   final void Function()? onDocuments;
+  final Future<void> Function()? waitDocuments;
   final Future<String?> Function()? onTemporary;
-  _TestPaths(this.path, {this.onDocuments, this.onTemporary});
+  _TestPaths(this.path, {this.onDocuments, this.waitDocuments, this.onTemporary});
   @override
   Future<String?> getApplicationDocumentsPath() async {
     onDocuments?.call();
+    await waitDocuments?.call();
     return path;
   }
   @override
@@ -93,6 +96,29 @@ void main() {
       'chapter_title': '', 'created_at': i ~/ 3, 'is_fav': i == 0 ? 1 : 0,
     }));
   }
+
+  test('AI截断摘要明确提示未完成且不保存，重试完成后才写入历史', () async {
+    final dio = Dio();
+    var truncated = true;
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      handler.resolve(Response(requestOptions: options, data: {
+        'choices': [{'finish_reason': truncated ? 'length' : 'stop',
+          'message': {'content': truncated ? '截断正文' : '完整正文'}}],
+      }));
+    }));
+    final ai = AIService(config: AppConfig(apiKey: 'test'), dio: dio);
+    final notes = [NoteItem(id: 'n', bookId: 'b', bookTitle: '书',
+      content: '引用', chapterTitle: '', createdAt: 1,
+      isFav: false, source: NoteSource.note)];
+    await expectLater(ai.summarizeBook('书', '', notes),
+      throwsA(isA<AIServiceException>()
+        .having((e) => e.message, '未完成提示', contains('未完成'))
+        .having((e) => e.message, '重试提示', contains('请重试'))));
+    expect(await db.getSummaries(), isEmpty);
+    truncated = false;
+    expect((await ai.summarizeBook('书', '', notes)).text, '完整正文');
+    expect((await db.getSummaries()).single.text, '完整正文');
+  });
 
   test('退出清理递归删除中断导出的暂存目录，保留其他文件', () async {
     final staging = await directory.createTemp('.weread-export-');
@@ -173,6 +199,73 @@ void main() {
     }
   });
 
+  test('Unicode三元组去重，部分更新及并发元数据更新保持搜索一致', () async {
+    await db.insertNote({'note_id': 'n', 'book_id': 'b', 'book_title': '原书名',
+      'chapter_title': '原章节', 'content': '😀中文ABC😀中文ABC', 'created_at': 1});
+    expect(await db.countReadingItems(query: '😀中文'), 1);
+    expect(await db.countReadingItems(query: 'abc'), 1);
+    final connection = await db.database;
+    expect((await connection.rawQuery("SELECT COUNT(*) AS total FROM item_trigrams WHERE term = '😀中文'")).single['total'], 1);
+    await Future.wait([
+      db.insertNotesPreserveFav([{'note_id': 'n', 'book_id': 'b',
+        'content': '更新😀中文', 'created_at': 2}]),
+      db.insertNotesPreserveFav([{'note_id': 'n', 'book_id': 'b',
+        'book_title': '并发书名', 'chapter_title': '并发章节', 'created_at': 3}]),
+    ]);
+    expect(await db.countReadingItems(query: '并发书名'), 1);
+    expect(await db.countReadingItems(query: '并发章节'), 1);
+    expect(await db.countReadingItems(query: '更新😀'), 1);
+    expect(await db.countReadingItems(query: '原书名'), 0);
+    expect(await db.countReadingItems(query: 'ABC'), 0);
+  });
+
+  test('索引批量写入失败时正文和同步游标一起回滚', () async {
+    await db.insertNote({'note_id': 'n', 'book_id': 'b', 'content': '原内容', 'created_at': 1});
+    await (await db.database).execute('''CREATE TRIGGER reject_index BEFORE INSERT ON item_trigrams
+      WHEN new.term = '新内容' BEGIN SELECT RAISE(ABORT, 'index failure'); END''');
+    await expectLater(db.applySyncDelta('b', 'note', [
+      {'note_id': 'n', 'book_id': 'b', 'content': '新内容', 'created_at': 2}
+    ], [], 'next'), throwsA(isA<DatabaseException>()));
+    expect(await db.countReadingItems(query: '原内容'), 1);
+    expect(await db.countReadingItems(query: '新内容'), 0);
+    expect(await db.getSyncCursor('b', 'note'), '0');
+  });
+
+  test('长正文索引生成与同步验证8000、16000、32000字符', () async {
+    await db.database;
+    for (final length in [8000, 16000, 32000]) {
+      final text = List.filled(length ~/ 4, '中文😀A').join();
+      final watch = Stopwatch()..start();
+      await db.applySyncDelta('b', 'note', [{
+        'note_id': 'long', 'book_id': 'b', 'content': text, 'created_at': length,
+      }], [], '$length');
+      watch.stop();
+      debugPrint('$length Unicode字符同步（含isolate生成和事务写入）: ${watch.elapsedMicroseconds / 1000}ms');
+      expect(await db.countReadingItems(query: '文😀A'), 1);
+      expect(await db.getSyncCursor('b', 'note'), '$length');
+    }
+  });
+
+  test('v8升级移除递归SQL触发器并保留已有索引', () async {
+    await db.insertNote({'note_id': 'n', 'book_id': 'b', 'content': '原内容', 'created_at': 1});
+    final connection = await db.database;
+    for (final table in ['notes', 'bookmarks']) {
+      for (final event in ['insert', 'update']) {
+        await connection.execute('CREATE TRIGGER search_${table}_$event AFTER $event ON $table BEGIN SELECT 1; END');
+      }
+    }
+    await connection.setVersion(8);
+    await DatabaseService.endSession();
+    await DatabaseService.selectAccount('123');
+    db = DatabaseService.instance;
+    expect(await db.countReadingItems(query: '原内容'), 1);
+    final triggers = await (await db.database).rawQuery("SELECT name FROM sqlite_master WHERE type = 'trigger'");
+    expect(triggers.map((r) => r['name']).toSet(), {'search_notes_delete', 'search_bookmarks_delete'});
+    await db.insertNotePreserveFav({'note_id': 'n', 'book_id': 'b', 'content': '新内容', 'created_at': 2});
+    expect(await db.countReadingItems(query: '新内容'), 1);
+    expect(await db.countReadingItems(query: '原内容'), 0);
+  });
+
   test('摘要数据库先排除空白再LIMIT30，稳定跨来源排序且保留搜索/收藏/书籍范围', () async {
     await seed(160);
     final blanks = ['', ' ', '\t\r\n', '\u00a0\u3000\ufeff', '\u2000\u2028'];
@@ -241,7 +334,7 @@ void main() {
     final connection = await db.database;
     for (final table in ['bookmarks', 'notes']) {
       for (final event in ['insert', 'update', 'delete']) {
-        await connection.execute('DROP TRIGGER search_${table}_$event');
+        await connection.execute('DROP TRIGGER IF EXISTS search_${table}_$event');
       }
       for (final suffix in ['time', 'book_time', 'fav_time']) {
         await connection.execute('DROP INDEX idx_${table}_$suffix');
@@ -294,6 +387,41 @@ void main() {
     expect(await db.getAllNotes(), isEmpty);
   });
 
+  test('导出磁盘阶段等待时查询、收藏及同步可提交，导出仍使用原快照', () async {
+    await db.insertNote({'note_id': 'n', 'book_id': 'book', 'book_title': '快照书',
+      'content': '快照原文', 'created_at': 1});
+    final reachedDisk = Completer<void>();
+    final releaseDisk = Completer<void>();
+    PathProviderPlatform.instance = _TestPaths(directory.path, waitDocuments: () async {
+      reachedDisk.complete();
+      await releaseDisk.future;
+    });
+    var completed = false;
+    final exporting = ExportService.exportToMarkdown().then((path) {
+      completed = true;
+      return path;
+    });
+    try {
+      await reachedDisk.future.timeout(const Duration(seconds: 5));
+      await db.toggleFavorite('n', true).timeout(const Duration(seconds: 5));
+      await db.applySyncDelta('book', 'note', [{
+        'note_id': 'n', 'book_id': 'book', 'book_title': '更新书名',
+        'content': '同步新文', 'created_at': 2,
+      }], [], 'next').timeout(const Duration(seconds: 5));
+      final current = await db.getAllNotes().timeout(const Duration(seconds: 5));
+      expect(current.single['is_fav'], 1);
+      expect(current.single['content'], '同步新文');
+      expect(completed, isFalse);
+    } finally {
+      releaseDisk.complete();
+    }
+    final text = await File(await exporting).readAsString();
+    expect(text, contains('快照书'));
+    expect(text, contains('快照原文'));
+    expect(text, isNot(contains('同步新文')));
+    expect(text, isNot(contains('更新书名')));
+  });
+
   test('同日第二次导出写入失败保留上次文件并清理临时文件', () async {
     await db.insertNote({'note_id': 'last', 'book_id': 'book', 'book_title': '书',
       'content': '成功内容', 'created_at': 1});
@@ -304,6 +432,30 @@ void main() {
     await expectLater(ExportService.exportToMarkdown(), throwsA(isA<TypeError>()));
     expect(await File(path).readAsBytes(), previous);
     expect(await directory.list().where((entry) => entry.path.contains('.weread-export-')).isEmpty, isTrue);
+  });
+
+  test('连续及并发导出路径唯一，旧内容保留且清理识别新旧文件名', () async {
+    await db.insertNote({'note_id': 'n', 'book_id': 'book',
+      'content': '原内容', 'created_at': 1});
+    final first = await ExportService.exportToMarkdown();
+    final original = await File(first).readAsBytes();
+    await db.insertNote({'note_id': 'n', 'book_id': 'book',
+      'content': '新内容', 'created_at': 1});
+    final paths = await Future.wait(List.generate(3,
+      (_) => ExportService.exportToMarkdown()));
+    expect({first, ...paths}, hasLength(4));
+    expect(await File(first).readAsBytes(), original);
+    for (final path in paths) {
+      expect(path, matches(r'微信读书笔记_[0-9]{8}_[0-9]{6}_[a-f0-9]{32}\.md$'));
+      expect(await File(path).readAsString(), contains('新内容'));
+    }
+    final legacy = await File('${directory.path}/微信读书笔记_20261011.md').writeAsString('旧格式');
+    final unrelated = await File('${directory.path}/微信读书笔记_自定义.md').writeAsString('用户文件');
+    await ExportService.clearLocalExports();
+    for (final path in [first, ...paths, legacy.path]) {
+      expect(await File(path).exists(), isFalse);
+    }
+    expect(await unrelated.exists(), isTrue);
   });
 
   test('全库搜索与收藏包含500条以外的历史；同时间分页无遗漏重复', () async {

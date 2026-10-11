@@ -90,6 +90,9 @@ class AIService {
       if (choice is! Map || choice['message'] is! Map) {
         throw const FormatException('AI 响应缺少 message');
       }
+      if (choice['finish_reason'] == 'length') {
+        throw const AIServiceException('AI 响应未完成：达到输出长度限制，内容已截断，请重试');
+      }
       final content = choice['message']['content'];
       if (content is! String || content.trim().isEmpty) {
         throw const FormatException('AI 返回内容为空或格式无效');
