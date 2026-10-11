@@ -1,9 +1,36 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
 import 'package:weread_companion/models/book.dart';
 import 'package:weread_companion/services/sync_service.dart';
 
 void main() {
+  test('同账号两入口及重试排队，前一个结束后才读取游标', () async {
+    final gate = Completer<void>();
+    final started = Completer<void>();
+    final calls = <String>[];
+    final itemCalls = <String>[];
+    final book = Book(bookId: 'b', title: '', author: '', cover: '', updatedAt: 0);
+    SyncService service(String name) => SyncService(accountId: '123',
+      loadBooks: () async { calls.add(name); return [book]; },
+      loadBookmarks: (_) async {
+        itemCalls.add(name);
+        if (name == 'shelf') { started.complete(); await gate.future; }
+        return 0;
+      }, loadNotes: (_) async => 0, isCancelled: () => false, onChanged: () {});
+    final first = service('shelf').syncAll();
+    await started.future;
+    final second = service('page').syncAll();
+    final retry = service('retry').retryBook(book);
+    await Future<void>.delayed(Duration.zero);
+    expect(calls, ['shelf']);
+    expect(itemCalls, ['shelf']);
+    gate.complete();
+    await Future.wait([first, second]);
+    await retry;
+    expect(calls, ['shelf', 'page']);
+    expect(itemCalls, ['shelf', 'page', 'retry']);
+  });
   test('429保留状态并重试，取消后不重试', () async {
     var requests = 0;
     var cancelled = false;

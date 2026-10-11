@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:convert';
 import 'dart:ui' as ui;
@@ -23,11 +24,16 @@ import 'support/wait_until.dart';
 
 class _TestPaths extends PathProviderPlatform {
   final String path;
-  _TestPaths(this.path);
+  final void Function()? onDocuments;
+  final Future<String?> Function()? onTemporary;
+  _TestPaths(this.path, {this.onDocuments, this.onTemporary});
   @override
-  Future<String?> getApplicationDocumentsPath() async => path;
+  Future<String?> getApplicationDocumentsPath() async {
+    onDocuments?.call();
+    return path;
+  }
   @override
-  Future<String?> getTemporaryPath() async => path;
+  Future<String?> getTemporaryPath() async => onTemporary == null ? path : await onTemporary!();
 }
 
 class _ShelfAdapter implements HttpClientAdapter {
@@ -205,6 +211,36 @@ void main() {
     expect(text.substring(text.indexOf('## 📖')), '## 📖 书名\n\n\n**第一章**\n\n- 📝 第一条\n- 💭 第二条\n\n**第二章**\n\n- 💭 第三条\n');
   });
 
+  test('导出读取书单后同步删除最后一项，快照仍完整且同步随后提交', () async {
+    await db.insertNote({'note_id': 'last', 'book_id': 'book', 'book_title': '快照书',
+      'content': '最后一项', 'created_at': 1});
+    Future<void>? deletion;
+    var deleted = false;
+    PathProviderPlatform.instance = _TestPaths(directory.path, onDocuments: () {
+      deletion = db.applySyncDelta('book', 'note', [], ['last'], 'next')
+        .then((_) { deleted = true; });
+    });
+    final path = await ExportService.exportToMarkdown();
+    final text = await File(path).readAsString();
+    expect(text, contains('## 📖 快照书'));
+    expect(text, contains('最后一项'));
+    await deletion;
+    expect(deleted, isTrue);
+    expect(await db.getAllNotes(), isEmpty);
+  });
+
+  test('同日第二次导出写入失败保留上次文件并清理临时文件', () async {
+    await db.insertNote({'note_id': 'last', 'book_id': 'book', 'book_title': '书',
+      'content': '成功内容', 'created_at': 1});
+    final path = await ExportService.exportToMarkdown();
+    final previous = await File(path).readAsBytes();
+    // 损坏章节字段使异步格式化在打开写入流之后失败。
+    await (await db.database).update('notes', {'chapter_title': Uint8List.fromList([1, 2])});
+    await expectLater(ExportService.exportToMarkdown(), throwsA(isA<TypeError>()));
+    expect(await File(path).readAsBytes(), previous);
+    expect(await directory.list().where((entry) => entry.path.contains('.weread-export-')).isEmpty, isTrue);
+  });
+
   test('全库搜索与收藏包含500条以外的历史；同时间分页无遗漏重复', () async {
     await seed(620);
     final provider = NotesProvider();
@@ -251,6 +287,27 @@ void main() {
     await provider.loadNotes();
     expect(provider.matchedCount, 1);
     expect(provider.notes.single.id, 'nt0');
+  });
+
+  test('收藏筛选返回后纳入比末项更新的收藏，计数及分页收敛', () async {
+    await seed(3);
+    final provider = NotesProvider();
+    addTearDown(provider.dispose);
+    provider.setFilter(ReadingFilter.favorites);
+    await provider.loadNotes();
+    await db.toggleFavorite('nt2', true);
+    SyncService.changes.publish(db, favoritesOnly: true,
+      bookIds: {'main'}, itemIds: {'note:nt2'}, sources: {'note'});
+    await waitUntil(() => !provider.isLoading && provider.notes.any((n) => n.id == 'nt2'));
+    expect(provider.matchedCount, 3);
+    expect(provider.notes.length, 3);
+    expect(provider.hasMore, isFalse);
+    // 同一 provider 收藏列表外的详情项也必须重查。
+    await provider.toggleFavorite(NoteItem(id: 'nt1', bookId: 'main', bookTitle: '测试书',
+      content: '想法1', chapterTitle: '', createdAt: 0, isFav: false, source: NoteSource.note));
+    expect(provider.notes.map((n) => n.id), contains('nt1'));
+    expect(provider.matchedCount, 4);
+    expect(provider.hasMore, isFalse);
   });
 
   test('笔记订阅统一同步事件，两次同步均刷新全库计数', () async {
@@ -341,6 +398,79 @@ void main() {
       });
       await tester.pumpWidget(const SizedBox());
     }
+  });
+
+  testWidgets('宽屏导出A异步等待时点击B及字号不会改变图片与分享内容', (tester) async {
+    await tester.binding.setSurfaceSize(const ui.Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.runAsync(() => db.insertBookmarks([
+      {'bookmark_id': 'a', 'book_id': 'book', 'book_title': '书A', 'mark_text': '引文A', 'created_at': 2},
+      {'bookmark_id': 'b', 'book_id': 'book', 'book_title': '书B', 'mark_text': '引文B', 'created_at': 1},
+    ]));
+    const channel = MethodChannel('dev.fluttercommunity.plus/share');
+    Map<dynamic, dynamic>? shared;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      shared = call.arguments as Map;
+      return 'success';
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(const MaterialApp(home: CardsPage()));
+    await pumpUntil(tester, () => find.text('导出图片').evaluate().isNotEmpty);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('导出图片'));
+      await waitUntil(() => shared != null);
+    });
+    final baseline = await tester.runAsync(() => File((shared!['paths'] as List).single as String).readAsBytes());
+    await tester.pump();
+    shared = null;
+    final gate = Completer<String?>();
+    PathProviderPlatform.instance = _TestPaths(directory.path, onTemporary: () => gate.future);
+    await tester.tap(find.text('导出图片'));
+    await tester.pump();
+    expect(tester.widget<Slider>(find.byType(Slider)).onChanged, isNull);
+    await tester.tap(find.text('引文B'), warnIfMissed: false);
+    await tester.pump();
+    expect(find.text('—— 书A'), findsOneWidget);
+    expect(find.text('—— 书B'), findsNothing);
+    gate.complete(directory.path);
+    await pumpUntil(tester, () => shared != null);
+    await tester.runAsync(() async {
+      expect(await File((shared!['paths'] as List).single as String).readAsBytes(), baseline);
+    });
+    expect(shared!['text'], '「引文A」—— 书A');
+    await tester.pump();
+    await tester.tap(find.text('引文B'));
+    await tester.pump();
+    expect(find.text('—— 书B'), findsOneWidget);
+    expect(find.byKey(const ValueKey(('book', 'b'))), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('窄屏导出等待中关闭预览，结束后释放页面交互锁', (tester) async {
+    tester.view.physicalSize = const ui.Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.runAsync(() => db.insertBookmark({'bookmark_id': 'a', 'book_id': 'book',
+      'book_title': '书', 'mark_text': '引文', 'created_at': 1}));
+    final gate = Completer<String?>();
+    PathProviderPlatform.instance = _TestPaths(directory.path, onTemporary: () => gate.future);
+    await tester.pumpWidget(const MaterialApp(home: CardsPage()));
+    await pumpUntil(tester, () => find.text('引文').evaluate().isNotEmpty);
+    await tester.tap(find.text('引文'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导出图片'));
+    await tester.pump();
+    Navigator.of(tester.element(find.text('导出中...'))).pop();
+    await tester.pumpAndSettle();
+    gate.complete(directory.path);
+    final pageLock = find.descendant(of: find.byType(CardsPage), matching: find.byType(AbsorbPointer)).first;
+    await pumpUntil(tester, () => !tester.widget<AbsorbPointer>(pageLock).absorbing);
+    await tester.tap(find.text('引文'));
+    await tester.pumpAndSettle();
+    expect(find.text('导出图片'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 
   test('Markdown分批导出超过9999条的两表全部数据，单书导出包含最旧记录', () async {

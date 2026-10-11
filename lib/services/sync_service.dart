@@ -90,6 +90,23 @@ class SyncService {
   static DateTime _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
   static int _activeRequests = 0;
   static final _waiting = <Completer<void>>[];
+  static final _accountTasks = <String, Future<void>>{};
+  final String? accountId;
+
+  Future<T> _exclusive<T>(Future<T> Function() task) async {
+    final account = accountId;
+    if (account == null) return task();
+    final previous = _accountTasks[account];
+    final gate = Completer<void>();
+    _accountTasks[account] = gate.future;
+    try {
+      await previous;
+      return await task();
+    } finally {
+      gate.complete();
+      if (identical(_accountTasks[account], gate.future)) _accountTasks.remove(account);
+    }
+  }
 
   SyncService({
     required this.loadBooks,
@@ -98,6 +115,7 @@ class SyncService {
     required this.isCancelled,
     required this.onChanged,
     this.requestInterval = const Duration(milliseconds: 300),
+    this.accountId,
   });
 
   factory SyncService.forApi(WeReadApi api, {bool Function()? isCancelled}) {
@@ -113,6 +131,7 @@ class SyncService {
       changedItems.addAll(keys.map((id) => '$source:$id'));
     }
     return SyncService(
+      accountId: db.accountId,
       loadBooks: () async {
         final books = await api.fetchBookshelf();
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
@@ -124,22 +143,26 @@ class SyncService {
       loadBookmarks: (book) async {
         String? cursor;
         var deleted = <String>[];
+        final expectedCursor = await db.getSyncCursor(book.bookId, 'bookmark');
         final rows = await api.fetchBookmarks(book.bookId, book.title,
-            synckey: await db.getSyncCursor(book.bookId, 'bookmark'),
+            synckey: expectedCursor,
             onDelta: (key, ids) { cursor = key; deleted = ids; });
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
-        await db.applySyncDelta(book.bookId, 'bookmark', rows.map((r) => r.toJson()).toList(), deleted, cursor);
+        await db.applySyncDelta(book.bookId, 'bookmark', rows.map((r) => r.toJson()).toList(), deleted, cursor,
+          expectedCursor: expectedCursor);
         record(book.bookId, 'bookmark', [...rows.map((r) => r.bookmarkId), ...deleted]);
         return rows.length;
       },
       loadNotes: (book) async {
         String? cursor;
         var deleted = <String>[];
+        final expectedCursor = await db.getSyncCursor(book.bookId, 'note');
         final rows = await api.fetchNotes(book.bookId, book.title,
-            synckey: await db.getSyncCursor(book.bookId, 'note'),
+            synckey: expectedCursor,
             onDelta: (key, ids) { cursor = key; deleted = ids; });
         if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
-        await db.applySyncDelta(book.bookId, 'note', rows, deleted, cursor);
+        await db.applySyncDelta(book.bookId, 'note', rows, deleted, cursor,
+          expectedCursor: expectedCursor);
         record(book.bookId, 'note', [...rows.map((r) => r['note_id'] as String), ...deleted]);
         return rows.length;
       },
@@ -225,7 +248,10 @@ class SyncService {
   Future<SyncResult> syncAll({
     void Function(int total)? onBooks,
     void Function(BookSyncResult result, int processed)? onProgress,
-  }) async {
+  }) => _exclusive(() => _syncAll(onBooks: onBooks, onProgress: onProgress));
+
+  Future<SyncResult> _syncAll({void Function(int total)? onBooks,
+    void Function(BookSyncResult result, int processed)? onProgress}) async {
     if (isCancelled()) return SyncResult([], 0, cancelled: true);
     try {
       final books = await _request(loadBooks);
@@ -248,7 +274,9 @@ class SyncService {
     }
   }
 
-  Future<BookSyncResult> retryBook(Book book) async {
+  Future<BookSyncResult> retryBook(Book book) => _exclusive(() => _retryBook(book));
+
+  Future<BookSyncResult> _retryBook(Book book) async {
     if (isCancelled()) throw StateError('同步已取消');
     try {
       return await _syncBook(book);

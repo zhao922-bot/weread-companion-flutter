@@ -19,6 +19,7 @@ class FaultFactory implements SqfliteDatabaseFactory {
   int opens = 0;
   bool failOpen = false;
   bool failClose = false;
+  bool legacySqlite = false;
   CloseFailureDatabase? wrapped;
   FaultFactory(this.delegate);
   @override
@@ -31,8 +32,33 @@ class FaultFactory implements SqfliteDatabaseFactory {
     if (failOpen) { failOpen = false; throw StateError('open failed'); }
     final database = await delegate.openDatabase(path, options: options);
     if (failClose) return wrapped = CloseFailureDatabase(database);
+    if (legacySqlite) return LegacyDatabase(database);
     return database;
   }
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class LegacyDatabase implements Database {
+  final Database delegate;
+  LegacyDatabase(this.delegate);
+  @override
+  Future<List<Map<String, Object?>>> query(String table, {bool? distinct,
+    List<String>? columns, String? where, List<Object?>? whereArgs,
+    String? groupBy, String? having, String? orderBy, int? limit, int? offset}) =>
+    delegate.query(table, distinct: distinct, columns: columns, where: where,
+      whereArgs: whereArgs, groupBy: groupBy, having: having, orderBy: orderBy,
+      limit: limit, offset: offset);
+  @override
+  Future<List<Map<String, Object?>>> rawQuery(String sql, [List<Object?>? arguments]) async {
+    if (sql.contains('sqlite_version()')) return [{'version': '3.22.0'}];
+    return delegate.rawQuery(sql, arguments);
+  }
+  @override
+  Future<T> transaction<T>(Future<T> Function(Transaction txn) action, {bool? exclusive}) =>
+    delegate.transaction(action, exclusive: exclusive);
+  @override
+  Future<void> close() => delegate.close();
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -77,6 +103,37 @@ void main() {
   ], 'bookProgress': [
     {'bookId': 'b', 'progress': 99}, {'bookId': 'ignored', 'progress': 'bad'},
   ]};
+
+  test('SQLite 3.22 两来源先查后写保留收藏、重复ID及失败回滚', () async {
+    databaseFactory = FaultFactory(databaseFactory)..legacySqlite = true;
+    final connection = (await db.database as LegacyDatabase).delegate;
+    for (final source in ['bookmark', 'note']) {
+      final id = source == 'note' ? 'note_id' : 'bookmark_id';
+      final table = source == 'note' ? 'notes' : 'bookmarks';
+      final content = source == 'note' ? 'content' : 'mark_text';
+      final insert = source == 'note' ? db.insertNotesPreserveFav : db.insertBookmarksPreserveFav;
+      Map<String, dynamic> row(String text) => {id: 'same', 'book_id': 'b', content: text, 'created_at': 1};
+      await insert([{...row('原文'), 'is_fav': 1}]);
+      await insert([row('中间'), row('更新')]);
+      await db.applySyncDelta('b', source, [row('增量')], [], '1', expectedCursor: '0');
+      expect((await connection.query(table)).single[content], '增量');
+      expect((await connection.query(table)).single['is_fav'], 1);
+      await expectLater(db.applySyncDelta('b', source, [row('不应写入'),
+        {id: 'invalid', 'book_id': 'b', 'created_at': null}], ['same'], '2', expectedCursor: '1'),
+        throwsA(isA<DatabaseException>()));
+      expect((await connection.query(table)).single[content], '增量');
+      expect((await connection.query('sync_cursors', where: 'source = ?', whereArgs: [source])).single['synckey'], '1');
+    }
+  });
+
+  test('旧响应晚提交不得复活删除记录或回退游标', () async {
+    final row = {'bookmark_id': 'old', 'book_id': 'b', 'mark_text': '旧划线', 'created_at': 1};
+    await db.applySyncDelta('b', 'bookmark', [row], [], '1', expectedCursor: '0');
+    await db.applySyncDelta('b', 'bookmark', [], ['old'], '2', expectedCursor: '1');
+    await expectLater(db.applySyncDelta('b', 'bookmark', [row], [], '1', expectedCursor: '0'), throwsStateError);
+    expect(await db.getAllBookmarks(), isEmpty);
+    expect(await db.getSyncCursor('b', 'bookmark'), '2');
+  });
   final bookmarks = {'chapters': [
     {'chapterUid': 7, 'title': '第七章'}, {'chapterUid': [], 'title': 42},
   ], 'updated': [

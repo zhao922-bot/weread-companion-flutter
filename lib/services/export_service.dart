@@ -36,60 +36,71 @@ class ExportService {
   static Future<String> exportToMarkdown({String? bookId}) async {
     final db = DatabaseService.instance;
     final connection = await db.database;
-    // Preserve book order: newest bookmark first, then note-only books.
-    final books = await connection.rawQuery('''
+    Directory? staging;
+    try {
+      // All paginated reads share one snapshot; sync writes wait for it.
+      final paths = await connection.transaction((txn) async {
+        // Preserve book order: newest bookmark first, then note-only books.
+        final books = await txn.rawQuery('''
       SELECT book_id, MIN(priority) AS priority,
         COALESCE(MAX(CASE WHEN priority = 0 THEN created_at END), MAX(created_at)) AS newest FROM (
         SELECT book_id, created_at, 0 AS priority FROM bookmarks
         UNION ALL SELECT book_id, created_at, 1 AS priority FROM notes)
       ${bookId == null ? '' : 'WHERE book_id = ?'}
       GROUP BY book_id ORDER BY priority, newest DESC, book_id DESC
-    ''', [if (bookId != null) bookId]);
-    if (books.isEmpty) throw Exception('暂无数据可导出');
-    final now = DateTime.now();
-    String two(int n) => n.toString().padLeft(2, '0');
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}.md');
-    final sink = file.openWrite(encoding: utf8);
-    var succeeded = false;
-    try {
-      sink.write('# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
-      for (final book in books) {
-        final id = book['book_id'];
-        final title = await connection.rawQuery('''
+        ''', [if (bookId != null) bookId]);
+        if (books.isEmpty) throw Exception('暂无数据可导出');
+        final now = DateTime.now();
+        String two(int n) => n.toString().padLeft(2, '0');
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}.md');
+        staging = await dir.createTemp('.weread-export-');
+        final pending = File('${staging!.path}/notes.md');
+        final sink = pending.openWrite(encoding: utf8);
+        try {
+          sink.write('# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
+          for (final book in books) {
+            final id = book['book_id'];
+            final title = await txn.rawQuery('''
           SELECT book_title FROM (
             SELECT book_title, created_at, bookmark_id AS id, 0 AS priority FROM bookmarks WHERE book_id = ?
             UNION ALL SELECT book_title, created_at, note_id AS id, 1 AS priority FROM notes WHERE book_id = ?)
           ORDER BY priority, created_at DESC, id DESC LIMIT 1
-        ''', [id, id]);
-        sink.write('\n\n## 📖 ${title.first['book_title']}\n\n');
-        String? chapter;
-        Map<String, dynamic>? after;
-        while (true) {
-          if (!db.isActive) throw StateError('账号会话已结束');
-          final rows = await connection.rawQuery('''
+            ''', [id, id]);
+            sink.write('\n\n## 📖 ${title.first['book_title']}\n\n');
+            String? chapter;
+            Map<String, dynamic>? after;
+            while (true) {
+              if (!db.isActive) throw StateError('账号会话已结束');
+              final rows = await txn.rawQuery('''
             SELECT * FROM (
               SELECT bookmark_id AS id, mark_text AS content, chapter_title, created_at, 'bookmark' AS source FROM bookmarks WHERE book_id = ?
               UNION ALL SELECT note_id AS id, content, chapter_title, created_at, 'note' AS source FROM notes WHERE book_id = ?)
             ${after == null ? '' : 'WHERE created_at > ? OR (created_at = ? AND (source > ? OR (source = ? AND id < ?)))'}
             ORDER BY created_at ASC, source ASC, id DESC LIMIT 500
-          ''', [id, id, if (after != null) ...[after['created_at'], after['created_at'], after['source'], after['source'], after['id']]]);
-          if (rows.isEmpty) break;
-          final formatted = jsonDecode(await compute(_formatBatch, {'rows': rows, 'chapter': chapter})) as Map<String, dynamic>;
-          sink.write(formatted['text']);
-          chapter = formatted['chapter'] as String?;
-          after = rows.last;
+              ''', [id, id, if (after != null) ...[after['created_at'], after['created_at'], after['source'], after['source'], after['id']]]);
+              if (rows.isEmpty) break;
+              final formatted = jsonDecode(await compute(_formatBatch, {'rows': rows, 'chapter': chapter})) as Map<String, dynamic>;
+              sink.write(formatted['text']);
+              chapter = formatted['chapter'] as String?;
+              after = rows.last;
+              await sink.flush();
+            }
+          }
           await sink.flush();
+          if (!db.isActive) throw StateError('账号会话已结束');
+        } finally {
+          await sink.close();
         }
-      }
-      await sink.flush();
+        return (pending, file);
+      });
       if (!db.isActive) throw StateError('账号会话已结束');
-      succeeded = true;
+      // Both files are on the same filesystem: publish only the complete file.
+      await paths.$1.rename(paths.$2.path);
+      return paths.$2.path;
     } finally {
-      await sink.close();
-      if (!succeeded && await file.exists()) await file.delete();
+      if (staging != null && await staging!.exists()) await staging!.delete(recursive: true);
     }
-    return file.path;
   }
 
   static Future<void> exportAndShare({String? bookId}) async {

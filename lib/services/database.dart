@@ -10,6 +10,41 @@ class DatabaseService {
   Database? _db;
   Future<Database>? _opening;
   bool _closed = false;
+  Future<bool>? _upsertSupported;
+
+  Future<bool> _supportsUpsert(Database db) => _upsertSupported ??= (() async {
+    final rows = await db.rawQuery('SELECT sqlite_version() AS version');
+    final parts = (rows.single['version'] as String).split('.');
+    final major = int.parse(parts[0]);
+    final minor = int.parse(parts[1]);
+    return major > 3 || (major == 3 && minor >= 24);
+  })();
+
+  Future<void> _writePreservingFav(Transaction txn, String table, String id,
+      List<Map<String, dynamic>> rows, bool supportsUpsert) async {
+    final batch = txn.batch();
+    for (final row in rows) {
+      final values = {'is_fav': 0, ...row};
+      if (supportsUpsert) {
+        final columns = values.keys.toList();
+        batch.rawInsert('INSERT INTO $table (${columns.join(',')}) '
+          'VALUES (${List.filled(columns.length, '?').join(',')}) '
+          'ON CONFLICT($id) DO UPDATE SET ${columns.where((c) => c != id && c != 'is_fav').map((c) => '$c = excluded.$c').join(',')}',
+          values.values.toList());
+      } else {
+        final existing = await txn.query(table, columns: [id],
+          where: '$id = ?', whereArgs: [values[id]], limit: 1);
+        if (existing.isEmpty) {
+          // Execute immediately so repeated IDs in a delta see earlier inserts.
+          await txn.insert(table, values);
+        } else {
+          final updates = {...values}..remove(id)..remove('is_fav');
+          await txn.update(table, updates, where: '$id = ?', whereArgs: [values[id]]);
+        }
+      }
+    }
+    await batch.commit(noResult: true);
+  }
   final String accountId;
   bool get isActive => !_closed && identical(_instance, this);
   static DatabaseService? _instance;
@@ -212,18 +247,20 @@ class DatabaseService {
   }
 
   Future<void> applySyncDelta(String bookId, String source,
-      List<Map<String, dynamic>> rows, List<String> deleted, String? cursor) async {
+      List<Map<String, dynamic>> rows, List<String> deleted, String? cursor,
+      {String? expectedCursor}) async {
     final table = source == 'note' ? 'notes' : 'bookmarks';
     final id = source == 'note' ? 'note_id' : 'bookmark_id';
-    await (await database).transaction((txn) async {
-      for (final row in rows) {
-        final values = {'is_fav': 0, ...row};
-        final columns = values.keys.toList();
-        await txn.rawInsert('INSERT INTO $table (${columns.join(',')}) '
-            'VALUES (${List.filled(columns.length, '?').join(',')}) '
-            'ON CONFLICT($id) DO UPDATE SET ${columns.where((c) => c != id && c != 'is_fav').map((c) => '$c = excluded.$c').join(',')}',
-            values.values.toList());
+    final db = await database;
+    final supportsUpsert = await _supportsUpsert(db);
+    await db.transaction((txn) async {
+      if (expectedCursor != null) {
+        final current = await txn.query('sync_cursors',
+          where: 'book_id = ? AND source = ?', whereArgs: [bookId, source]);
+        final key = current.isEmpty ? '0' : current.single['synckey'];
+        if (key != expectedCursor) throw StateError('同步游标已更新，请重试');
       }
+      await _writePreservingFav(txn, table, id, rows, supportsUpsert);
       for (final key in deleted) {
         await txn.delete(table, where: 'book_id = ? AND $id = ?', whereArgs: [bookId, key]);
       }
@@ -365,18 +402,9 @@ class DatabaseService {
   Future<void> _upsertPreserveFav(String table, String id,
       List<Map<String, dynamic>> rows) async {
     final db = await database;
+    final supportsUpsert = await _supportsUpsert(db);
     await db.transaction((txn) async {
-      final batch = txn.batch();
-      for (final row in rows) {
-        final values = {'is_fav': 0, ...row};
-        final columns = values.keys.toList();
-        final updates = columns.where((c) => c != 'is_fav' && c != id)
-            .map((c) => '$c = excluded.$c').join(', ');
-        batch.rawInsert('INSERT INTO $table (${columns.join(', ')}) '
-            'VALUES (${List.filled(columns.length, '?').join(', ')}) '
-            'ON CONFLICT($id) DO UPDATE SET $updates', values.values.toList());
-      }
-      await batch.commit(noResult: true);
+      await _writePreservingFav(txn, table, id, rows, supportsUpsert);
     });
   }
 

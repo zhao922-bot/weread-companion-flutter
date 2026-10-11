@@ -55,6 +55,13 @@ class NotesProvider extends ChangeNotifier {
   }
 
   Future<void> _refreshFavorites(Set<String> keys) async {
+    if (_filter == ReadingFilter.favorites) {
+      _favoriteRevision++;
+      _statsDirty = true;
+      await _loadPage(reset: true, preserve: true,
+        limit: _notes.length < pageSize ? pageSize : _notes.length);
+      return;
+    }
     final revision = _sessionRevision;
     final request = _request;
     try {
@@ -274,6 +281,9 @@ class NotesProvider extends ChangeNotifier {
           itemIds: {key}, sources: {note.source.name});
       } finally {
         _publishingFavorite = false;
+      }
+      if (_filter == ReadingFilter.favorites) {
+        await _refreshFavorites({key});
       }
     } finally {
       _savingFavorites.remove(key);

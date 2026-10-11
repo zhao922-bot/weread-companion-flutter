@@ -30,6 +30,17 @@ class _CardsPageState extends State<CardsPage> {
   List<Bookmark> _allBookmarks = [];
   int _totalCount = 0;
   int _request = 0;
+  bool _exporting = false;
+  bool _refreshPending = false;
+
+  void _onExportChanged(bool exporting) {
+    if (!mounted) return;
+    setState(() => _exporting = exporting);
+    if (!exporting && _refreshPending) {
+      _refreshPending = false;
+      _loadBookmarks();
+    }
+  }
 
   @override
   void initState() {
@@ -48,6 +59,10 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   Future<void> _loadBookmarks() async {
+    if (_exporting) {
+      _refreshPending = true;
+      return;
+    }
     final request = ++_request;
     final query = _searchQuery;
     setState(() {
@@ -94,6 +109,7 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   void _selectQuote(int index) {
+    if (_exporting) return;
     final maxIndex = _pagedBookmarks.length - 1;
     setState(() {
       _selectedIndex = index.clamp(0, maxIndex < 0 ? 0 : maxIndex);
@@ -117,7 +133,9 @@ class _CardsPageState extends State<CardsPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
       ),
-      body: Column(
+      body: AbsorbPointer(
+        absorbing: _exporting,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 搜索栏 + 分页导航（合并为一个白色容器，消除缝隙）
@@ -262,7 +280,7 @@ class _CardsPageState extends State<CardsPage> {
             child: _buildContent(pagedBookmarks, selectedBookmark, isWide),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -366,7 +384,8 @@ class _CardsPageState extends State<CardsPage> {
         Expanded(
           flex: 1,
           child: selectedBookmark != null
-              ? _CardPreview(bookmark: selectedBookmark)
+              ? _CardPreview(key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
+                  bookmark: selectedBookmark, onExportChanged: _onExportChanged)
               : Center(
                   child: Text('选择一条引文', style: TextStyle(color: Colors.grey[400], fontSize: 14)),
                 ),
@@ -480,7 +499,8 @@ class _CardsPageState extends State<CardsPage> {
                     ),
                   ),
                   Expanded(
-                    child: _CardPreview(bookmark: bookmark),
+                    child: _CardPreview(key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
+                      bookmark: bookmark, onExportChanged: _onExportChanged),
                   ),
                 ],
               ),
@@ -561,8 +581,9 @@ class _ExportRenderBoundary extends RenderRepaintBoundary {
 
 class _CardPreview extends StatefulWidget {
   final Bookmark bookmark;
+  final ValueChanged<bool> onExportChanged;
 
-  const _CardPreview({required this.bookmark});
+  const _CardPreview({super.key, required this.bookmark, required this.onExportChanged});
 
   @override
   State<_CardPreview> createState() => _CardPreviewState();
@@ -572,11 +593,19 @@ class _CardPreviewState extends State<_CardPreview> {
   final GlobalKey _cardKey = GlobalKey();
   double _fontSize = 18.0;
   bool _exporting = false;
+  Bookmark? _exportBookmark;
+  double? _exportFontSize;
 
   /// 将卡片渲染为图片并分享
   Future<void> _exportAsImage() async {
+    if (_exporting) return;
     final db = DatabaseService.instance;
+    final snapshot = Bookmark.fromJson(Map<String, dynamic>.from(widget.bookmark.toJson()));
+    final onExportChanged = widget.onExportChanged;
+    _exportBookmark = snapshot;
+    _exportFontSize = _fontSize;
     setState(() => _exporting = true);
+    onExportChanged(true);
     try {
       final boundary = _cardKey.currentContext?.findRenderObject() as _ExportRenderBoundary?;
       if (boundary == null) return;
@@ -613,7 +642,7 @@ class _CardPreviewState extends State<_CardPreview> {
       if (!mounted || !db.isActive) return;
       await Share.shareXFiles(
         files,
-        text: '「${widget.bookmark.markText}」—— ${widget.bookmark.bookTitle}',
+        text: '「${snapshot.markText}」—— ${snapshot.bookTitle}',
       );
     } catch (e) {
       if (mounted) {
@@ -622,13 +651,22 @@ class _CardPreviewState extends State<_CardPreview> {
         );
       }
     } finally {
-      if (mounted) setState(() => _exporting = false);
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _exportBookmark = null;
+          _exportFontSize = null;
+        });
+      }
+      onExportChanged(false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     const accentColor = Color(0xFF4A7CF7);
+    final bookmark = _exportBookmark ?? widget.bookmark;
+    final fontSize = _exportFontSize ?? _fontSize;
 
     return Column(
       children: [
@@ -666,9 +704,9 @@ class _CardPreviewState extends State<_CardPreview> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      widget.bookmark.markText,
+                      bookmark.markText,
                       style: TextStyle(
-                        fontSize: _fontSize,
+                        fontSize: fontSize,
                         height: 1.8,
                         color: const Color(0xFF1A1A1A),
                         fontWeight: FontWeight.w500,
@@ -679,18 +717,18 @@ class _CardPreviewState extends State<_CardPreview> {
                     Container(width: 40, height: 1, color: Colors.grey[300]),
                     const SizedBox(height: 12),
                     Text(
-                      '—— ${widget.bookmark.bookTitle}',
+                      '—— ${bookmark.bookTitle}',
                       style: TextStyle(
-                        fontSize: _fontSize * 0.78,
+                        fontSize: fontSize * 0.78,
                         color: Colors.grey[500],
                         fontStyle: FontStyle.italic,
                       ),
                     ),
-                    if (widget.bookmark.chapterTitle.isNotEmpty) ...[
+                    if (bookmark.chapterTitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        widget.bookmark.chapterTitle,
-                        style: TextStyle(fontSize: _fontSize * 0.67, color: Colors.grey[400]),
+                        bookmark.chapterTitle,
+                        style: TextStyle(fontSize: fontSize * 0.67, color: Colors.grey[400]),
                       ),
                     ],
                   ],
@@ -726,7 +764,7 @@ class _CardPreviewState extends State<_CardPreview> {
                     max: 28,
                     divisions: 16,
                     label: _fontSize.toInt().toString(),
-                    onChanged: (v) => setState(() => _fontSize = v),
+                    onChanged: _exporting ? null : (v) => setState(() => _fontSize = v),
                   ),
                 ),
               ),
