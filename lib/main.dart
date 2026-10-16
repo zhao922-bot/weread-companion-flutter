@@ -15,11 +15,11 @@ import 'pages/settings_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializePlatformDatabase();
-  runApp(const WeReadCompanionApp());
+  runApp(const ReadAmberApp());
 }
 
-class WeReadCompanionApp extends StatelessWidget {
-  const WeReadCompanionApp({super.key});
+class ReadAmberApp extends StatelessWidget {
+  const ReadAmberApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +42,7 @@ class WeReadCompanionApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: '微信读书伴侣',
+        title: '阅珀 ReadAmber',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           useMaterial3: true,

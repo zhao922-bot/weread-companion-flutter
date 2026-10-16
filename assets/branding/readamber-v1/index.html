@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>阅珀 · ReadAmber — 品牌视觉规范</title>
+  <link rel="icon" href="readamber-icon-32.png">
+  <style>
+    :root{color-scheme:light;--ink:#172d32;--amber:#e8aa50;--paper:#fff3dc;--muted:#5c6a6b;--line:#deddd5}
+    *{box-sizing:border-box}body{margin:0;background:#f7f6f0;color:var(--ink);font-family:"Segoe UI","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+    a{color:inherit;text-underline-offset:4px}button,a{touch-action:manipulation}button{font:inherit}button:focus-visible,a:focus-visible{outline:3px solid #a96916;outline-offset:5px}
+    .wrap{max-width:1160px;margin:auto;padding:0 42px}.mast{height:108px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:20px}.brand{display:flex;gap:12px;align-items:center}.brand img{width:38px;height:38px;border-radius:11px}.brand span{font-size:17px;font-weight:600}.brand small{display:block;font-family:Georgia,serif;font-size:12px;font-weight:400;margin-top:2px;letter-spacing:.4px}.edition{font-size:11px;letter-spacing:2px;color:var(--muted)}
+    .hero{display:grid;grid-template-columns:1.1fr 1fr;gap:50px;padding:80px 0 74px;align-items:center}.eyebrow{font-size:11px;letter-spacing:3px;font-weight:600;color:#6a7470;margin:0 0 26px}.name{font-size:88px;font-weight:600;letter-spacing:10px;line-height:1.1;margin:0}.english{font-family:Georgia,serif;font-size:44px;font-weight:400;letter-spacing:-1.3px;margin:18px 0 34px}.promise{font-size:24px;font-weight:500;letter-spacing:1px;margin:0 0 15px}.intro{font-size:14px;color:var(--muted);line-height:1.9;max-width:355px;margin:0}.tags{margin-top:31px;font-size:11px;letter-spacing:2px;color:#586b69}
+    .hero-art{min-height:420px;border-radius:6px;background:#eceae0;display:flex;align-items:center;justify-content:center;position:relative}.hero-art:before{content:"";position:absolute;width:328px;height:328px;border:1px solid #dbd8ca;border-radius:50%}.hero-art img{width:242px;height:242px;border-radius:61px;box-shadow:0 23px 45px -25px #172d326e;z-index:1}.corner{position:absolute;bottom:23px;font-size:10px;letter-spacing:2px;color:#73796e}.hero-art .top{top:22px;bottom:auto;left:24px}
+    .section-label{display:flex;gap:16px;align-items:center;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:27px}.section-label b{color:#9c6a2d;font-weight:500}.story{border-top:1px solid var(--line);padding:40px 0;display:grid;grid-template-columns:1fr 1fr;gap:55px}.story h2{font-size:22px;font-weight:500;margin:0 0 14px;line-height:1.5}.story p{font-size:14px;line-height:1.95;color:var(--muted);margin:0}.name-parts{font-family:Georgia,serif;font-size:26px;line-height:1.5;margin:18px 0 10px}.name-parts span{color:#a56b23}
+    .samples{border-top:1px solid var(--line);padding:38px 0 46px}.sample-header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}.controls{display:flex;gap:6px}.controls button{padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px;cursor:pointer}.controls button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff3dc}.stage{min-height:210px;border:1px solid var(--line);border-radius:6px;background:#fffefa;display:flex;align-items:end;justify-content:space-evenly;gap:16px;padding:35px 26px;transition:background .2s,color .2s}.stage[data-theme=dark]{background:#111c20;color:var(--paper);border-color:#111c20}.sample{text-align:center;display:flex;flex-direction:column;align-items:center;gap:17px}.sample img{display:block;object-fit:contain;border-radius:22%}.sample.circle img{border-radius:50%}.sample figcaption{font-size:10px;letter-spacing:1px;opacity:.68}.sample{margin:0}.sample-note{font-size:11px;line-height:1.8;color:var(--muted);margin:15px 0 0}
+    .bottom{display:grid;grid-template-columns:1fr 1fr;gap:54px;border-top:1px solid var(--line);padding:40px 0 54px}.swatches{display:flex;gap:12px}.swatch{flex:1;font-size:11px}.swatch i{display:block;height:76px;border-radius:4px;margin-bottom:12px;border:1px solid #172d3210}.swatch strong{display:block;font-weight:500}.swatch code{display:block;margin-top:7px;color:#6b7473;font-size:10px}.quote{background:var(--ink);color:var(--paper);border-radius:6px;padding:30px 32px}.quote img{width:30px;height:30px;border-radius:7px}.quote p{font-size:21px;line-height:1.8;font-weight:400;letter-spacing:.5px;margin:17px 0 23px}.quote footer{border-top:1px solid #ffffff24;padding-top:16px;display:flex;justify-content:space-between;gap:10px;font-size:10px;letter-spacing:1px;color:#d1d1bd}
+    .downloads{border-top:1px solid var(--line);padding:28px 0;display:flex;justify-content:space-between;gap:24px;align-items:center}.downloads p{margin:0;font-size:12px;line-height:1.8;color:var(--muted)}.links{display:flex;gap:18px;flex-wrap:wrap;font-size:12px}.colophon{padding:0 0 30px;font-size:10px;color:#7b8381;line-height:1.8}
+    @media(max-width:760px){.wrap{padding:0 24px}.mast{height:86px}.edition{font-size:9px;letter-spacing:1px}.hero{grid-template-columns:1fr;gap:34px;padding:48px 0 38px}.name{font-size:68px}.english{font-size:36px;margin-bottom:25px}.hero-art{min-height:350px}.hero-art:before{width:286px;height:286px}.hero-art img{width:214px;height:214px;border-radius:54px}.intro{max-width:100%}.story,.bottom{grid-template-columns:1fr;gap:30px}.story{padding:30px 0}.stage{padding:28px 12px;gap:10px;min-height:185px}.sample:nth-child(3){display:none}.sample-header{margin-bottom:20px}.sample-header .section-label{margin:0}.sample-note{max-width:100%}.downloads{align-items:start;flex-direction:column}.quote p{font-size:20px}}
+    @media(max-width:440px){.stage{gap:8px;padding:28px 10px}.sample:nth-last-child(-n+2) img{width:64px;height:64px}.sample figcaption{letter-spacing:0;white-space:nowrap}.quote{padding:26px}.quote p{font-size:18px;letter-spacing:0}}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+    @media print{.controls,.downloads{display:none}.hero{padding-top:35px;padding-bottom:35px}.wrap{max-width:100%;padding:0 20px}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.hero-art{min-height:360px}.mast{height:80px}.bottom{break-inside:avoid}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <header class="mast"><div class="brand"><img src="readamber-icon-128.png" alt="阅珀图标"><span>阅珀<small>ReadAmber</small></span></div><div class="edition">品牌视觉规范 / 01</div></header>
+  <section class="hero" aria-label="品牌名称与主图标">
+    <div><p class="eyebrow">A HOME FOR YOUR READING</p><h1 class="name">阅珀</h1><p class="english" lang="en">ReadAmber</p><p class="promise">让读过的，留下来。</p><p class="intro">把书中的好句、阅读时的想法，收藏成随时可以重访的记忆。</p><p class="tags">书摘 · 笔记 · 阅读回顾</p></div>
+    <div class="hero-art"><span class="corner top">THE READING MARK</span><img src="readamber-icon-512.png" alt="深墨青色底，两片纸白和琥珀金书页组成引号形标记"><span class="corner">PAGES TO KEEP.</span></div>
+  </section>
+  <section class="story" aria-label="命名与图形概念">
+    <div><div class="section-label"><b>01</b> 名称的含义</div><h2>阅读的收获，凝成琥珀。</h2><p>「阅」点明阅读，「珀」取自琥珀，寓意留住值得珍藏的文字与思考。两个字简短，适合作为桌面名称，也能容纳书摘、笔记、回顾和卡片等功能。</p><div class="name-parts">Read <span>+</span> Amber</div><p>英文由阅读与琥珀组成，与中文共享同一个意象。</p></div>
+    <div><div class="section-label"><b>02</b> 图标的含义</div><h2>书页，也是被留下的一句话。</h2><p>两片翻开的书页，下缘自然收成引号。纸白对应阅读，琥珀金对应收获，深墨青提供安静的背景。图标采用饱满轮廓，避免细线和文字在小尺寸下丢失。</p><div class="name-parts" lang="en" style="font-size:22px;margin-top:28px">Keep the words<br>that stay with you.</div></div>
+  </section>
+  <section class="samples" aria-label="图标尺寸和形状预览">
+    <div class="sample-header"><div class="section-label"><b>03</b> 从任务栏，到手机桌面</div><div class="controls" role="group" aria-label="预览背景"><button type="button" data-choice="light" aria-pressed="true">浅色背景</button><button type="button" data-choice="dark" aria-pressed="false">深色背景</button></div></div>
+    <div class="stage" id="icon-stage" data-theme="light">
+      <figure class="sample"><img width="16" height="16" src="readamber-icon-16.png" alt="16 像素图标"><figcaption>16 PX</figcaption></figure>
+      <figure class="sample"><img width="24" height="24" src="readamber-icon-24.png" alt="24 像素图标"><figcaption>24 PX</figcaption></figure>
+      <figure class="sample"><img width="32" height="32" src="readamber-icon-32.png" alt="32 像素图标"><figcaption>32 PX</figcaption></figure>
+      <figure class="sample"><img width="48" height="48" src="readamber-icon-48.png" alt="48 像素图标"><figcaption>48 PX</figcaption></figure>
+      <figure class="sample"><img width="88" height="88" src="readamber-icon-128.png" alt="圆角桌面图标"><figcaption>圆角</figcaption></figure>
+      <figure class="sample circle"><img width="88" height="88" src="readamber-icon-128.png" alt="圆形裁切图标"><figcaption>圆形</figcaption></figure>
+    </div><p class="sample-note">图标不内嵌名称。圆角与圆形仅为裁切预览；交付 PNG 为完整方形母版，Windows ICO 包含 7 档尺寸。</p>
+  </section>
+  <section class="bottom" aria-label="配色与卡片应用示意">
+    <div><div class="section-label"><b>04</b> 温暖、安静的阅读色彩</div><div class="swatches"><div class="swatch"><i style="background:#172d32"></i><strong>墨青 / Ink</strong><code>#172D32</code></div><div class="swatch"><i style="background:#e8aa50"></i><strong>琥珀 / Amber</strong><code>#E8AA50</code></div><div class="swatch"><i style="background:#fff3dc"></i><strong>纸白 / Paper</strong><code>#FFF3DC</code></div></div><p class="sample-note">墨青承载正文，琥珀点亮重点，纸白保留阅读的温度。以上为界面参考色。</p></div>
+    <div class="quote"><img src="readamber-icon-64.png" alt=""><p>读过的每一页，<br>都是下一次思考的起点。</p><footer><span>阅珀 · ReadAmber</span><span>品牌文案示意</span></footer></div>
+  </section>
+  <section class="downloads" aria-label="下载设计资产"><p>正式产品名称与应用图标设计<br>PNG 母版、多尺寸 PNG、Windows ICO、命名说明与生成提示词</p><nav class="links"><a href="readamber-icon-1024.png" download>PNG · 1024</a><a href="readamber.ico" download>Windows ICO</a><a href="brand.json" download>品牌说明</a><a href="icon-prompt.txt" download>生成提示词</a></nav></section>
+  <footer class="colophon">品牌规范 V1 · 2026.10.17 · 图标由内置 image_gen 生成，保留原始母版。自 ReadAmber v2.8.0 起应用于产品。</footer>
+</main>
+<script>
+  const stage = document.getElementById('icon-stage');
+  document.querySelectorAll('[data-choice]').forEach(button => {
+    button.addEventListener('click', () => {
+      stage.dataset.theme = button.dataset.choice;
+      document.querySelectorAll('[data-choice]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    });
+  });
+</script>
+</body>
+</html>

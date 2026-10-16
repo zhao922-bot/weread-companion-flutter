@@ -90,11 +90,13 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "zhao922-bot" "\0"
-            VALUE "FileDescription", "WeRead Companion" "\0"
+            VALUE "FileDescription", "ReadAmber" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "weread_companion" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.zhao922. All rights reserved." "\0"
             VALUE "OriginalFilename", "weread_companion.exe" "\0"
+            // Stable storage identity used by path_provider, preferences and
+            // secure storage. User-visible branding is FileDescription/title.
             VALUE "ProductName", "WeRead Companion" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

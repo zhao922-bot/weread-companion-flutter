@@ -47,9 +47,17 @@ class _AboutSettingsSectionState extends State<AboutSettingsSection> {
       const SizedBox(height: 24),
       SettingsSection(title: '关于', children: [
         ListTile(
-          leading: const Icon(Icons.auto_stories_rounded, color: Color(0xFF2196F3)),
-          title: const Text('微信读书伴侣'),
-          subtitle: const Text('WeRead Companion'),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              'assets/branding/readamber-v1/readamber-icon-128.png',
+              width: 40,
+              height: 40,
+              semanticLabel: '阅珀应用图标',
+            ),
+          ),
+          title: const Text('阅珀'),
+          subtitle: const Text('ReadAmber · 让读过的，留下来。'),
           trailing: Text(_version ?? '读取版本中…'),
         ),
         const Divider(height: 1, indent: 70),

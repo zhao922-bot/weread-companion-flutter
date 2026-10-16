@@ -34,13 +34,13 @@ void main() {
 
   testWidgets('应用未登录入口及设置页显示平台真实版本', (tester) async {
     PackageInfo.setMockInitialValues(
-      appName: '微信读书伴侣',
+      appName: '阅珀 ReadAmber',
       packageName: 'com.example.weread_companion',
       version: '9.8.7',
       buildNumber: '42',
       buildSignature: '',
     );
-    await tester.pumpWidget(const WeReadCompanionApp());
+    await tester.pumpWidget(const ReadAmberApp());
     await tester.pumpAndSettle();
     expect(find.text('请先在设置中验证登录'), findsOneWidget);
     await tester.tap(find.text('设置'));
@@ -48,6 +48,12 @@ void main() {
     await tester.scrollUntilVisible(find.text('v9.8.7'), 400,
         scrollable: find.byType(Scrollable).first);
     expect(find.text('v9.8.7'), findsOneWidget);
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).title,
+        '阅珀 ReadAmber');
+    expect(find.text('阅珀'), findsOneWidget);
+    expect(find.text('ReadAmber · 让读过的，留下来。'), findsOneWidget);
+    expect(find.image(const AssetImage(
+        'assets/branding/readamber-v1/readamber-icon-128.png')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

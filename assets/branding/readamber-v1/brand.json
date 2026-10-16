@@ -1,0 +1,47 @@
+{
+  "status": "adopted-v2.8.0",
+  "created": "2026-10-17",
+  "name": {
+    "zh": "阅珀",
+    "pinyin": "yuè pò",
+    "en": "ReadAmber",
+    "lockup": "阅珀 · ReadAmber",
+    "meaning": "阅是阅读，珀取自琥珀：把阅读中值得留存的文字和思考保存下来。Read + Amber 与中文共享同一个意象。",
+    "spelling": "英文统一使用 ReadAmber，R 和 A 大写，中文使用简体阅珀。"
+  },
+  "positioning": "帮助读者保存书摘、整理笔记、回顾阅读，并将好内容变成可分享的卡片。",
+  "descriptor": {"zh": "书摘 · 笔记 · 阅读回顾", "en": "Highlights, notes & reflection"},
+  "tagline": {"zh": "让读过的，留下来。", "en": "Keep the words that stay with you."},
+  "icon": {
+    "concept": "翻开的书页与摘录引号合为一个标记；纸白对应书页，琥珀金对应被保存的阅读收获。",
+    "master": "readamber-master.png",
+    "masterSize": [1254, 1254],
+    "square": "readamber-icon-1024.png",
+    "store": "readamber-icon-512.png",
+    "windows": "readamber.ico",
+    "icoSizes": [16, 24, 32, 48, 64, 128, 256],
+    "format": "AI-generated raster master; exported sizes are resampled from the same master, not vector artwork.",
+    "generationMode": "built-in image_gen",
+    "prompt": "icon-prompt.txt",
+    "usage": "主图不带文字，保留安全边距。展示页提供圆形与圆角裁切预览；不要把预览圆角再次叠加到系统自适应图标。Android 自适应图标的独立前景层尚未制作。"
+  },
+  "palette": [
+    {"name": "墨青 / Ink", "hex": "#172D32", "role": "品牌底色、标题与正文"},
+    {"name": "琥珀 / Amber", "hex": "#E8AA50", "role": "品牌强调色、标记、重点背景"},
+    {"name": "纸白 / Paper", "hex": "#FFF3DC", "role": "浅色背景、深色背景上的文字"}
+  ],
+  "paletteNote": "以上为界面设计参考色；生成图像含有轻微色调变化。琥珀色用于装饰或底色，浅色页面的正文使用墨青。",
+  "typography": {"zh": "Noto Sans SC / 思源黑体，中等或半粗字重", "en": "品牌字标可用 Georgia，产品界面沿用系统无衬线字体"},
+  "preliminaryNameSearch": {
+    "date": "2026-10-17",
+    "queries": ["\"阅珀\"", "\"ReadAmber\"", "\"ReadAmber\" reading notes software", "\"阅珀\" 阅读 笔记 软件"],
+    "result": "本次公开网页搜索未发现明确同名阅读笔记应用。ReadAmber 在一篇书友会名称建议列表中出现过，因此不宣称该拼写从未被使用。",
+    "observedUse": "https://funnynamess.com/funny-book-club-names/",
+    "excludedCandidates": [
+      {"name": "LeafNest", "reason": "已有同名植物管理应用", "source": "https://leafnest.app/"},
+      {"name": "页栖", "reason": "已有同名浏览器扩展", "source": "https://chromewebstore.google.com/detail/tabstead-%E9%A1%B5%E6%A0%96/fhaoginjfkhalilefdfbnfdkdnijedpi?hl=zh-CN"}
+    ],
+    "scope": "仅作产品命名筛选；不是商标、商号或域名注册可用性结论。"
+  },
+  "integration": "自 v2.8.0 起采用此名称与图标。Android、Windows、Web 和应用关于页已接入；包名、数据库文件名与 Windows 存储标识保留以兼容旧数据。"
+}

@@ -320,7 +320,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
     }
 
     text.writeln('');
-    text.writeln('—— 来自微信读书伴侣');
+    text.writeln('—— 来自阅珀 ReadAmber');
 
     try {
       await Share.share(text.toString());

@@ -26,7 +26,7 @@ internal static class WindowsBootstrap
                 {
                     if (String.Equals(running.MainModule.FileName, app,
                             StringComparison.OrdinalIgnoreCase))
-                        throw new IOException("Please close WeRead Companion before updating.");
+                        throw new IOException("Please close ReadAmber before updating.");
                 }
             }
             string prefix = target.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -50,19 +50,27 @@ internal static class WindowsBootstrap
             }
             if (extractOnly) return 0;
             dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell"));
-            dynamic shortcut = shell.CreateShortcut(Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Programs), "WeRead Companion.lnk"));
+            string shortcuts = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+            dynamic shortcut = shell.CreateShortcut(Path.Combine(shortcuts, "\u9605\u73c0 ReadAmber.lnk"));
             shortcut.TargetPath = app;
             shortcut.WorkingDirectory = target;
             shortcut.IconLocation = app;
             shortcut.Save();
+            // Remove only our legacy shortcut, after its replacement is saved.
+            string legacyLink = Path.Combine(shortcuts, "WeRead Companion.lnk");
+            if (File.Exists(legacyLink))
+            {
+                dynamic legacyShortcut = shell.CreateShortcut(legacyLink);
+                if (String.Equals((string)legacyShortcut.TargetPath, app,
+                        StringComparison.OrdinalIgnoreCase)) File.Delete(legacyLink);
+            }
             Process.Start(new ProcessStartInfo(app) { WorkingDirectory = target, UseShellExecute = true });
             return 0;
         }
         catch (Exception error)
         {
             if (extractOnly) Console.Error.WriteLine(error);
-            else MessageBox.Show(error.Message, "WeRead Companion", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            else MessageBox.Show(error.Message, "\u9605\u73c0 ReadAmber", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

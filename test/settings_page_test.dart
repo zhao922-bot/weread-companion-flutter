@@ -25,7 +25,7 @@ class _LogoutFailureProvider extends AppConfigProvider {
 void main() {
   setUp(() {
     PackageInfo.setMockInitialValues(
-      appName: '微信读书伴侣', packageName: 'test', version: '9.8.7',
+      appName: '阅珀 ReadAmber', packageName: 'test', version: '9.8.7',
       buildNumber: '42', buildSignature: '',
     );
   });

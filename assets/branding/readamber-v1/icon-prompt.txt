@@ -1,0 +1,13 @@
+Generation mode: built-in image_gen
+Generated: 2026-10-17 (Asia/Singapore)
+
+Use case: logo-brand
+Asset type: final production application icon master for a premium reading-notes app, 1:1 square, 1024 x 1024 preferred.
+Brand context: Chinese name 阅珀, English name ReadAmber. The app preserves book highlights and personal thoughts, brings them back for reflection, and makes beautiful quotation cards. Amber preserving a meaningful moment is the central metaphor.
+Primary request: Design one original, exceptionally resolved minimalist app icon. An abstract open book whose two broad pages also suggest a pair of quotation marks. The left page is warm ivory; the right page is rich amber gold. A confident, beautiful negative-space spine separates the forms; subtly curved page ends provide the quotation-mark suggestion without extra symbols. Broad filled silhouettes, quiet editorial elegance, pleasing optical balance. The book/quotation silhouette must read immediately and remain distinct at 24 pixels.
+Scene/backdrop: full-bleed opaque flat deep ink teal background, near #172D32, extending exactly to all four square image edges. No outer rounded square or mockup; the platform supplies its own mask.
+Composition/framing: one centered glyph, occupying approximately 56% of the canvas width and 52% of its height. Generous uniform safe margins for circular launcher cropping. Compact, vertically balanced shape, not a sprawling wide book. Sophisticated geometry and gently softened corners.
+Color palette: ink teal #172D32 background; warm paper ivory #FFF3DC left page; amber #E8AA50 right page. Flat colors with only a restrained secondary amber plane if necessary for clarity.
+Style/medium: precision vector-like brand mark rendered as a high-resolution raster, exceptionally clean edges, minimal two-dimensional graphic design. Calm, warm, memorable, suitable for a real reading app on both Android and Windows.
+Text: absolutely no text, letters, words, or numbers. The brand names are context only and must not appear in the image.
+Constraints: one final standalone icon, no presentation board, no multiple variants, no frames, no borders, no watermark, no drop shadow, no 3D render, no paper texture, no gradients, no glows, no sparkle, no bulb, no botanical leaves, no tiny decorative strokes, no literal amber crystal or gemstone, no existing app-logo imitation.
