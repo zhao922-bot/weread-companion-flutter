@@ -36,88 +36,161 @@ abstract final class ReadAmberColors {
   static const logError = Color(0xFFFFB4A8);
 }
 
+/// Semantic surface and foreground pairs for both appearances.
+class ReadAmberPalette {
+  final Color ink;
+  final Color inkSoft;
+  final Color amber;
+  final Color amberText;
+  final Color paper;
+  final Color canvas;
+  final Color surface;
+  final Color surfaceMuted;
+  final Color outline;
+  final Color muted;
+  final Color success;
+  final Color error;
+  final Color action;
+  final Color onAction;
+  const ReadAmberPalette._(
+      {required this.ink,
+      required this.inkSoft,
+      required this.amber,
+      required this.amberText,
+      required this.paper,
+      required this.canvas,
+      required this.surface,
+      required this.surfaceMuted,
+      required this.outline,
+      required this.muted,
+      required this.success,
+      required this.error,
+      required this.action,
+      required this.onAction});
+  static const light = ReadAmberPalette._(
+    ink: Color(0xFF172D32),
+    inkSoft: Color(0xFF35565B),
+    amber: Color(0xFFE8AA50),
+    amberText: Color(0xFF84500D),
+    paper: Color(0xFFFFF3DC),
+    canvas: Color(0xFFF7F4EC),
+    surface: Color(0xFFFFFDF7),
+    surfaceMuted: Color(0xFFF0EADB),
+    outline: Color(0xFFDCD3C2),
+    muted: Color(0xFF626B64),
+    success: Color(0xFF38654F),
+    error: Color(0xFFA33F32),
+    action: Color(0xFF172D32),
+    onAction: Color(0xFFFFF3DC),
+  );
+  static const dark = ReadAmberPalette._(
+    ink: Color(0xFFFFF3DC),
+    inkSoft: Color(0xFFD5E3DD),
+    amber: Color(0xFFE8AA50),
+    amberText: Color(0xFFE8AA50),
+    paper: Color(0xFF30454A),
+    canvas: Color(0xFF101F23),
+    surface: Color(0xFF172D32),
+    surfaceMuted: Color(0xFF223A40),
+    outline: Color(0xFF405B61),
+    muted: Color(0xFFB0C4BC),
+    success: Color(0xFFA8D5B8),
+    error: Color(0xFFFFB4A8),
+    action: Color(0xFFE8AA50),
+    onAction: Color(0xFF172D32),
+  );
+  static ReadAmberPalette forBrightness(Brightness brightness) =>
+      brightness == Brightness.dark ? dark : light;
+  static ReadAmberPalette of(BuildContext context) =>
+      forBrightness(Theme.of(context).brightness);
+}
+
 abstract final class ReadAmberTheme {
-  static ThemeData get light {
+  static ThemeData get light => _build(Brightness.light);
+  static ThemeData get dark => _build(Brightness.dark);
+
+  static ThemeData _build(Brightness brightness) {
+    final colors = ReadAmberPalette.forBrightness(brightness);
     const rounded = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(16)),
     );
     final scheme = ColorScheme.fromSeed(
       seedColor: ReadAmberColors.ink,
-      brightness: Brightness.light,
-      primary: ReadAmberColors.ink,
-      onPrimary: ReadAmberColors.paper,
-      primaryContainer: ReadAmberColors.paper,
-      onPrimaryContainer: ReadAmberColors.ink,
-      secondary: ReadAmberColors.amberText,
-      onSecondary: ReadAmberColors.surface,
-      secondaryContainer: ReadAmberColors.paper,
-      onSecondaryContainer: ReadAmberColors.ink,
-      tertiary: ReadAmberColors.success,
-      surface: ReadAmberColors.surface,
-      onSurface: ReadAmberColors.ink,
-      onSurfaceVariant: ReadAmberColors.muted,
-      surfaceContainerHighest: ReadAmberColors.surfaceMuted,
-      outline: ReadAmberColors.muted,
-      outlineVariant: ReadAmberColors.outline,
-      error: ReadAmberColors.error,
+      brightness: brightness,
+      primary: colors.action,
+      onPrimary: colors.onAction,
+      primaryContainer: colors.paper,
+      onPrimaryContainer: colors.ink,
+      secondary: colors.amberText,
+      onSecondary: colors.surface,
+      secondaryContainer: colors.paper,
+      onSecondaryContainer: colors.ink,
+      tertiary: colors.success,
+      surface: colors.surface,
+      onSurface: colors.ink,
+      onSurfaceVariant: colors.muted,
+      surfaceContainerHighest: colors.surfaceMuted,
+      outline: colors.muted,
+      outlineVariant: colors.outline,
+      error: colors.error,
     );
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      scaffoldBackgroundColor: ReadAmberColors.canvas,
-      dividerColor: ReadAmberColors.outline,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: ReadAmberColors.canvas,
-        foregroundColor: ReadAmberColors.ink,
+      scaffoldBackgroundColor: colors.canvas,
+      dividerColor: colors.outline,
+      appBarTheme: AppBarTheme(
+        backgroundColor: colors.canvas,
+        foregroundColor: colors.ink,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          color: ReadAmberColors.ink,
+          color: colors.ink,
           fontSize: 19,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: ReadAmberColors.surface,
+        backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
-        indicatorColor: ReadAmberColors.amber,
+        indicatorColor: colors.amber,
         elevation: 0,
         height: 72,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        iconTheme: const WidgetStatePropertyAll(
-          IconThemeData(color: ReadAmberColors.ink, size: 23),
-        ),
-        labelTextStyle: const WidgetStatePropertyAll(
+        iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+            color: states.contains(WidgetState.selected)
+                ? ReadAmberColors.ink
+                : colors.ink,
+            size: 23)),
+        labelTextStyle: WidgetStatePropertyAll(
           TextStyle(
-              color: ReadAmberColors.ink,
-              fontSize: 12,
-              fontWeight: FontWeight.w500),
+              color: colors.ink, fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ),
-      cardTheme: const CardThemeData(
-        color: ReadAmberColors.surface,
+      cardTheme: CardThemeData(
+        color: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(16)),
-          side: BorderSide(color: ReadAmberColors.outline, width: 0.7),
+          side: BorderSide(color: colors.outline, width: 0.7),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-        backgroundColor: ReadAmberColors.ink,
-        foregroundColor: ReadAmberColors.paper,
+        backgroundColor: colors.action,
+        foregroundColor: colors.onAction,
         shape: rounded,
         minimumSize: const Size(48, 44),
       )),
       elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-        backgroundColor: ReadAmberColors.ink,
-        foregroundColor: ReadAmberColors.paper,
+        backgroundColor: colors.action,
+        foregroundColor: colors.onAction,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: rounded,
@@ -125,41 +198,41 @@ abstract final class ReadAmberTheme {
       )),
       outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
-        foregroundColor: ReadAmberColors.ink,
-        side: const BorderSide(color: ReadAmberColors.outline),
+        foregroundColor: colors.ink,
+        side: BorderSide(color: colors.outline),
         shape: rounded,
         minimumSize: const Size(48, 44),
       )),
-      inputDecorationTheme: const InputDecorationTheme(
+      inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: ReadAmberColors.surfaceMuted,
-        hintStyle: TextStyle(color: ReadAmberColors.muted),
+        fillColor: colors.surfaceMuted,
+        hintStyle: TextStyle(color: colors.muted),
         border: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12))),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: ReadAmberColors.outline),
+          borderSide: BorderSide(color: colors.outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: ReadAmberColors.inkSoft, width: 1.5),
+          borderSide: BorderSide(color: colors.inkSoft, width: 1.5),
         ),
       ),
-      chipTheme: const ChipThemeData(
-        backgroundColor: ReadAmberColors.surfaceMuted,
-        selectedColor: ReadAmberColors.paper,
-        side: BorderSide(color: ReadAmberColors.outline),
-        labelStyle: TextStyle(color: ReadAmberColors.ink),
+      chipTheme: ChipThemeData(
+        backgroundColor: colors.surfaceMuted,
+        selectedColor: colors.paper,
+        side: BorderSide(color: colors.outline),
+        labelStyle: TextStyle(color: colors.ink),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: ReadAmberColors.surface,
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
-      dialogTheme: const DialogThemeData(
-        backgroundColor: ReadAmberColors.surface,
+      dialogTheme: DialogThemeData(
+        backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         shape: rounded,
       ),
@@ -167,9 +240,9 @@ abstract final class ReadAmberTheme {
         backgroundColor: ReadAmberColors.ink,
         contentTextStyle: TextStyle(color: ReadAmberColors.paper),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: ReadAmberColors.inkSoft,
-        linearTrackColor: ReadAmberColors.surfaceMuted,
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: colors.inkSoft,
+        linearTrackColor: colors.surfaceMuted,
       ),
     );
   }

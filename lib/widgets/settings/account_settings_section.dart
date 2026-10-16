@@ -33,7 +33,7 @@ class AccountSettingsSection extends StatelessWidget {
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: ReadAmberColors.error),
+            style: TextButton.styleFrom(foregroundColor: ReadAmberPalette.of(context).error),
             child: const Text('退出'),
           ),
         ],
@@ -63,7 +63,7 @@ class AccountSettingsSection extends StatelessWidget {
     return SettingsSection(title: '账号', children: [
       if (config.cleanupPending)
         ListTile(
-          leading: const Icon(Icons.delete_outline, color: ReadAmberColors.error),
+          leading: Icon(Icons.delete_outline, color: ReadAmberPalette.of(context).error),
           title: const Text('清理未完成'),
           subtitle: Text(config.loginError ?? '请继续清除本地数据'),
           trailing: TextButton(
@@ -73,9 +73,9 @@ class AccountSettingsSection extends StatelessWidget {
         )
       else if (config.hasSavedCredentials || config.canBrowseLocal)
         ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: ReadAmberColors.ink,
-            child: Icon(Icons.person, color: ReadAmberColors.surface, size: 20),
+          leading: CircleAvatar(
+            backgroundColor: ReadAmberPalette.of(context).action,
+            child: Icon(Icons.person, color: ReadAmberPalette.of(context).surface, size: 20),
           ),
           title: Text(config.userName.isEmpty ? '微信读书账号' : config.userName),
           subtitle: Text(config.loginStatusText),
@@ -83,19 +83,19 @@ class AccountSettingsSection extends StatelessWidget {
           trailing: TextButton(
             // 加载失败时仍允许退出可信本地账号。
             onPressed: config.isBusy ? null : () => _logout(context, config),
-            style: TextButton.styleFrom(foregroundColor: ReadAmberColors.error),
+            style: TextButton.styleFrom(foregroundColor: ReadAmberPalette.of(context).error),
             child: const Text('退出登录'),
           ),
         )
       else
         ListTile(
-          leading: const Icon(Icons.cookie_outlined, color: ReadAmberColors.ink),
+          leading: Icon(Icons.cookie_outlined, color: ReadAmberPalette.of(context).ink),
           title: const Text('导入 Cookie'),
           subtitle: const Text('导入后即可同步微信读书数据'),
           trailing: ElevatedButton(
             onPressed: enabled ? login : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: ReadAmberColors.ink, foregroundColor: ReadAmberColors.paper,
+              backgroundColor: ReadAmberPalette.of(context).action, foregroundColor: ReadAmberPalette.of(context).onAction,
             ),
             child: const Text('登录'),
           ),

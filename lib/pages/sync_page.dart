@@ -246,19 +246,19 @@ class _SyncPageState extends State<SyncPage> {
 
   Widget _buildContent(double progress, AppConfigProvider appConfig) {
     return Scaffold(
-      backgroundColor: ReadAmberColors.canvas,
+      backgroundColor: ReadAmberPalette.of(context).canvas,
       appBar: AppBar(
         title: const Text('数据同步'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: ReadAmberColors.canvas,
-        foregroundColor: ReadAmberColors.ink,
+        backgroundColor: ReadAmberPalette.of(context).canvas,
+        foregroundColor: ReadAmberPalette.of(context).ink,
       ),
       body: Column(
         children: [
           // 进度区域
           Container(
-            color: ReadAmberColors.surface,
+            color: ReadAmberPalette.of(context).surface,
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
@@ -268,15 +268,15 @@ class _SyncPageState extends State<SyncPage> {
                     borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
                       value: progress,
-                      backgroundColor: ReadAmberColors.surfaceMuted,
-                      valueColor: const AlwaysStoppedAnimation<Color>(ReadAmberColors.ink),
+                      backgroundColor: ReadAmberPalette.of(context).surfaceMuted,
+                      valueColor: AlwaysStoppedAnimation<Color>(ReadAmberPalette.of(context).ink),
                       minHeight: 8,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '$_syncedBooks / $_totalBooks 本书',
-                    style: TextStyle(fontSize: 13, color: ReadAmberColors.muted),
+                    style: TextStyle(fontSize: 13, color: ReadAmberPalette.of(context).muted),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -301,7 +301,7 @@ class _SyncPageState extends State<SyncPage> {
                           icon: const Icon(Icons.stop_rounded),
                           label: const Text('取消同步'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: ReadAmberColors.error,
+                            foregroundColor: ReadAmberPalette.of(context).error,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -313,7 +313,7 @@ class _SyncPageState extends State<SyncPage> {
                                ? '需要联网 · 验证并同步'
                                : _error != null ? '重新同步' : '开始同步'),
                           style: FilledButton.styleFrom(
-                            backgroundColor: ReadAmberColors.ink,
+                            backgroundColor: ReadAmberPalette.of(context).action,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -383,7 +383,7 @@ class _SyncPageState extends State<SyncPage> {
         Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(height: 4),
         Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
+        Text(label, style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
       ],
     );
   }

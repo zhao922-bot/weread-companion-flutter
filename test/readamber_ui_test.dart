@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:weread_companion/main.dart';
 import 'package:weread_companion/pages/cookie_login_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
+import 'package:weread_companion/providers/theme_controller.dart';
 import 'package:weread_companion/providers/bookshelf_provider.dart';
 import 'package:weread_companion/providers/notes_provider.dart';
 import 'package:weread_companion/services/config.dart';
@@ -51,8 +52,8 @@ void main() {
     PackageInfo.setMockInitialValues(
         appName: '阅珀 ReadAmber',
         packageName: 'com.example.weread_companion',
-        version: '2.9.0',
-        buildNumber: '23',
+        version: '2.10.0',
+        buildNumber: '24',
         buildSignature: '');
     directory = await Directory.systemTemp.createTemp('readamber-ui-');
     databaseFactory = databaseFactoryFfiNoIsolate;
@@ -125,119 +126,149 @@ void main() {
     }
   });
 
-  for (final view in [
-    (name: 'phone', size: const Size(390, 844), scale: 1.0),
-    (name: 'desktop', size: const Size(1280, 860), scale: 1.0),
-    (name: 'compact', size: const Size(320, 568), scale: 1.5),
-  ]) {
-    testWidgets('${view.name} 品牌主题下导航、表单、报告与卡片无布局溢出', (tester) async {
-      tester.view.physicalSize = view.size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final config = _PreviewConfig();
-      final shelf = BookshelfProvider(isActive: false);
-      final notes = NotesProvider(isActive: false);
-      addTearDown(config.dispose);
-      addTearDown(shelf.dispose);
-      addTearDown(notes.dispose);
-      final boundary = GlobalKey();
-      Widget app(Widget home) => MultiProvider(
-              providers: [
-                ChangeNotifierProvider<AppConfigProvider>.value(value: config),
-                ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
-                ChangeNotifierProvider<NotesProvider>.value(value: notes),
-              ],
-              child: RepaintBoundary(
-                  key: boundary,
-                  child: MaterialApp(
-                    debugShowCheckedModeBanner: false,
-                    theme: ReadAmberTheme.light.copyWith(
-                        appBarTheme: ReadAmberTheme.light.appBarTheme.copyWith(
-                            titleTextStyle: ReadAmberTheme
-                                .light.appBarTheme.titleTextStyle!
-                                .copyWith(fontFamily: 'ReadAmberPreview')),
-                        textTheme: ReadAmberTheme.light.textTheme
-                            .apply(fontFamily: 'ReadAmberPreview')),
-                    builder: (context, child) => MediaQuery(
-                        data: MediaQuery.of(context).copyWith(
-                            textScaler: TextScaler.linear(view.scale)),
-                        child: child!),
-                    home: home,
-                  )));
-      Future<void> capture(String name) async {
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull, reason: '${view.name} / $name');
-        if (const bool.fromEnvironment('READAMBER_CAPTURE')) {
-          await tester.runAsync(() async {
-            final image = await (boundary.currentContext!.findRenderObject()!
-                    as RenderRepaintBoundary)
-                .toImage();
-            try {
-              final bytes =
-                  await image.toByteData(format: ui.ImageByteFormat.png);
-              final file = File('build/ui-previews/${view.name}-$name.png');
-              await file.parent.create(recursive: true);
-              await file.writeAsBytes(bytes!.buffer.asUint8List());
-            } finally {
-              image.dispose();
-            }
-          });
-        }
-      }
-
-      await tester.pumpWidget(app(const MainScreen()));
-      await pumpUntil(tester, () => shelf.totalCount == 6 && !shelf.isLoading);
-      await capture('bookshelf');
-      for (final (index, name) in [
-        (1, 'notes'),
-        (2, 'cards'),
-        (3, 'report'),
-        (4, 'settings')
-      ]) {
-        final nav = find
-            .descendant(
-                of: find.byType(NavigationBar),
-                matching: find.byType(NavigationDestination))
-            .at(index);
-        await tester.tap(nav);
-        await tester.pumpAndSettle();
-        // FFI reads run outside the fake widget clock.
+  for (final dark in [false, true]) {
+    for (final view in [
+      (name: 'phone', size: const Size(390, 844), scale: 1.0),
+      (name: 'desktop', size: const Size(1280, 860), scale: 1.0),
+      (name: 'compact', size: const Size(320, 568), scale: 1.5),
+    ]) {
+      testWidgets('${dark ? "深色" : "浅色"} ${view.name} 品牌主题下导航、表单、报告与卡片无布局溢出',
+          (tester) async {
+        tester.view.physicalSize = view.size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final config = _PreviewConfig();
+        final appearance = ThemeController();
+        addTearDown(appearance.dispose);
         await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 100)));
-        await capture(name);
-        if (name == 'cards') {
-          if (view.size.width < 600) {
-            await tester.tap(find.text('把喜欢的句子留在纸上，也把阅读的光留在日常里。').first);
-            await capture('card-preview');
-          }
-          expect(find.text('导出图片'), findsOneWidget);
-          await tester.runAsync(() async {
-            final render = tester.renderObject<CardRenderBoundary>(
-                find.byType(CardRepaintBoundary));
-            final image = await render.toImage();
-            try {
-              final bytes = (await image.toByteData())!.buffer.asUint8List();
-              // The center of the top edge is inside the rounded paper card.
-              // Its alpha must be opaque when exported onto another background.
-              expect(bytes[(2 * image.width + image.width ~/ 2) * 4 + 3], 255);
-            } finally {
-              image.dispose();
-            }
-          });
-          if (view.size.width < 600) {
-            Navigator.of(tester.element(find.byType(Slider))).pop();
-            await tester.pumpAndSettle();
+            () => appearance.setMode(dark ? ThemeMode.dark : ThemeMode.light));
+        final baseTheme = dark ? ReadAmberTheme.dark : ReadAmberTheme.light;
+        final shelf = BookshelfProvider(isActive: false);
+        final notes = NotesProvider(isActive: false);
+        addTearDown(config.dispose);
+        addTearDown(shelf.dispose);
+        addTearDown(notes.dispose);
+        final boundary = GlobalKey();
+        Widget app(Widget home) => MultiProvider(
+                providers: [
+                  ChangeNotifierProvider<ThemeController>.value(
+                      value: appearance),
+                  ChangeNotifierProvider<AppConfigProvider>.value(
+                      value: config),
+                  ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
+                  ChangeNotifierProvider<NotesProvider>.value(value: notes),
+                ],
+                child: RepaintBoundary(
+                    key: boundary,
+                    child: MaterialApp(
+                      debugShowCheckedModeBanner: false,
+                      theme: baseTheme.copyWith(
+                          appBarTheme: baseTheme.appBarTheme.copyWith(
+                              titleTextStyle: baseTheme
+                                  .appBarTheme.titleTextStyle!
+                                  .copyWith(fontFamily: 'ReadAmberPreview')),
+                          textTheme: baseTheme.textTheme
+                              .apply(fontFamily: 'ReadAmberPreview')),
+                      builder: (context, child) => MediaQuery(
+                          data: MediaQuery.of(context).copyWith(
+                              textScaler: TextScaler.linear(view.scale)),
+                          child: child!),
+                      home: home,
+                    )));
+        Future<void> capture(String name) async {
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull,
+              reason: '${view.name} / $name');
+          if (const bool.fromEnvironment('READAMBER_CAPTURE')) {
+            await tester.runAsync(() async {
+              final image = await (boundary.currentContext!.findRenderObject()!
+                      as RenderRepaintBoundary)
+                  .toImage();
+              try {
+                final bytes =
+                    await image.toByteData(format: ui.ImageByteFormat.png);
+                final file = File(
+                    'build/ui-previews/${dark ? "dark-" : ""}${view.name}-$name.png');
+                await file.parent.create(recursive: true);
+                await file.writeAsBytes(bytes!.buffer.asUint8List());
+              } finally {
+                image.dispose();
+              }
+            });
           }
         }
-      }
-      await tester.pumpWidget(app(const CookieLoginPage()));
-      await capture('cookie');
-      await tester.scrollUntilVisible(find.text('扫码登录'), 160,
-          scrollable: find.byType(Scrollable).first);
-      await capture('cookie-actions');
-      expect(find.text('确认导入并验证'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-    });
+
+        await tester.pumpWidget(app(const MainScreen()));
+        await pumpUntil(
+            tester, () => shelf.totalCount == 6 && !shelf.isLoading);
+        await capture('bookshelf');
+        for (final (index, name) in [
+          (1, 'notes'),
+          (2, 'cards'),
+          (3, 'report'),
+          (4, 'settings')
+        ]) {
+          final nav = find
+              .descendant(
+                  of: find.byType(NavigationBar),
+                  matching: find.byType(NavigationDestination))
+              .at(index);
+          await tester.tap(nav);
+          await tester.pumpAndSettle();
+          // FFI reads run outside the fake widget clock.
+          await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 100)));
+          await capture(name);
+          if (name == 'settings') {
+            await tester.scrollUntilVisible(find.byType(ExpansionTile), 160,
+                scrollable: find.byType(Scrollable).first);
+            await Scrollable.ensureVisible(
+                tester.element(find.byType(ExpansionTile)),
+                alignment: 0.2);
+            await tester.pumpAndSettle();
+            await tester.tap(find.byType(ExpansionTile));
+            await tester.pumpAndSettle();
+            await tester.ensureVisible(find.text('快速预设'));
+            await capture('ai-presets');
+            await tester.ensureVisible(
+                find.widgetWithText(OutlinedButton, 'SiliconFlow'));
+            await capture('ai-presets-end');
+          }
+          if (name == 'cards') {
+            if (view.size.width < 600) {
+              await tester.tap(find.text('把喜欢的句子留在纸上，也把阅读的光留在日常里。').first);
+              await capture('card-preview');
+            }
+            expect(find.text('导出图片'), findsOneWidget);
+            await tester.runAsync(() async {
+              final render = tester.renderObject<CardRenderBoundary>(
+                  find.byType(CardRepaintBoundary));
+              final image = await render.toImage();
+              try {
+                final bytes = (await image.toByteData())!.buffer.asUint8List();
+                // The center of the top edge is inside the rounded paper card.
+                // Its alpha must be opaque when exported onto another background.
+                expect(
+                    bytes[(2 * image.width + image.width ~/ 2) * 4 + 3], 255);
+              } finally {
+                image.dispose();
+              }
+            });
+            if (view.size.width < 600) {
+              Navigator.of(tester.element(find.byType(Slider))).pop();
+              await tester.pumpAndSettle();
+            }
+          }
+        }
+        await tester.pumpWidget(app(const CookieLoginPage()));
+        await capture('cookie');
+        await tester.scrollUntilVisible(find.text('扫码登录'), 160,
+            scrollable: find.byType(Scrollable).first);
+        await capture('cookie-actions');
+        expect(find.text('确认导入并验证'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
   }
 }

@@ -12,6 +12,7 @@ import 'package:weread_companion/pages/notes_page.dart';
 import 'package:weread_companion/pages/cards_page.dart';
 import 'package:weread_companion/pages/report_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
+import 'package:weread_companion/providers/theme_controller.dart';
 import 'package:weread_companion/providers/bookshelf_provider.dart';
 import 'package:weread_companion/providers/notes_provider.dart';
 import 'package:weread_companion/services/config.dart';
@@ -98,6 +99,7 @@ void main() {
     addTearDown(shelf.dispose);
     addTearDown(notes.dispose);
     await tester.pumpWidget(MultiProvider(providers: [
+      ChangeNotifierProvider(create: (_) => ThemeController()),
       ChangeNotifierProvider<AppConfigProvider>.value(value: config),
       ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
       ChangeNotifierProvider<NotesProvider>.value(value: notes),

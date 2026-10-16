@@ -29,7 +29,7 @@ class _AboutSettingsSectionState extends State<AboutSettingsSection> {
   }
 
   Widget _help(IconData icon, String title, String desc) => ListTile(
-    leading: Icon(icon, color: ReadAmberColors.ink),
+    leading: Icon(icon, color: ReadAmberPalette.of(context).ink),
     title: Text(title), subtitle: Text(desc),
   );
 

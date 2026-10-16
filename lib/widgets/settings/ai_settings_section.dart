@@ -112,7 +112,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: ReadAmberColors.surfaceMuted,
+          fillColor: ReadAmberPalette.of(context).surfaceMuted,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           suffixIcon: secret ? IconButton(
             onPressed: enabled ? () => setState(() => _obscure = !_obscure) : null,
@@ -142,11 +142,11 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
     }
     final enabled = !config.isBusy;
     const presets = [
-      ('DeepSeek', 'https://api.deepseek.com', 'deepseek-chat', ReadAmberColors.ink),
-      ('Qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.6-plus', ReadAmberColors.ink),
-      ('MiniMax', 'https://api.minimax.chat/v1', 'MiniMax-M2.7', ReadAmberColors.ink),
-      ('Moonshot', 'https://api.moonshot.cn/v1', 'kimi-k2.5', ReadAmberColors.ink),
-      ('SiliconFlow', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', ReadAmberColors.ink),
+      ('DeepSeek', 'https://api.deepseek.com', 'deepseek-chat'),
+      ('Qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.6-plus'),
+      ('MiniMax', 'https://api.minimax.chat/v1', 'MiniMax-M2.7'),
+      ('Moonshot', 'https://api.moonshot.cn/v1', 'kimi-k2.5'),
+      ('SiliconFlow', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash'),
     ];
     return SettingsSection(title: 'AI 配置', children: [
       ExpansionTile(
@@ -158,12 +158,19 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('快速预设'),
+              Row(children: [
+                const Text('快速预设'),
+                const Spacer(),
+                Text('左右滑动', style: TextStyle(fontSize: 12,
+                  color: ReadAmberPalette.of(context).muted)),
+              ]),
               const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(spacing: 8, mainAxisSize: MainAxisSize.min, children: [
                 for (final preset in presets)
                   OutlinedButton(
-                    style: OutlinedButton.styleFrom(foregroundColor: preset.$4),
+                    style: OutlinedButton.styleFrom(foregroundColor: ReadAmberPalette.of(context).ink),
                     onPressed: enabled ? () {
                       setState(() {
                         _baseUrl.text = preset.$2;
@@ -173,7 +180,8 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
                     } : null,
                     child: Text(preset.$1),
                   ),
-              ]),
+                ]),
+              ),
             ]),
           ),
           const Divider(height: 1),

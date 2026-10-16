@@ -125,7 +125,7 @@ class _QrLoginPageState extends State<QrLoginPage> {
         if (didPop) _cancelToken?.cancel('登录页面已退出');
       },
       child: Scaffold(
-        backgroundColor: ReadAmberColors.canvas,
+        backgroundColor: ReadAmberPalette.of(context).canvas,
         appBar: AppBar(
           title: const Text('微信读书扫码登录'),
           centerTitle: true,
@@ -140,8 +140,8 @@ class _QrLoginPageState extends State<QrLoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.qr_code_scanner,
-                    size: 48, color: ReadAmberColors.ink),
+                Icon(Icons.qr_code_scanner,
+                    size: 48, color: ReadAmberPalette.of(context).ink),
                 const SizedBox(height: 20),
                 if (_confirmUrl != null)
                   Container(
@@ -164,11 +164,11 @@ class _QrLoginPageState extends State<QrLoginPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 16,
-                        color: _failed ? ReadAmberColors.error : ReadAmberColors.ink)),
+                        color: _failed ? ReadAmberPalette.of(context).error : ReadAmberPalette.of(context).ink)),
                 const SizedBox(height: 12),
-                const Text('二维码 5 分钟内有效，可使用另一台设备上的微信扫描',
+                Text('二维码 5 分钟内有效，可使用另一台设备上的微信扫描',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: ReadAmberColors.muted, fontSize: 13)),
+                    style: TextStyle(color: ReadAmberPalette.of(context).muted, fontSize: 13)),
                 const SizedBox(height: 24),
                 if (_failed)
                   ElevatedButton.icon(

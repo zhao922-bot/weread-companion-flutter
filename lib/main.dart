@@ -12,6 +12,7 @@ import 'pages/cards_page.dart';
 import 'pages/report_page.dart';
 import 'pages/settings_page.dart';
 import 'theme/readamber_theme.dart';
+import 'providers/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ class ReadAmberApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeController()..load()),
         ChangeNotifierProvider(
           create: (_) => AppConfigProvider(config: appConfig)..init(),
         ),
@@ -42,13 +44,14 @@ class ReadAmberApp extends StatelessWidget {
             ..resetSession(config.sessionRevision),
         ),
       ],
-      child: MaterialApp(
+      child: Consumer<ThemeController>(builder: (_, appearance, __) => MaterialApp(
         title: '阅珀 ReadAmber',
         debugShowCheckedModeBanner: false,
         theme: ReadAmberTheme.light,
-        themeMode: ThemeMode.light,
+        darkTheme: ReadAmberTheme.dark,
+        themeMode: appearance.mode,
         home: const MainScreen(),
-      ),
+      )),
     );
   }
 }
@@ -108,7 +111,7 @@ class _MainScreenState extends State<MainScreen> {
                   else if (i == 4 || config.canBrowseLocal)
                     _page(i)
                   else
-                    const Center(
+                    Center(
                       child: SingleChildScrollView(
                         padding: EdgeInsets.all(32),
                         child: Column(
@@ -121,13 +124,13 @@ class _MainScreenState extends State<MainScreen> {
                             SizedBox(height: 24),
                             Text('阅珀 ReadAmber', textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600,
-                                color: ReadAmberColors.ink)),
+                                color: ReadAmberPalette.of(context).ink)),
                             SizedBox(height: 10),
                             Text('让读过的，留下来。',
-                              style: TextStyle(fontSize: 16, color: ReadAmberColors.amberText)),
+                              style: TextStyle(fontSize: 16, color: ReadAmberPalette.of(context).amberText)),
                             SizedBox(height: 32),
                             Text('请先在设置中验证登录', textAlign: TextAlign.center,
-                              style: TextStyle(color: ReadAmberColors.muted)),
+                              style: TextStyle(color: ReadAmberPalette.of(context).muted)),
                           ],
                         ),
                       ),

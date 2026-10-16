@@ -13,20 +13,35 @@
 
 ## 下载与安装
 
-当前版本：**v2.9.0 · 构建号 23**。全部安装包和校验文件见 [GitHub Releases](https://github.com/zhao922-bot/weread-companion-flutter/releases/tag/v2.9.0)。
+当前版本：**v2.10.0 · 构建号 24**。全部安装包和校验文件见 [GitHub Releases](https://github.com/zhao922-bot/weread-companion-flutter/releases/tag/v2.10.0)。
 
 | 平台 | 下载 | 使用方式 |
 | --- | --- | --- |
-| Android 7.0 及以上 | [通用 APK](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.9.0/readamber-v2.9.0-android.apk) | 下载后安装，支持 ARMv7、ARM64 和 x86_64 |
-| Windows x64 | [EXE 安装包](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.9.0/readamber-v2.9.0-windows-x64-setup.exe) | 双击解压部署，创建「阅珀 ReadAmber」开始菜单快捷方式并启动 |
-| Windows x64 | [便携 ZIP](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.9.0/readamber-v2.9.0-windows-x64.zip) | 完整解压后运行 `weread_companion.exe`，保留同目录的 DLL 和 `data` 文件夹 |
-| 文件校验 | [SHA256SUMS.txt](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.9.0/SHA256SUMS.txt) | 用于核对下载文件的 SHA-256 |
+| Android 7.0 及以上 | [通用 APK](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-android.apk) | 下载后安装，支持 ARMv7、ARM64 和 x86_64 |
+| Windows x64 | [EXE 安装包](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-windows-x64-setup.exe) | 双击解压部署，创建「阅珀 ReadAmber」开始菜单快捷方式并启动 |
+| Windows x64 | [便携 ZIP](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-windows-x64.zip) | 完整解压后运行 `weread_companion.exe`，保留同目录的 DLL 和 `data` 文件夹 |
+| 文件校验 | [SHA256SUMS.txt](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/SHA256SUMS.txt) | 用于核对下载文件的 SHA-256 |
 
 ### 从旧版升级
 
-- **Android v2.7.0 / v2.8.0 → v2.9.0**：沿用 v2.7.0 的发布签名和应用包名，可直接覆盖升级。更早版本使用不同签名；若系统提示签名冲突，应先导出需要保留的笔记，再卸载旧版安装。Markdown 导出不是可还原全部应用状态的备份。
+- **Android v2.7.0～v2.9.0 → v2.10.0**：沿用 v2.7.0 的发布签名和应用包名，可直接覆盖升级。更早版本使用不同签名；若系统提示签名冲突，应先导出需要保留的笔记，再卸载旧版安装。Markdown 导出不是可还原全部应用状态的备份。
 - **Windows**：先关闭正在运行的程序，再运行新版安装包。为兼容已有安装，仍部署到 `%LOCALAPPDATA%\Programs\WeReadCompanion`，并将本安装对应的旧开始菜单快捷方式替换为新名称。
 - **数据兼容**：本次界面更新保留 Android 包名、配置键、数据库文件名和 Windows 存储标识。Windows 数据仍位于 `%APPDATA%\zhao922-bot\WeRead Companion`；程序目录与数据目录分离。便携版也使用该用户数据目录。
+
+## 主题与快速预设
+
+在 **设置 → 外观 → 应用主题** 中选择 **纸白浅色、墨青深色或跟随系统**。首次使用默认纸白浅色；选择成功后立即应用并保存，重启、退出登录或切换账号后保留。跟随系统会响应系统的亮暗变化。若本地保存失败，保留当前主题并显示重试提示。
+
+深色主题覆盖书架、笔记、详情、卡片、报告、设置、登录和同步页面，以及弹窗、输入框和导航。金句导出继续使用纸白背景，登录二维码继续使用黑白配色。
+
+AI 配置中的五个快速预设始终单行排列。窄屏可左右滑动查看并选择全部服务，宽屏可直接显示整行，预设名称与配置内容不变。
+
+[查看桌面单行预设预览](docs/screenshots/v2.10.0/desktop-ai-presets.png)
+
+<p align="center">
+  <img src="docs/screenshots/v2.10.0/phone-settings.png" width="42%" alt="纸白浅色主题设置">
+  <img src="docs/screenshots/v2.10.0/dark-phone-settings.png" width="42%" alt="墨青深色主题设置">
+</p>
 
 ## 界面预览
 

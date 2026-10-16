@@ -121,11 +121,11 @@ class _ReportPageState extends State<ReportPage> {
               children: [
                 _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
                 const SizedBox(width: 8),
-                _StatCard('已读完', '$_readBooks', Icons.check_circle, ReadAmberColors.success),
+                _StatCard('已读完', '$_readBooks', Icons.check_circle, ReadAmberPalette.of(context).success),
                 const SizedBox(width: 8),
-                _StatCard('在读中', '$_readingBooks', Icons.menu_book, ReadAmberColors.amberText),
+                _StatCard('在读中', '$_readingBooks', Icons.menu_book, ReadAmberPalette.of(context).amberText),
                 const SizedBox(width: 8),
-                _StatCard('划线与笔记', '$_totalNotes', Icons.note, ReadAmberColors.inkSoft),
+                _StatCard('划线与笔记', '$_totalNotes', Icons.note, ReadAmberPalette.of(context).inkSoft),
               ],
             ),
             const SizedBox(height: 24),
@@ -147,24 +147,24 @@ class _ReportPageState extends State<ReportPage> {
                           sections: [
                             PieChartSectionData(
                               value: _readBooks.toDouble(),
-                              color: ReadAmberColors.success,
+                              color: ReadAmberPalette.of(context).success,
                               title: '读完\n$_readBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.surface),
+                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).surface),
                             ),
                             PieChartSectionData(
                               value: _readingBooks.toDouble(),
-                              color: ReadAmberColors.amberText,
+                              color: ReadAmberPalette.of(context).amberText,
                               title: '在读\n$_readingBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.surface),
+                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).surface),
                             ),
                             PieChartSectionData(
                               value: _unreadBooks.toDouble(),
-                              color: ReadAmberColors.outline,
+                              color: ReadAmberPalette.of(context).outline,
                               title: '未读\n$_unreadBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.ink),
+                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).ink),
                             ),
                           ],
                           sectionsSpace: 2,
@@ -202,7 +202,7 @@ class _ReportPageState extends State<ReportPage> {
           children: [
             const Text('划线与笔记趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
+            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             const SizedBox(height: 20),
             SizedBox(
               height: 220,
@@ -224,12 +224,12 @@ class _ReportPageState extends State<ReportPage> {
                   }).toList(),
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
-                      tooltipBgColor: ReadAmberColors.ink,
+                      tooltipBgColor: ReadAmberPalette.of(context).ink,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         final entry = _monthlyActivity[group.x];
                         return BarTooltipItem(
                           '${entry.key.year}年${entry.key.month}月\n${entry.value} 条',
-                          const TextStyle(color: ReadAmberColors.surface, fontSize: 12),
+                          TextStyle(color: ReadAmberPalette.of(context).surface, fontSize: 12),
                         );
                       },
                     ),
@@ -259,7 +259,7 @@ class _ReportPageState extends State<ReportPage> {
                         getTitlesWidget: (value, meta) => SideTitleWidget(
                           axisSide: meta.axisSide,
                           space: 6,
-                          child: Text('${value.toInt()}', style: const TextStyle(fontSize: 10, color: ReadAmberColors.muted)),
+                          child: Text('${value.toInt()}', style: TextStyle(fontSize: 10, color: ReadAmberPalette.of(context).muted)),
                         ),
                       ),
                     ),
@@ -287,7 +287,7 @@ class _ReportPageState extends State<ReportPage> {
           children: [
             const Text('划线最多的书 Top5', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
+            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             for (final entry in _topHighlights.asMap().entries) ...[
               const SizedBox(height: 16),
               Row(
@@ -298,7 +298,7 @@ class _ReportPageState extends State<ReportPage> {
                     child: Text(entry.value.key, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                   const SizedBox(width: 12),
-                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
+                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -340,7 +340,7 @@ class _StatCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
+              Text(label, style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             ],
           ),
         ),

@@ -508,7 +508,11 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('AI预设更新地址模型，密钥显示开关不丢失内容', (tester) async {
+  testWidgets('窄屏横向滚动可使用全部AI预设，密钥显示开关不丢失内容', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(section(const AiSettingsSection()));
     await tester.tap(find.byType(ExpansionTile));
     await tester.pumpAndSettle();
@@ -519,11 +523,16 @@ void main() {
       'Moonshot',
       'SiliconFlow'
     ]) {
-      await tester.tap(find.widgetWithText(OutlinedButton, preset));
+      final button = find.widgetWithText(OutlinedButton, preset);
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
       await tester.pumpAndSettle();
       expect(find.textContaining('$preset ·'), findsOneWidget);
     }
     final keyField = find.widgetWithText(TextField, 'API Key');
+    await tester.ensureVisible(keyField);
+    await tester.pumpAndSettle();
     await tester.enterText(keyField, 'test-secret');
     await tester.tap(find.byIcon(Icons.visibility_off_outlined));
     await tester.pump();
@@ -532,6 +541,7 @@ void main() {
     await tester.pump();
     expect(tester.widget<TextField>(keyField).obscureText, isTrue);
     expect(tester.widget<TextField>(keyField).controller!.text, 'test-secret');
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 

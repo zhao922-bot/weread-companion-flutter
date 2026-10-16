@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:weread_companion/pages/settings_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
+import 'package:weread_companion/providers/theme_controller.dart';
 import 'package:weread_companion/widgets/settings/account_settings_section.dart';
 import 'package:weread_companion/widgets/settings/ai_settings_section.dart';
 import 'package:weread_companion/widgets/settings/about_settings_section.dart';
@@ -34,7 +35,8 @@ void main() {
       {bool isActive = true}) async {
     await tester.pumpWidget(ChangeNotifierProvider.value(
       value: provider,
-      child: MaterialApp(home: SettingsPage(isActive: isActive)),
+      child: ChangeNotifierProvider(create: (_) => ThemeController(),
+        child: MaterialApp(home: SettingsPage(isActive: isActive))),
     ));
     await tester.pump();
   }
