@@ -40,12 +40,19 @@ class NotesProvider extends ChangeNotifier {
   int _dataVersion = SyncService.changes.dataVersion;
   bool _active;
   bool _refreshPending = true;
+  int _backgroundReads = 0;
 
   Future<void> setActive(bool active) async {
+    if (_disposed) return;
     _active = active;
-    if (!active && (_loading || _searchTimer?.isActive == true)) {
+    if (!active && (_loading || _searchTimer?.isActive == true || _backgroundReads > 0)) {
       _refreshPending = true;
+      _statsDirty = true;
       _searchTimer?.cancel();
+      // Invalidate results without notifying from a page's build/dispose.
+      _request++;
+      _statsRequest++;
+      _loading = false;
     }
     if (active && _refreshPending) {
       _dataVersion = SyncService.changes.dataVersion;
@@ -55,25 +62,33 @@ class NotesProvider extends ChangeNotifier {
   int _statsRequest = 0;
 
   Future<void> _refreshStats() async {
+    if (_disposed) return;
+    if (!_active) { _refreshPending = true; _statsDirty = true; return; }
     final request = ++_statsRequest;
     final revision = _sessionRevision;
+    final pageRequest = _request;
     _statsDirty = true;
+    _backgroundReads++;
     try {
       final db = DatabaseService.instance;
       final stats = await db.getReadingStats();
-      if (_disposed || !db.isActive || revision != _sessionRevision || request != _statsRequest) return;
+      if (_disposed || !db.isActive || revision != _sessionRevision || request != _statsRequest || pageRequest != _request) return;
       _stats = stats;
       _statsDirty = false;
       notifyListeners();
     } catch (e) {
-      if (!_disposed && revision == _sessionRevision && request == _statsRequest) {
+      if (!_disposed && revision == _sessionRevision && request == _statsRequest && pageRequest == _request) {
         _error = e.toString();
         notifyListeners();
       }
+    } finally {
+      _backgroundReads--;
     }
   }
 
   Future<void> _refreshFavorites(Set<String> keys) async {
+    if (_disposed) return;
+    if (!_active) { _refreshPending = true; _statsDirty = true; return; }
     if (_filter == ReadingFilter.favorites) {
       _favoriteRevision++;
       _statsDirty = true;
@@ -83,37 +98,41 @@ class NotesProvider extends ChangeNotifier {
     }
     final revision = _sessionRevision;
     final request = _request;
+    final favoriteRevision = _favoriteRevision;
+    bool isCurrent() => !_disposed && _active && revision == _sessionRevision && request == _request;
+    _backgroundReads++;
     try {
       final db = DatabaseService.instance;
       final updates = <(NoteItem, bool)>[];
-      for (final item in _notes.where((n) => keys.contains('${n.source.name}:${n.id}'))) {
+      for (final item in _notes.where((n) => keys.contains('${n.source.name}:${n.id}')).toList()) {
         final row = await db.getReadingItem(item.id, item.source.name, item.bookId);
+        if (!isCurrent() || !db.isActive) return;
         if (row != null) updates.add((item, row['is_fav'] == 1));
       }
       final statsRequest = ++_statsRequest;
       final stats = await db.getReadingStats();
       if (_disposed || !db.isActive || revision != _sessionRevision || request != _request) return;
+      // Another refresh or a local toggle may have committed while these reads
+      // were in flight. Read again instead of publishing its stale snapshot.
+      if (favoriteRevision != _favoriteRevision) {
+        await _refreshFavorites(keys);
+        return;
+      }
       _favoriteRevision++;
       for (final (item, favorite) in updates) {
         item.isFav = favorite;
-        if (_filter == ReadingFilter.favorites && !favorite) {
-          _notes.remove(item);
-          _matchedCount--;
-        }
       }
       if (statsRequest == _statsRequest) {
         _stats = stats;
         _statsDirty = false;
       }
-      if (_filter == ReadingFilter.favorites) {
-        _matchedCount = await db.countReadingItems(query: _searchQuery, filter: _filter);
-        if (_disposed || !db.isActive || revision != _sessionRevision || request != _request) return;
-      }
       notifyListeners();
     } catch (e) {
-      if (!_disposed && revision == _sessionRevision) {
+      if (isCurrent() && favoriteRevision == _favoriteRevision) {
         _error = e.toString(); notifyListeners();
       }
+    } finally {
+      _backgroundReads--;
     }
   }
   bool _publishingFavorite = false;
@@ -134,6 +153,7 @@ class NotesProvider extends ChangeNotifier {
   List<NoteItem> _notes = [];
   int _request = 0;
   int _matchedCount = 0;
+  bool _resetRequired = true;
   Map<String, dynamic> _stats = {};
   static const pageSize = 100;
   String _searchQuery = '';
@@ -152,6 +172,7 @@ class NotesProvider extends ChangeNotifier {
     _request++;
     _notes = [];
     _matchedCount = 0;
+    _resetRequired = true;
     _stats = {};
     _searchQuery = '';
     _filter = ReadingFilter.all;
@@ -217,12 +238,14 @@ class NotesProvider extends ChangeNotifier {
   }
 
   Future<void> loadMore() async {
-    if (_loading || !hasMore) return;
-    await _loadPage(reset: false);
+    // The visible list still belongs to the previous query during debounce.
+    if (_loading || _searchTimer?.isActive == true || !hasMore) return;
+    await _loadPage(reset: _resetRequired);
   }
 
   Future<void> _loadPage({required bool reset, bool preserve = false, int limit = pageSize}) async {
     if (_disposed) return;
+    if (reset) _resetRequired = true;
     if (!_active) { _refreshPending = true; return; }
     _refreshPending = false;
     final request = ++_request;
@@ -237,8 +260,12 @@ class NotesProvider extends ChangeNotifier {
       final db = DatabaseService.instance;
       final query = _searchQuery;
       final filter = _filter;
-      final count = await db.countReadingItems(query: query, filter: filter);
-      if (!_active) { _refreshPending = true; return; }
+      // Data/filter changes reset the list. Continuations can reuse its count.
+      final count = reset
+          ? await db.countReadingItems(query: query, filter: filter)
+          : _matchedCount;
+      if (request != _request || !db.isActive) return;
+      // Deactivation invalidates _request and marks the refresh pending.
       final statsRequest = _statsDirty ? ++_statsRequest : _statsRequest;
       final stats = _statsDirty ? await db.getReadingStats() : _stats;
       if (request != _request || !db.isActive) return;
@@ -252,6 +279,7 @@ class NotesProvider extends ChangeNotifier {
       final items = raw.map(_fromRow).toList();
       _notes = reset ? items : [..._notes, ...items];
       _matchedCount = count;
+      _resetRequired = false;
       if (statsRequest == _statsRequest) {
         _stats = stats;
         _statsDirty = false;
@@ -283,6 +311,7 @@ class NotesProvider extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(NoteItem note) async {
+    if (_disposed) return;
     final key = '${note.source.name}:${note.id}';
     if (!_savingFavorites.add(key)) return;
     final revision = _sessionRevision;
@@ -297,12 +326,12 @@ class NotesProvider extends ChangeNotifier {
 
       if (revision != _sessionRevision || !db.isActive || _disposed) return;
       _favoriteRevision++;
+      _statsRequest++;
+      _statsDirty = true;
       note.isFav = favorite;
       for (final item in _notes) {
         if (item.id == note.id && item.source == note.source) item.isFav = favorite;
       }
-      final stat = note.source == NoteSource.bookmark ? 'favoriteBookmarks' : 'favoriteNotes';
-      _stats[stat] = (_stats[stat] as int? ?? 0) + (favorite ? 1 : -1);
       if (_filter == ReadingFilter.favorites && !favorite &&
           _notes.any((item) => item.id == note.id && item.source == note.source)) {
         _notes.removeWhere((item) => item.id == note.id && item.source == note.source);
@@ -319,6 +348,10 @@ class NotesProvider extends ChangeNotifier {
       }
       if (_filter == ReadingFilter.favorites) {
         await _refreshFavorites({key});
+      } else {
+        // A concurrent stats refresh may already include this write. Adding a
+        // local delta again would double-count it; read the committed totals.
+        await _refreshStats();
       }
     } finally {
       _savingFavorites.remove(key);

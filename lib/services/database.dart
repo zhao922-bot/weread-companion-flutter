@@ -31,6 +31,7 @@ class _IndexChanged implements Exception {}
 class DatabaseService {
   Database? _db;
   Future<Database>? _opening;
+  Future<void>? _closing;
   bool _closed = false;
   Future<bool>? _upsertSupported;
 
@@ -68,42 +69,100 @@ class DatabaseService {
     await batch.commit(noResult: true);
   }
   final String accountId;
+  final _sessionActive = ValueNotifier<bool>(true);
+  ValueListenable<bool> get sessionActive => _sessionActive;
   bool get isActive => !_closed && identical(_instance, this);
+
+  /// Check the captured owner after every asynchronous session boundary.
+  void requireActive() {
+    if (!isActive) throw StateError('账号会话已结束');
+  }
   static DatabaseService? _instance;
+  static int _sessionRevision = 0;
+  static final Set<DatabaseService> _retired = {};
   static DatabaseService get instance =>
       _instance ?? (throw StateError('请先验证登录'));
   DatabaseService._(this.accountId);
 
-  static Future<void> endSession() async {
+  static void _retireSession() {
     final previous = _instance;
     _instance = null;
-    await previous?.close();
+    if (previous != null) {
+      _retired.add(previous);
+      previous._sessionActive.value = false;
+    }
   }
 
-  static Future<void> selectAccount(String accountId) async {
+  // Failed closes retain their handles. A retry must finish closing them before
+  // opening another account (including reopening the same SQLite file).
+  static Future<void> _closeRetiredSessions() async {
+    Object? failure;
+    StackTrace? failureStack;
+    for (final database in _retired.toList()) {
+      try {
+        await database.close();
+        _retired.remove(database);
+      } catch (error, stack) {
+        failure ??= error;
+        failureStack ??= stack;
+      }
+    }
+    if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
+  }
+
+  static Future<void> endSession() async {
+    _sessionRevision++;
+    _retireSession();
+    await _closeRetiredSessions();
+  }
+
+  static Future<DatabaseService> selectAccount(String accountId,
+      {bool Function()? isCancelled}) async {
     if (!RegExp(r'^[0-9]+$').hasMatch(accountId) || accountId == '0') {
       throw ArgumentError('无效的账号 ID');
     }
-    await _instance?.close();
-    _instance = null;
+    if (isCancelled?.call() == true) throw StateError('账号会话已结束');
+    final revision = ++_sessionRevision;
+    void checkSession() {
+      if (revision != _sessionRevision || isCancelled?.call() == true) {
+        throw StateError('账号会话已结束');
+      }
+    }
+    _retireSession();
+    await _closeRetiredSessions();
+    checkSession();
     // 旧数据库没有账号归属，不能迁移给当前登录者。
-    await deleteDatabase(join(await getDatabasesPath(), 'weread_companion.db'));
-    _instance = DatabaseService._(accountId);
+    final path = join(await getDatabasesPath(), 'weread_companion.db');
+    checkSession();
+    await deleteDatabase(path);
+    checkSession();
+    return _instance = DatabaseService._(accountId);
   }
 
   static Future<void> clearLocalData() async {
-    final previous = _instance;
-    _instance = null;
-    await previous?.close();
-    final directory = Directory(await getDatabasesPath());
-    if (!await directory.exists()) return;
-    await for (final file in directory.list()) {
-      final name = basename(file.path);
-      if (name == 'weread_companion.db' ||
-          RegExp(r'^weread_companion_account_[0-9]+\.db$').hasMatch(name)) {
-        await deleteDatabase(file.path);
+    _sessionRevision++;
+    Object? failure;
+    StackTrace? failureStack;
+    Future<void> clean(Future<void> Function() action) async {
+      try { await action(); } catch (error, stack) {
+        failure ??= error;
+        failureStack ??= stack;
       }
     }
+    _retireSession();
+    await clean(_closeRetiredSessions);
+    await clean(() async {
+      final directory = Directory(await getDatabasesPath());
+      if (!await directory.exists()) return;
+      await for (final file in directory.list()) {
+        final name = basename(file.path);
+        if (name == 'weread_companion.db' ||
+            RegExp(r'^weread_companion_account_[0-9]+\.db$').hasMatch(name)) {
+          await clean(() => deleteDatabase(file.path));
+        }
+      }
+    });
+    if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
   }
 
   Future<Database> get database async {
@@ -165,12 +224,34 @@ class DatabaseService {
       },
       onOpen: (db) async {
         if (!await _tableExists(db, 'search_index_backfill')) return;
+        await db.execute('CREATE TABLE IF NOT EXISTS search_index_progress '
+            '(source TEXT PRIMARY KEY, last_id TEXT NOT NULL)');
         for (final table in ['bookmarks', 'notes']) {
           if (!await _tableExists(db, table)) continue;
-          final rows = await db.query(table);
-          await _writeIndexed(db, table, rows, preserveFav: false);
+          final id = table == 'notes' ? 'note_id' : 'bookmark_id';
+          final progress = await db.query('search_index_progress',
+              where: 'source = ?', whereArgs: [table]);
+          String? after = progress.isEmpty ? null : progress.single['last_id'] as String;
+          while (true) {
+            if (_closed) throw StateError('账号会话已结束');
+            final rows = await db.query(table, orderBy: '$id ASC', limit: 100,
+                where: after == null ? null : '$id > ?',
+                whereArgs: after == null ? null : [after]);
+            if (rows.isEmpty) break;
+            final last = rows.last[id] as String;
+            await _writeIndexed(db, table, rows, preserveFav: false,
+                after: (txn) async {
+                  if (_closed) throw StateError('账号会话已结束');
+                  await txn.insert('search_index_progress', {'source': table, 'last_id': last},
+                      conflictAlgorithm: ConflictAlgorithm.replace);
+                });
+            after = last;
+          }
         }
-        await db.execute('DROP TABLE search_index_backfill');
+        await db.transaction((txn) async {
+          await txn.execute('DROP TABLE search_index_progress');
+          await txn.execute('DROP TABLE search_index_backfill');
+        });
       },
     );
   }
@@ -249,27 +330,35 @@ class DatabaseService {
   Future<void> _writeIndexed(Database db, String table,
       List<Map<String, dynamic>> input, {required bool preserveFav,
       Future<void> Function(Transaction)? before,
-      Future<void> Function(Transaction)? after}) async {
+      Future<void> Function(Transaction)? after,
+      void Function()? checkCancelled}) async {
+    checkCancelled?.call();
     final id = table == 'notes' ? 'note_id' : 'bookmark_id';
     final content = table == 'notes' ? 'content' : 'mark_text';
     final source = table == 'notes' ? 'note' : 'bookmark';
     final rows = input.map((row) => Map<String, dynamic>.from(row)).toList();
     final supportsUpsert = preserveFav && await _supportsUpsert(db);
     while (true) {
+      checkCancelled?.call();
       final expected = <Object?, Map<String, dynamic>>{};
+      final existing = preserveFav
+          ? await _readIndexRows(db, table, id, content, rows.map((row) => row[id]))
+          : const <Object?, Map<String, dynamic>>{};
+      checkCancelled?.call();
       for (final row in rows) {
-        final key = row[id];
-        if (preserveFav && !expected.containsKey(key)) {
-          final existing = await db.query(table, where: '$id = ?', whereArgs: [key], limit: 1);
-          expected[key] = existing.isEmpty ? {} : Map<String, dynamic>.from(existing.single);
-        }
-        expected[key] = {...?expected[key], ...row};
-        if (!preserveFav) expected[key] = row;
+        // Match the TEXT affinity of both primary-key columns.
+        final key = row[id]?.toString();
+        expected[key] = preserveFav
+            ? {...?(expected[key] ?? existing[key]), ...row}
+            : row;
       }
       final texts = expected.values.map((row) => _indexText(row, content)).toList();
-      final terms = await compute(_generateTrigrams, texts);
+      final terms = texts.isEmpty ? <List<String>>[] : await compute(_generateTrigrams, texts);
       try {
         await db.transaction((txn) async {
+          // A task may have been cancelled while preparing the index or
+          // waiting for this transaction. Once admitted, keep the batch atomic.
+          checkCancelled?.call();
           await before?.call(txn);
           if (preserveFav) {
             await _writePreservingFav(txn, table, id, rows, supportsUpsert);
@@ -280,13 +369,13 @@ class DatabaseService {
             }
             await batch.commit(noResult: true);
           }
+          final actual = await _readIndexRows(txn, table, id, content, expected.keys);
           final batch = txn.batch();
           var i = 0;
           for (final key in expected.keys) {
-            final actual = await txn.query(table, where: '$id = ?', whereArgs: [key], limit: 1);
             // A concurrent partial update may have changed retained metadata.
             // Roll back and regenerate outside the transaction in that case.
-            if (_indexText(actual.single, content) != texts[i]) throw _IndexChanged();
+            if (_indexText(actual[key]!, content) != texts[i]) throw _IndexChanged();
             batch.delete('item_trigrams', where: 'source = ? AND id = ?', whereArgs: [source, key]);
             for (final term in terms[i++]) {
               batch.insert('item_trigrams', {'term': term, 'source': source, 'id': key});
@@ -300,6 +389,28 @@ class DatabaseService {
         // Retry only index snapshot conflicts; all other errors propagate.
       }
     }
+  }
+
+  // Bound the parameter count for older Android SQLite versions, and fetch
+  // only the fields needed to generate/validate the search index.
+  Future<Map<Object?, Map<String, dynamic>>> _readIndexRows(
+      DatabaseExecutor executor, String table, String id, String content,
+      Iterable<Object?> ids) async {
+    final keys = ids.map((key) => key?.toString()).toSet().toList();
+    final result = <Object?, Map<String, dynamic>>{};
+    const batchSize = 400;
+    for (var offset = 0; offset < keys.length; offset += batchSize) {
+      final end = offset + batchSize < keys.length ? offset + batchSize : keys.length;
+      final batch = keys.sublist(offset, end);
+      final rows = await executor.query(table,
+          columns: [id, content, 'book_title', 'chapter_title'],
+          where: '$id IN (${List.filled(batch.length, '?').join(',')})',
+          whereArgs: batch);
+      for (final row in rows) {
+        result[row[id]] = row;
+      }
+    }
+    return result;
   }
 
   Future<void> _createItemIndexes(Database db) async {
@@ -329,14 +440,15 @@ class DatabaseService {
 
   Future<void> applySyncDelta(String bookId, String source,
       List<Map<String, dynamic>> rows, List<String> deleted, String? cursor,
-      {String? expectedCursor}) async {
+      {String? expectedCursor, void Function()? checkCancelled}) async {
     if (deleted.any((id) => id.trim().isEmpty)) {
       throw const FormatException('增量包含无效删除 ID，未提交数据或推进同步游标，请重试');
     }
     final table = source == 'note' ? 'notes' : 'bookmarks';
     final id = source == 'note' ? 'note_id' : 'bookmark_id';
     final db = await database;
-    await _writeIndexed(db, table, rows, preserveFav: true, before: (txn) async {
+    await _writeIndexed(db, table, rows, preserveFav: true,
+      checkCancelled: checkCancelled, before: (txn) async {
       if (expectedCursor != null) {
         final current = await txn.query('sync_cursors',
           where: 'book_id = ? AND source = ?', whereArgs: [bookId, source]);
@@ -344,8 +456,15 @@ class DatabaseService {
         if (key != expectedCursor) throw StateError('同步游标已更新，请重试');
       }
     }, after: (txn) async {
-      for (final key in deleted) {
-        await txn.delete(table, where: 'book_id = ? AND $id = ?', whereArgs: [bookId, key]);
+      // Keep each statement below old Android SQLite's parameter limit. The
+      // surrounding transaction also rolls back earlier batches on failure.
+      final uniqueDeleted = deleted.toSet().toList();
+      for (var start = 0; start < uniqueDeleted.length; start += 400) {
+        final keys = uniqueDeleted.skip(start).take(400).toList();
+        await txn.rawDelete(
+            'DELETE FROM $table WHERE book_id = ? '
+            'AND $id IN (${List.filled(keys.length, '?').join(',')})',
+            [bookId, ...keys]);
       }
       if (cursor != null) {
         await txn.insert('sync_cursors', {'book_id': bookId, 'source': source, 'synckey': cursor},
@@ -438,13 +557,17 @@ class DatabaseService {
     await db.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> insertBooks(List<Map<String, dynamic>> books) async {
+  Future<void> insertBooks(List<Map<String, dynamic>> books,
+      {void Function()? checkCancelled}) async {
     final db = await database;
-    final batch = db.batch();
-    for (final book in books) {
-      batch.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await db.transaction((txn) async {
+      checkCancelled?.call();
+      final batch = txn.batch();
+      for (final book in books) {
+        batch.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<Map<String, dynamic>?> getBook(String bookId) async {
@@ -676,59 +799,67 @@ class DatabaseService {
   Future<Map<String, dynamic>> getReportStats({DateTime? now}) async {
     final db = await database;
     final time = now ?? DateTime.now();
-    final stats = await getReadingStats();
-    final top = await db.rawQuery('''
-      SELECT COALESCE(NULLIF(b.title, ''), NULLIF(MAX(m.book_title), ''), '未知书籍') AS title,
-        COUNT(*) AS total FROM bookmarks m LEFT JOIN books b ON b.book_id = m.book_id
-      GROUP BY m.book_id ORDER BY total DESC, m.book_id ASC LIMIT 5
-    ''');
-    final monthly = await db.rawQuery('''
-      SELECT strftime('%Y-%m', created_at, 'unixepoch', 'localtime') AS month,
-        COUNT(*) AS total FROM (
-        SELECT created_at FROM bookmarks WHERE created_at BETWEEN ? AND ?
-        UNION ALL SELECT created_at FROM notes WHERE created_at BETWEEN ? AND ?)
-      GROUP BY month
-    ''', [for (var i = 0; i < 2; i++) ...[
-      DateTime(time.year, time.month - 5).millisecondsSinceEpoch ~/ 1000,
-      time.millisecondsSinceEpoch ~/ 1000]]);
-    return {...stats, 'top': top, 'monthly': monthly};
+    // Keep totals, rankings and monthly buckets in one committed snapshot.
+    return db.transaction((txn) async {
+      final stats = await _readingStats(txn);
+      final top = await txn.rawQuery('''
+        SELECT COALESCE(NULLIF(b.title, ''), NULLIF(MAX(m.book_title), ''), '未知书籍') AS title,
+          COUNT(*) AS total FROM bookmarks m LEFT JOIN books b ON b.book_id = m.book_id
+        GROUP BY m.book_id ORDER BY total DESC, m.book_id ASC LIMIT 5
+      ''');
+      final monthly = await txn.rawQuery('''
+        SELECT strftime('%Y-%m', created_at, 'unixepoch', 'localtime') AS month,
+          COUNT(*) AS total FROM (
+          SELECT created_at FROM bookmarks WHERE created_at BETWEEN ? AND ?
+          UNION ALL SELECT created_at FROM notes WHERE created_at BETWEEN ? AND ?)
+        GROUP BY month
+      ''', [for (var i = 0; i < 2; i++) ...[
+        DateTime(time.year, time.month - 5).millisecondsSinceEpoch ~/ 1000,
+        time.millisecondsSinceEpoch ~/ 1000]]);
+      return {...stats, 'top': top, 'monthly': monthly};
+    });
   }
 
-  Future<Map<String, dynamic>> getReadingStats() async {
-    final db = await database;
-    final totalBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books')) ?? 0;
-    final finishedBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= ?', [finishedProgress])) ?? 0;
-    final readingBooks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM books WHERE progress >= ? AND progress < ?', [readingStartedProgress, finishedProgress])) ?? 0;
-    final totalBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks')) ?? 0;
-    final totalNotes = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM notes')) ?? 0;
-    final favBookmarks = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM bookmarks WHERE is_fav = 1')) ?? 0;
-    final favNotes = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM notes WHERE is_fav = 1')) ?? 0;
+  Future<Map<String, dynamic>> getReadingStats() async =>
+      _readingStats(await database);
 
-    return {
-      'totalBooks': totalBooks,
-      'finishedBooks': finishedBooks,
-      'readingBooks': readingBooks,
-      'totalBookmarks': totalBookmarks,
-      'totalNotes': totalNotes,
-      'favoriteBookmarks': favBookmarks,
-      'favoriteNotes': favNotes,
-    };
+  Future<Map<String, dynamic>> _readingStats(DatabaseExecutor db) async {
+    // One statement gives every counter the same SQLite snapshot and avoids
+    // seven separate calls across the platform channel.
+    final rows = await db.rawQuery('''
+      SELECT
+        (SELECT COUNT(*) FROM books) AS totalBooks,
+        (SELECT COUNT(*) FROM books WHERE progress >= ?) AS finishedBooks,
+        (SELECT COUNT(*) FROM books WHERE progress >= ? AND progress < ?) AS readingBooks,
+        (SELECT COUNT(*) FROM bookmarks) AS totalBookmarks,
+        (SELECT COUNT(*) FROM notes) AS totalNotes,
+        (SELECT COUNT(*) FROM bookmarks WHERE is_fav = 1) AS favoriteBookmarks,
+        (SELECT COUNT(*) FROM notes WHERE is_fav = 1) AS favoriteNotes
+    ''', [finishedProgress, readingStartedProgress, finishedProgress]);
+    return Map<String, dynamic>.from(rows.single);
   }
 
-  Future<void> close() async {
+  Future<void> close() {
     _closed = true;
+    _sessionActive.value = false;
+    return _closing ??= _closeDatabase().whenComplete(() => _closing = null);
+  }
+
+  Future<void> _closeDatabase() async {
     final current = _db;
     final opening = _opening;
-    _db = null;
-    _opening = null;
     Database? db = current;
     if (db == null && opening != null) {
       try {
         db = await opening;
       } catch (_) {
+        _opening = null;
         return; // 打开失败时没有可关闭的连接。
       }
     }
-    await db?.close();
+    // Keep the handle when close throws so a later session transition can retry.
+    if (db?.isOpen == true) await db!.close();
+    _db = null;
+    _opening = null;
   }
 }

@@ -6,6 +6,7 @@ import '../providers/app_config_provider.dart';
 import '../models/book.dart';
 import '../models/bookshelf_filter.dart';
 import '../models/reading_constants.dart';
+import '../services/database.dart';
 import 'book_detail_page.dart';
 import 'sync_page.dart';
 
@@ -85,18 +86,20 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   /// 同步书架，带错误处理和反馈
   Future<void> _doSync(BookshelfProvider provider) async {
+    final appConfig = context.read<AppConfigProvider>();
+    final revision = appConfig.sessionRevision;
+    bool isCurrent() => revision == appConfig.sessionRevision;
     try {
-      final appConfig = context.read<AppConfigProvider>();
       if (!appConfig.isLoggedIn && !await appConfig.verifyForSync()) {
-        if (!mounted) return;
+        if (!mounted || !isCurrent()) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(appConfig.loginError ?? '本地数据可浏览；同步需要联网验证'),
         ));
         return;
       }
-      if (!mounted) return;
+      if (!mounted || !isCurrent()) return;
       final msg = await provider.syncFromServer(config: appConfig.config);
-      if (mounted) {
+      if (mounted && isCurrent()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(msg),
@@ -113,7 +116,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && isCurrent()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('同步失败: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
         );
@@ -378,10 +381,11 @@ class _BookshelfPageState extends State<BookshelfPage> {
             progressColor: _getProgressColor(book.progress),
             statusText: _getStatusText(book),
             onTap: () {
+              final db = DatabaseService.instance;
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => BookDetailPage(book: book),
+                  builder: (context) => BookDetailPage(book: book, database: db),
                 ),
               );
             },

@@ -17,9 +17,14 @@ class BookSyncResult {
   final int bookmarks;
   final int notes;
   final List<String> errors;
+  final bool bookmarksSucceeded;
+  final bool notesSucceeded;
 
-  BookSyncResult(this.book, this.bookmarks, this.notes, List<String> errors)
-      : errors = List.unmodifiable(errors);
+  BookSyncResult(this.book, this.bookmarks, this.notes, List<String> errors,
+      {bool? bookmarksSucceeded, bool? notesSucceeded})
+      : errors = List.unmodifiable(errors),
+        bookmarksSucceeded = bookmarksSucceeded ?? errors.isEmpty,
+        notesSucceeded = notesSucceeded ?? errors.isEmpty;
 
   bool get succeeded => errors.isEmpty;
   String get reason => errors.join('；');
@@ -72,14 +77,36 @@ class SyncChanges extends ChangeNotifier {
   }
 }
 
+class _SyncCancellation {
+  final signal = ValueNotifier(false);
+  final requests = <CancelToken>{};
+  DateTime blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void cancel() {
+    blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+    signal.value = true;
+    for (final token in requests.toList()) {
+      token.cancel(const SyncCancelledException());
+    }
+  }
+}
+
 class SyncService {
   static Future<SyncService> connect({AppConfig? config,
       bool Function()? isCancelled}) async {
     final resolved = config ?? AppConfig();
     if (config == null) await resolved.load();
     if (isCancelled?.call() ?? false) throw StateError('同步已取消');
+    if (resolved.logoutPending) throw StateError('请先完成退出清理');
     if (!resolved.isConfigured) throw StateError('请先登录后同步');
-    final api = await WeReadApi.init(config: resolved, db: DatabaseService.instance);
+    final db = DatabaseService.instance;
+    final account = resolved.credentials?.vid ??
+        RegExp(r'(?:^|;\s*)wr_vid=([0-9]+)(?:;|$)').firstMatch(resolved.cookie)?.group(1);
+    if (account != db.accountId) throw StateError('账号已切换，请重新验证登录');
+    final api = await WeReadApi.init(config: resolved, db: db);
+    if ((isCancelled?.call() ?? false) || api.syncCancelled || !api.db.isActive) {
+      throw StateError('同步已取消');
+    }
     api.updateCookie(resolved.cookie);
     return SyncService.forApi(api, isCancelled: isCancelled);
   }
@@ -93,37 +120,64 @@ class SyncService {
   final bool Function() isCancelled;
   final VoidCallback onChanged;
   final Duration requestInterval;
-  DateTime _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
-  final ValueNotifier<bool> _cancelSignal = ValueNotifier(false);
-  bool get _isCancelled => _cancelSignal.value || isCancelled();
+  _SyncCancellation _cancellation = _SyncCancellation();
+  _SyncCancellation get _operation =>
+      Zone.current[this] as _SyncCancellation? ?? _cancellation;
+  DateTime get _blockedUntil => _operation.blockedUntil;
+  set _blockedUntil(DateTime value) => _operation.blockedUntil = value;
+  bool get _isCancelled => _operation.signal.value || isCancelled();
+
+  // Async continuations, database checks and queued retries retain the state
+  // captured at entry. Resetting for a new attempt cannot revive an old one.
+  Future<T> _run<T>(Future<T> Function() task) =>
+      runZoned(task, zoneValues: {this: _cancellation});
 
   void cancel() {
-    _blockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
-    _cancelSignal.value = true;
+    // Only cancel this operation's requests; the API is shared by other entries.
+    _cancellation.cancel();
   }
 
   void resetCancellation() {
-    _cancelSignal.value = false;
+    if (_cancellation.signal.value) _cancellation = _SyncCancellation();
+  }
+
+  Future<T> _withRequestCancellation<T>(Future<T> Function(CancelToken) load) async {
+    _checkCancelled();
+    final operation = _operation;
+    final token = CancelToken();
+    operation.requests.add(token);
+    try {
+      return await load(token);
+    } finally {
+      // Dio registers callbacks on whenCancel. A token per request keeps
+      // completed requests out of the service's retained cancellation state.
+      operation.requests.remove(token);
+    }
+  }
+
+  void _checkCancelled() {
+    if (_isCancelled) throw const SyncCancelledException();
   }
 
   // Legacy entry points expose a predicate (including account-session changes).
   // Observe it while waiting; explicit UI cancellation wakes the wait immediately.
   Future<T> _waitFor<T>(Future<T> future) async {
-    if (_isCancelled) { cancel(); throw const SyncCancelledException(); }
+    final operation = _operation;
+    if (_isCancelled) { operation.cancel(); throw const SyncCancelledException(); }
     final cancelled = Completer<T>();
     void check() {
-      if (_isCancelled && !cancelled.isCompleted) {
+      if ((operation.signal.value || isCancelled()) && !cancelled.isCompleted) {
         cancelled.completeError(const SyncCancelledException());
-        cancel();
+        operation.cancel();
       }
     }
     final timer = Timer.periodic(const Duration(milliseconds: 10), (_) => check());
-    _cancelSignal.addListener(check);
+    operation.signal.addListener(check);
     try {
       return await Future.any([future, cancelled.future]);
     } finally {
       timer.cancel();
-      _cancelSignal.removeListener(check);
+      operation.signal.removeListener(check);
     }
   }
 
@@ -171,6 +225,10 @@ class SyncService {
 
   factory SyncService.forApi(WeReadApi api, {bool Function()? isCancelled}) {
     final db = api.db;
+    late final SyncService service;
+    void checkCancelled() {
+      service._checkCancelled();
+    }
     final changedBooks = <String>{};
     final changedItems = <String>{};
     final changedSources = <String>{};
@@ -181,12 +239,16 @@ class SyncService {
       changedSources.add(source);
       changedItems.addAll(keys.map((id) => '$source:$id'));
     }
-    return SyncService(
+    service = SyncService(
       accountId: db.accountId,
       loadBooks: () async {
-        final books = await api.fetchBookshelf();
-        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
-        await db.insertBooks(books.map((b) => b.toJson()).toList());
+        checkCancelled();
+        final books = await service._withRequestCancellation(
+            (token) => api.fetchBookshelf(cancelToken: token));
+        checkCancelled();
+        await db.insertBooks(books.map((b) => b.toJson()).toList(),
+            checkCancelled: checkCancelled);
+        if (!db.isActive || api.syncCancelled) throw const SyncCancelledException();
         changes.publish(db, kind: SyncChangeKind.bookshelf,
           bookIds: books.map((b) => b.bookId).toSet());
         return books;
@@ -195,12 +257,15 @@ class SyncService {
         String? cursor;
         var deleted = <String>[];
         final expectedCursor = await db.getSyncCursor(book.bookId, 'bookmark');
-        final rows = await api.fetchBookmarks(book.bookId, book.title,
+        checkCancelled();
+        final rows = await service._withRequestCancellation(
+            (token) => api.fetchBookmarks(book.bookId, book.title,
             synckey: expectedCursor,
-            onDelta: (key, ids) { cursor = key; deleted = ids; });
-        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
+            cancelToken: token,
+            onDelta: (key, ids) { cursor = key; deleted = ids; }));
+        checkCancelled();
         await db.applySyncDelta(book.bookId, 'bookmark', rows.map((r) => r.toJson()).toList(), deleted, cursor,
-          expectedCursor: expectedCursor);
+          expectedCursor: expectedCursor, checkCancelled: checkCancelled);
         record(book.bookId, 'bookmark', [...rows.map((r) => r.bookmarkId), ...deleted]);
         return rows.length;
       },
@@ -208,24 +273,28 @@ class SyncService {
         String? cursor;
         var deleted = <String>[];
         final expectedCursor = await db.getSyncCursor(book.bookId, 'note');
-        final rows = await api.fetchNotes(book.bookId, book.title,
+        checkCancelled();
+        final rows = await service._withRequestCancellation(
+            (token) => api.fetchNotes(book.bookId, book.title,
             synckey: expectedCursor,
-            onDelta: (key, ids) { cursor = key; deleted = ids; });
-        if (!db.isActive || api.syncCancelled) throw StateError('同步已取消');
+            cancelToken: token,
+            onDelta: (key, ids) { cursor = key; deleted = ids; }));
+        checkCancelled();
         await db.applySyncDelta(book.bookId, 'note', rows, deleted, cursor,
-          expectedCursor: expectedCursor);
+          expectedCursor: expectedCursor, checkCancelled: checkCancelled);
         record(book.bookId, 'note', [...rows.map((r) => r['note_id'] as String), ...deleted]);
         return rows.length;
       },
       isCancelled: () => api.syncCancelled || !db.isActive || (isCancelled?.call() ?? false),
       onChanged: () {
-        if (db.isActive && changedItems.isNotEmpty) {
+        if (db.isActive && !api.syncCancelled && changedItems.isNotEmpty) {
           changes.publish(db, kind: SyncChangeKind.items, bookIds: changedBooks,
             itemIds: changedItems, sources: changedSources);
           changedBooks.clear(); changedItems.clear(); changedSources.clear();
         }
       },
     );
+    return service;
   }
 
   Future<T> _request<T>(Future<T> Function() load) async {
@@ -265,6 +334,7 @@ class SyncService {
       try {
         return await load();
       } on DioException catch (e) {
+        if (_isCancelled) throw const SyncCancelledException();
         final status = e.response?.statusCode;
         if (attempt >= 2 || (status != 429 && status != 503 &&
             e.type != DioExceptionType.connectionTimeout &&
@@ -280,41 +350,47 @@ class SyncService {
     }
   }
 
-  Future<BookSyncResult> _syncBook(Book book) async {
+  Future<BookSyncResult> _syncBook(Book book, {BookSyncResult? previous}) async {
     final errors = <String>[];
-    var bookmarks = 0;
-    var notes = 0;
+    var bookmarksSucceeded = previous?.bookmarksSucceeded ?? false;
+    var notesSucceeded = previous?.notesSucceeded ?? false;
+    var bookmarks = bookmarksSucceeded ? previous!.bookmarks : 0;
+    var notes = notesSucceeded ? previous!.notes : 0;
     Future<void> bookmarksTask() async {
+      if (bookmarksSucceeded) return;
       try {
         bookmarks = await _request(() => loadBookmarks(book));
+        bookmarksSucceeded = true;
       } catch (e) {
         errors.add('划线：$e');
       }
     }
     final first = bookmarksTask();
     Future<void> notesTask() async {
-      if (_isCancelled) return;
+      if (_isCancelled || notesSucceeded) return;
       try {
         notes = await _request(() => loadNotes(book));
+        notesSucceeded = true;
       } catch (e) {
         errors.add('笔记：$e');
       }
     }
     await Future.wait([first, notesTask()]);
     if (_isCancelled) errors.add('同步已取消');
-    return BookSyncResult(book, bookmarks, notes, errors);
+    return BookSyncResult(book, bookmarks, notes, errors,
+        bookmarksSucceeded: bookmarksSucceeded, notesSucceeded: notesSucceeded);
   }
 
   Future<SyncResult> syncAll({
     void Function(int total)? onBooks,
     void Function(BookSyncResult result, int processed)? onProgress,
-  }) async {
+  }) => _run(() async {
     try {
       return await _exclusive(() => _syncAll(onBooks: onBooks, onProgress: onProgress));
     } on SyncCancelledException {
       return SyncResult([], 0, cancelled: true);
     }
-  }
+  });
 
   Future<SyncResult> _syncAll({void Function(int total)? onBooks,
     void Function(BookSyncResult result, int processed)? onProgress}) async {
@@ -342,12 +418,17 @@ class SyncService {
     }
   }
 
-  Future<BookSyncResult> retryBook(Book book) => _exclusive(() => _retryBook(book));
+  Future<BookSyncResult> retryBook(Book book, {BookSyncResult? previous}) {
+    if (previous != null && previous.book.bookId != book.bookId) {
+      throw ArgumentError('重试结果与书籍不匹配');
+    }
+    return _run(() => _exclusive(() => _retryBook(book, previous: previous)));
+  }
 
-  Future<BookSyncResult> _retryBook(Book book) async {
+  Future<BookSyncResult> _retryBook(Book book, {BookSyncResult? previous}) async {
     if (_isCancelled) throw const SyncCancelledException();
     try {
-      return await _syncBook(book);
+      return await _syncBook(book, previous: previous);
     } finally {
       onChanged();
     }

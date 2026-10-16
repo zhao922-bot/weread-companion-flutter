@@ -5,13 +5,16 @@ import 'providers/bookshelf_provider.dart';
 import 'providers/notes_provider.dart';
 import 'providers/app_config_provider.dart';
 import 'services/config.dart';
+import 'services/platform_database.dart';
 import 'pages/bookshelf_page.dart';
 import 'pages/notes_page.dart';
 import 'pages/cards_page.dart';
 import 'pages/report_page.dart';
 import 'pages/settings_page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializePlatformDatabase();
   runApp(const WeReadCompanionApp());
 }
 

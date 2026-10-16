@@ -647,7 +647,11 @@ void main() {
       await tester.tap(find.text('导出图片'));
       await waitUntil(() => rotated);
     });
-    await pumpUntil(tester, () => find.textContaining('请勿在导出时旋转屏幕').evaluate().isNotEmpty);
+    // The error appears before asynchronous file cleanup completes. Keep
+    // servicing real I/O until the export spinner stops before settling frames.
+    await pumpUntil(tester, () =>
+      find.textContaining('请勿在导出时旋转屏幕').evaluate().isNotEmpty &&
+      find.text('导出中...').evaluate().isEmpty);
     expect(shared, isFalse);
     await tester.runAsync(() async {
       expect(await directory.list().where((f) => f.path.endsWith('.png')).isEmpty, isTrue);

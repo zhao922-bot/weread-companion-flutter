@@ -7,19 +7,22 @@ import '../providers/app_config_provider.dart';
 import '../services/qr_login_service.dart';
 
 class QrLoginPage extends StatefulWidget {
-  const QrLoginPage({super.key});
+  /// Creates a service owned and disposed by this page.
+  final QrLoginService Function()? serviceFactory;
+  const QrLoginPage({super.key, this.serviceFactory});
 
   @override
   State<QrLoginPage> createState() => _QrLoginPageState();
 }
 
 class _QrLoginPageState extends State<QrLoginPage> {
-  final _service = QrLoginService();
+  late final _service = widget.serviceFactory?.call() ?? QrLoginService();
   CancelToken? _cancelToken;
   String? _confirmUrl;
   String _status = '正在获取二维码…';
   bool _failed = false;
   bool _saving = false;
+  bool _running = false;
 
   @override
   void initState() {
@@ -40,6 +43,8 @@ class _QrLoginPageState extends State<QrLoginPage> {
       mounted && identical(token, _cancelToken) && !token.isCancelled;
 
   Future<void> _startLogin() async {
+    if (_running) return;
+    _running = true;
     final config = context.read<AppConfigProvider>();
     _cancelToken?.cancel('重新扫码');
     final token = CancelToken();
@@ -61,11 +66,12 @@ class _QrLoginPageState extends State<QrLoginPage> {
         },
         onStatus: (status) {
           if (!_isCurrent(token)) return;
-          setState(() => _status = switch (status) {
-                QrLoginStatus.waiting => '待扫码：请使用微信扫描二维码',
-                QrLoginStatus.scanned => '已扫码：请在微信中确认登录',
-                QrLoginStatus.confirmed => '已确认：正在获取登录凭据…',
-              });
+          final next = switch (status) {
+            QrLoginStatus.waiting => '待扫码：请使用微信扫描二维码',
+            QrLoginStatus.scanned => '已扫码：请在微信中确认登录',
+            QrLoginStatus.confirmed => '已确认：正在获取登录凭据…',
+          };
+          if (_status != next) setState(() => _status = next);
         },
       );
       if (!_isCurrent(token)) return;
@@ -75,18 +81,16 @@ class _QrLoginPageState extends State<QrLoginPage> {
         _status = '已确认：正在安全保存凭据并验证账号…';
       });
       await config.loginWithCredentials(credentials);
-      if (!_isCurrent(token)) return;
+      if (!mounted || !_isCurrent(token)) return;
       if (!config.isLoggedIn) {
         throw QrLoginException(config.loginError ?? config.loginStatusText);
       }
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('扫码登录验证成功')),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
       if (!_isCurrent(token)) return;
-      if (error is DioException && CancelToken.isCancel(error)) return;
       setState(() {
         _failed = true;
         _confirmUrl = null;
@@ -98,7 +102,10 @@ class _QrLoginPageState extends State<QrLoginPage> {
       });
     } finally {
       if (mounted && identical(token, _cancelToken)) {
-        setState(() => _saving = false);
+        setState(() {
+          _saving = false;
+          _running = false;
+        });
       }
     }
   }
@@ -112,6 +119,10 @@ class _QrLoginPageState extends State<QrLoginPage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_saving,
+      onPopInvokedWithResult: (didPop, _) {
+        // A popped route stays mounted during its reverse animation.
+        if (didPop) _cancelToken?.cancel('登录页面已退出');
+      },
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F5F5),
         appBar: AppBar(

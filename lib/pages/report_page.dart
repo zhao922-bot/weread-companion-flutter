@@ -29,6 +29,11 @@ class _ReportPageState extends State<ReportPage> {
   @override
   void didUpdateWidget(covariant ReportPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.isActive && oldWidget.isActive && _loading) {
+      _loadRequest++;
+      _refreshPending = true;
+      _loading = false;
+    }
     if (widget.isActive && !oldWidget.isActive && _refreshPending) _loadStats();
   }
 
@@ -56,6 +61,7 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _loadStats() async {
+    if (!mounted) return;
     if (!widget.isActive) { _refreshPending = true; return; }
     _refreshPending = false;
     final request = ++_loadRequest;
@@ -63,9 +69,9 @@ class _ReportPageState extends State<ReportPage> {
     try {
       final db = DatabaseService.instance;
       bool isCurrent() => mounted && request == _loadRequest && db.isActive;
-      final stats = await db.getReportStats();
-      if (!isCurrent()) return;
       final now = DateTime.now();
+      final stats = await db.getReportStats(now: now);
+      if (!isCurrent()) return;
       final months = <DateTime, int>{
         for (int i = 5; i >= 0; i--) DateTime(now.year, now.month - i): 0,
       };
@@ -74,7 +80,6 @@ class _ReportPageState extends State<ReportPage> {
         months[date] = item['total'] as int;
       }
 
-      if (!isCurrent()) return;
       setState(() {
         _totalBooks = stats['totalBooks'] as int;
         _readBooks = stats['finishedBooks'] as int;

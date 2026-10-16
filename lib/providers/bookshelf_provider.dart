@@ -21,8 +21,13 @@ class BookshelfProvider extends ChangeNotifier {
   bool _refreshPending = true;
 
   Future<void> setActive(bool active) async {
+    if (_disposed) return;
     _active = active;
-    if (!active && _loading) _refreshPending = true;
+    if (!active && _loading) {
+      _refreshPending = true;
+      _request++;
+      _loading = false;
+    }
     if (active && _refreshPending) await loadBooks();
   }
   bool _disposed = false;
@@ -98,6 +103,7 @@ class BookshelfProvider extends ChangeNotifier {
   /// [config] 可选，传入主 AppConfig 实例以保持一致性
   /// 返回同步结果信息，供 UI 显示
   Future<String> syncFromServer({AppConfig? config}) async {
+    if (_disposed) throw StateError('书架会话已结束');
     final revision = _sessionRevision;
     _loading = true;
     _error = null;

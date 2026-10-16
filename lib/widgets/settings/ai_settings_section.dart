@@ -52,7 +52,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   }
 
   void _onConfigChanged() {
-    if (!mounted) return;
+    // dispose removes this synchronous listener before releasing controllers.
     setState(_syncConfig);
   }
 

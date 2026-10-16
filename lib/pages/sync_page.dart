@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
+import '../services/config.dart';
 import '../services/sync_service.dart';
 
 /// 同步进度页
 class SyncPage extends StatefulWidget {
   final SyncResult? initialResult;
-  const SyncPage({super.key, this.initialResult});
+  final Future<SyncService> Function({AppConfig? config,
+      bool Function()? isCancelled}) serviceConnector;
+  const SyncPage({super.key, this.initialResult,
+      this.serviceConnector = SyncService.connect});
 
   @override
   State<SyncPage> createState() => _SyncPageState();
@@ -24,6 +28,10 @@ class _SyncPageState extends State<SyncPage> {
   SyncService? _service;
   SyncResult? _result;
   final Map<int, BookSyncResult> _retryLogs = {};
+  int _operation = 0;
+  int? _sessionRevision;
+  late AppConfigProvider _config;
+  bool _scrollScheduled = false;
 
   final ScrollController _logScrollController = ScrollController();
 
@@ -33,16 +41,52 @@ class _SyncPageState extends State<SyncPage> {
     if (widget.initialResult != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final config = context.read<AppConfigProvider>();
-        final revision = config.sessionRevision;
-        _service = SyncService.current(isCancelled: () =>
-            _cancelled || !mounted || revision != config.sessionRevision);
         _result = widget.initialResult;
         _totalBooks = _result!.totalBooks;
         _syncedBooks = _result!.books.length;
         _showResult();
       });
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _config = context.watch<AppConfigProvider>();
+    final revision = _config.sessionRevision;
+    if (_sessionRevision != null && _sessionRevision != revision) {
+      _service?.cancel();
+      _service = null;
+      _operation++;
+      _cancelled = true;
+      _syncing = false;
+      _result = null;
+      _logs.clear();
+      _retryLogs.clear();
+      _totalBooks = _syncedBooks = _totalBookmarks = _totalNotes = 0;
+      _error = '账号已切换，请重新同步';
+    }
+    _sessionRevision = revision;
+  }
+
+  bool _isCurrent(int operation, int revision) => mounted &&
+      operation == _operation && revision == _config.sessionRevision;
+
+  Future<SyncService?> _connect(int operation, int revision) async {
+    if (!_config.isLoggedIn && !await _config.verifyForSync()) {
+      if (_isCurrent(operation, revision) && !_cancelled) {
+        _error = _config.loginError ?? '同步需要联网并验证登录';
+      }
+      return null;
+    }
+    if (!_isCurrent(operation, revision) || _cancelled) return null;
+    final service = await widget.serviceConnector(config: _config.config,
+        isCancelled: () => _cancelled || !_isCurrent(operation, revision));
+    if (!_isCurrent(operation, revision) || _cancelled) {
+      service.cancel();
+      return null;
+    }
+    return service;
   }
 
   @override
@@ -53,14 +97,21 @@ class _SyncPageState extends State<SyncPage> {
     super.dispose();
   }
 
-  void _addLog(String msg) {
+  void _runMounted(VoidCallback action) {
     if (!mounted) return;
+    action();
+  }
+
+  void _addLog(String msg) => _runMounted(() {
     setState(() {
       _logs.add(msg);
     });
-    // 自动滚动到底部
+    // Multiple progress messages in one frame need only one scroll animation.
+    if (_scrollScheduled) return;
+    _scrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_logScrollController.hasClients) {
+      _scrollScheduled = false;
+      if (mounted && _logScrollController.hasClients) {
         _logScrollController.animateTo(
           _logScrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 200),
@@ -68,9 +119,12 @@ class _SyncPageState extends State<SyncPage> {
         );
       }
     });
-  }
+  });
 
   Future<void> _startSync() async {
+    if (!mounted || _syncing || !_config.canVerifyForSync) return;
+    final operation = ++_operation;
+    final revision = _config.sessionRevision;
     _service = null;
     setState(() {
       _syncing = true;
@@ -86,46 +140,33 @@ class _SyncPageState extends State<SyncPage> {
     });
 
     try {
-      final appConfig = context.read<AppConfigProvider>();
-      final revision = appConfig.sessionRevision;
-      final config = appConfig.config;
-
-      if (!appConfig.isLoggedIn && !await appConfig.verifyForSync()) {
-        if (!mounted) return;
-        setState(() {
-          _error = appConfig.loginError ?? '同步需要联网并验证登录';
-          _syncing = false;
-        });
-        return;
-      }
-
-      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
+      final service = await _connect(operation, revision);
+      if (service == null) return;
+      _service = service;
       _addLog('🚀 开始同步...');
-
-      _service = await SyncService.connect(config: config, isCancelled: () =>
-          _cancelled || !mounted || revision != appConfig.sessionRevision);
-      if (_cancelled || !mounted || revision != appConfig.sessionRevision) return;
-
       _addLog('📚 正在同步书架...');
-      final result = await _service!.syncAll(
+      final result = await service.syncAll(
         onBooks: (total) {
+          if (!_isCurrent(operation, revision)) return;
           _totalBooks = total;
           _addLog('✅ 书架同步完成，共 $total 本书');
         },
         onProgress: (book, processed) {
+          if (!_isCurrent(operation, revision)) return;
           _syncedBooks = processed;
           _addLog('📖 [$processed/$_totalBooks] ${book.book.title}');
           _addLog('   ✏️ ${book.bookmarks} 条划线 / 📝 ${book.notes} 条笔记');
         },
       );
-      if (!mounted || revision != appConfig.sessionRevision) return;
+      if (!_isCurrent(operation, revision)) return;
       _result = result;
       _showResult();
     } catch (e) {
+      if (!_isCurrent(operation, revision)) return;
       _error = e.toString();
       _addLog('❌ 同步失败: $e');
     } finally {
-      if (mounted) setState(() => _syncing = false);
+      if (_isCurrent(operation, revision)) setState(() => _syncing = false);
     }
   }
 
@@ -142,29 +183,67 @@ class _SyncPageState extends State<SyncPage> {
   }
 
   Future<void> _retryBook(BookSyncResult failure) async {
-    if (_syncing || _service == null) return;
-    _service!.resetCancellation();
+    if (!mounted || _syncing || !_config.canVerifyForSync ||
+        _result?.failures.contains(failure) != true) {
+      return;
+    }
+    final operation = ++_operation;
+    final revision = _config.sessionRevision;
+    _service = null;
     setState(() {
       _syncing = true;
       _cancelled = false;
+      _error = null;
     });
     try {
-      final retried = await _service!.retryBook(failure.book);
-      if (!mounted) return;
+      final service = await _connect(operation, revision);
+      if (service == null) {
+        if (_isCurrent(operation, revision) && _error != null) _addLog('❌ 重试失败：$_error');
+        return;
+      }
+      _service = service;
+      final retried = await service.retryBook(failure.book, previous: failure);
+      if (!_isCurrent(operation, revision)) return;
       _result = _result!.replace(retried);
       _showResult();
     } catch (e) {
+      if (!_isCurrent(operation, revision)) return;
       _addLog('❌ 重试失败：$e');
     } finally {
-      if (mounted) setState(() => _syncing = false);
+      if (_isCurrent(operation, revision)) setState(() => _syncing = false);
     }
   }
+
+  void _cancelSync() => _runMounted(() {
+    setState(() => _cancelled = true);
+    _service?.cancel();
+    if (_service == null) {
+      // Verification may still be pending; invalidate its UI continuation now.
+      _operation++;
+      _syncing = false;
+      _error = '同步已取消';
+      _addLog('⚠️ 同步已取消');
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
     final progress = _totalBooks > 0 ? _syncedBooks / _totalBooks : 0.0;
     final appConfig = context.watch<AppConfigProvider>();
 
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          _operation++;
+          _cancelled = true;
+          _service?.cancel();
+        }
+      },
+      child: _buildContent(progress, appConfig),
+    );
+  }
+
+  Widget _buildContent(double progress, AppConfigProvider appConfig) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -217,10 +296,7 @@ class _SyncPageState extends State<SyncPage> {
                   width: double.infinity,
                   child: _syncing
                       ? OutlinedButton.icon(
-                          onPressed: () {
-                            setState(() => _cancelled = true);
-                            _service?.cancel();
-                          },
+                          onPressed: _cancelSync,
                           icon: const Icon(Icons.stop_rounded),
                           label: const Text('取消同步'),
                           style: OutlinedButton.styleFrom(
@@ -230,7 +306,7 @@ class _SyncPageState extends State<SyncPage> {
                           ),
                         )
                       : FilledButton.icon(
-                           onPressed: appConfig.isBusy ? null : _startSync,
+                           onPressed: appConfig.canVerifyForSync ? _startSync : null,
                           icon: const Icon(Icons.sync_rounded),
                            label: Text(appConfig.needsOnlineSync
                                ? '需要联网 · 验证并同步'
@@ -268,6 +344,7 @@ class _SyncPageState extends State<SyncPage> {
                       itemCount: _logs.length,
                       itemBuilder: (context, index) {
                         final log = _logs[index];
+                        final failure = _retryLogs[index];
                         Color color = Colors.grey[300]!;
                         if (log.startsWith('✅') || log.startsWith('🎉')) color = const Color(0xFF4CAF50);
                         if (log.startsWith('❌')) color = const Color(0xFFFF5252);
@@ -277,8 +354,8 @@ class _SyncPageState extends State<SyncPage> {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
                           child: GestureDetector(
-                            onTap: !_syncing && _retryLogs.containsKey(index)
-                                ? () => _retryBook(_retryLogs[index]!) : null,
+                            onTap: !_syncing && appConfig.canVerifyForSync && failure != null
+                                ? () => _retryBook(failure) : null,
                             child: Text(
                               log,
                               style: TextStyle(

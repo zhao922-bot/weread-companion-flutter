@@ -46,6 +46,8 @@ class LegacyDatabase implements Database {
   final String version;
   LegacyDatabase(this.delegate, this.version);
   @override
+  bool get isOpen => delegate.isOpen;
+  @override
   Future<List<Map<String, Object?>>> query(String table, {bool? distinct,
     List<String>? columns, String? where, List<Object?>? whereArgs,
     String? groupBy, String? having, String? orderBy, int? limit, int? offset}) =>
@@ -73,6 +75,8 @@ class CloseFailureDatabase implements Database {
   final Database delegate;
   int closes = 0;
   CloseFailureDatabase(this.delegate);
+  @override
+  bool get isOpen => delegate.isOpen;
   @override
   Future<void> close() async { closes++; throw StateError('close failed'); }
   @override
@@ -361,7 +365,7 @@ void main() {
     expect(db.isActive, isTrue);
   });
 
-  test('close失败仍清理连接和会话，重复close不再关闭旧连接', () async {
+  test('close失败立即结束会话，但保留句柄供重试关闭', () async {
     final factory = FaultFactory(databaseFactory)..failClose = true;
     databaseFactory = factory;
     await db.database;
@@ -371,8 +375,11 @@ void main() {
     expect(db.isActive, isFalse);
     expect(() => DatabaseService.instance, throwsStateError);
     await expectLater(db.database, throwsStateError);
+    await expectLater(db.close(), throwsStateError);
+    expect(wrapper.closes, 2);
+    await wrapper.delegate.close();
     await db.close();
-    expect(wrapper.closes, 1);
+    expect(wrapper.closes, 2);
     factory.failClose = false;
     await DatabaseService.selectAccount('456');
     expect(DatabaseService.instance.accountId, '456');

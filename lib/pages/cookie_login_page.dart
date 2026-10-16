@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
 import 'qr_login_page.dart';
+import '../services/qr_login_service.dart';
 
 /// 登录页面 —— Cookie 导入及扫码登录入口
 class CookieLoginPage extends StatefulWidget {
-  const CookieLoginPage({super.key});
+  final QrLoginService Function()? qrServiceFactory;
+  const CookieLoginPage({super.key, this.qrServiceFactory});
 
   @override
   State<CookieLoginPage> createState() => _CookieLoginPageState();
@@ -16,6 +18,9 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
   final TextEditingController _controller = TextEditingController();
   bool _obscure = true;
   bool _submitting = false;
+  int _pasteRequest = 0;
+
+  bool get _isActive => mounted && (ModalRoute.of(context)?.isCurrent ?? true);
 
   @override
   void dispose() {
@@ -24,17 +29,39 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
   }
 
   Future<void> _pasteFromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (!mounted) return;
-    final text = data?.text?.trim() ?? '';
-    if (text.isNotEmpty) {
-      setState(() => _controller.text = text);
-    } else {
-      _showMsg('剪贴板为空', isError: true);
+    if (_submitting || !_isActive) return;
+    final request = ++_pasteRequest;
+    final input = _controller.value;
+    bool isCurrent() => _isActive && !_submitting && request == _pasteRequest &&
+        _controller.value == input;
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (!isCurrent()) return;
+      final text = data?.text?.trim() ?? '';
+      if (text.isNotEmpty) {
+        _controller.text = text;
+      } else {
+        _showMsg('剪贴板为空', isError: true);
+      }
+    } catch (_) {
+      if (isCurrent()) _showMsg('读取剪贴板失败，请重试', isError: true);
+    }
+  }
+
+  Future<void> _copyCommand() async {
+    try {
+      await Clipboard.setData(const ClipboardData(text: 'copy(document.cookie)'));
+      if (!mounted || !_isActive) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('代码已复制'), duration: Duration(seconds: 1)),
+      );
+    } catch (_) {
+      if (mounted) _showMsg('复制失败，请重试', isError: true);
     }
   }
 
   Future<void> _submit() async {
+    if (!_isActive || context.read<AppConfigProvider>().isBusy) return;
     final cookie = _controller.text.trim();
 
     if (cookie.isEmpty) {
@@ -42,11 +69,12 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
       return;
     }
     if (_submitting) return;
+    _pasteRequest++;
     final appConfig = context.read<AppConfigProvider>();
     setState(() => _submitting = true);
     try {
       await appConfig.loginWithCookie(cookie);
-      if (!mounted) return;
+      if (!mounted || !_isActive) return;
       if (appConfig.isLoggedIn) {
         _showMsg('验证成功');
         Navigator.pop(context);
@@ -64,13 +92,31 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
   }
 
   void _showMsg(String msg, {bool isError = false}) {
+    if (!_isActive) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: isError ? Colors.red : null),
     );
   }
 
+  Future<void> _openQrLogin() async {
+    if (!_isActive || _submitting || context.read<AppConfigProvider>().isBusy) return;
+    _pasteRequest++;
+    final navigator = Navigator.of(context);
+    final success = await navigator.push<bool>(MaterialPageRoute(
+      builder: (_) => QrLoginPage(serviceFactory: widget.qrServiceFactory),
+    ));
+    if (_isActive && success == true) navigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_submitting,
+      child: _buildForm(context),
+    );
+  }
+
+  Widget _buildForm(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -147,7 +193,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.paste_rounded, size: 20),
-                          onPressed: _pasteFromClipboard,
+                          onPressed: _submitting ? null : _pasteFromClipboard,
                           tooltip: '从剪贴板粘贴',
                         ),
                       ],
@@ -180,14 +226,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           OutlinedButton.icon(
             onPressed: _submitting || context.watch<AppConfigProvider>().isBusy
                 ? null
-                : () async {
-                    final navigator = Navigator.of(context);
-                    final success = await navigator.push<bool>(
-                      MaterialPageRoute(builder: (_) => const QrLoginPage()),
-                    );
-                    if (!mounted) return;
-                    if (success == true) navigator.pop();
-                  },
+                : _openQrLogin,
             icon: const Icon(Icons.qr_code_scanner),
             label: const Text('扫码登录'),
           ),
@@ -236,12 +275,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           _step(4, '复制 Cookie', '输入以下代码并回车：'),
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () {
-              Clipboard.setData(const ClipboardData(text: 'copy(document.cookie)'));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('代码已复制'), duration: Duration(seconds: 1)),
-              );
-            },
+            onTap: _copyCommand,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(

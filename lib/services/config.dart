@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,45 @@ class AppConfig {
   static const _aiConfigKey = 'weread_ai_config';
   String? _pendingTrustedAccountId;
   final Map<String, String> _persistedSecrets = {};
+  static Future<void>? _credentialWriteTail;
+  static Future<void>? _trustedAccountWriteTail;
+  int _trustedAccountRevision = 0;
+  static int _trustedAccountGeneration = 0;
+  int? _pendingTrustedAccountGeneration;
+
+  static Future<void> _serializeTrustedAccountWrite(Future<void> Function() action) async {
+    final previous = _trustedAccountWriteTail;
+    final done = Completer<void>();
+    _trustedAccountWriteTail = done.future;
+    try {
+      if (previous != null) await previous;
+      await action();
+    } finally {
+      if (identical(_trustedAccountWriteTail, done.future)) _trustedAccountWriteTail = null;
+      done.complete();
+    }
+  }
+
+  // Secure storage is shared even by distinct AppConfig instances. Logout and
+  // a new login must run after an older refresh write has settled.
+  static Future<void> _serializeCredentialWrite(Future<void> Function() action) async {
+    final previous = _credentialWriteTail;
+    final done = Completer<void>();
+    _credentialWriteTail = done.future;
+    try {
+      if (previous != null) await previous;
+      await action();
+    } finally {
+      if (identical(_credentialWriteTail, done.future)) _credentialWriteTail = null;
+      done.complete(); // Failure must not poison the next write or cleanup.
+    }
+  }
+
+  Future<void> _saveCredentials(String value) => _serializeCredentialWrite(() async {
+    // Another config instance may have changed this shared record.
+    _persistedSecrets.remove(_keys['credentials']!);
+    await _saveSecret(_keys['credentials']!, value);
+  });
 
   AppConfig({
     this.cookie = '',
@@ -44,6 +84,7 @@ class AppConfig {
 
   Future<void> loadLogoutPending() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     logoutPending = prefs.getBool(_logoutPendingKey) ?? false;
   }
 
@@ -63,12 +104,12 @@ class AppConfig {
     logoutPending = false;
   }
 
-  Future<void> saveCredentials() => _saveSecret(_keys['credentials']!,
+  Future<void> saveCredentials() => _saveCredentials(
       credentials == null ? '' : jsonEncode(credentials!.toJson()));
 
   /// Persist a rotated credential before publishing it to request interceptors.
   Future<void> persistCredentials(Credentials next) =>
-      _saveSecret(_keys['credentials']!, jsonEncode(next.toJson()));
+      _saveCredentials(jsonEncode(next.toJson()));
 
   Future<void> retryPendingCredentials() async {
     final pending = pendingCredentials;
@@ -97,10 +138,18 @@ class AppConfig {
       // 写入成功后才删除旧值，迁移失败时可重试。
       await _secureStorage.write(key: key, value: legacy);
     }
-    if (legacy != null) await prefs.remove(key);
+    if (legacy != null) await _removePreference(prefs, key);
     final value = stored ?? legacy ?? '';
     _persistedSecrets[key] = value;
     return value;
+  }
+
+  Future<void> _removePreference(SharedPreferences prefs, String key) async {
+    // A false result still removes the cached value. Always retry the actual
+    // removal so logout/migration cannot report success with plaintext on disk.
+    if (!await prefs.remove(key)) {
+      throw StateError('本地配置清除失败，请重试');
+    }
   }
 
   Future<void> _saveSecret(String key, String value) async {
@@ -116,22 +165,36 @@ class AppConfig {
 
   /// 本地账号恢复独立于安全存储，凭据暂时不可读时仍可浏览缓存。
   Future<void> loadTrustedAccount() async {
-    final pending = _pendingTrustedAccountId;
-    if (pending != null) {
-      await trustAccount(pending);
-      return;
+    while (true) {
+      // Join an in-flight write instead of enqueueing the same pending value.
+      final writing = _trustedAccountWriteTail;
+      if (writing != null) { await writing; continue; }
+      final pending = _pendingTrustedAccountId;
+      if (pending != null &&
+          _pendingTrustedAccountGeneration == _trustedAccountGeneration) {
+        await trustAccount(pending);
+        continue;
+      }
+      _pendingTrustedAccountId = null;
+      _pendingTrustedAccountGeneration = null;
+      final generation = _trustedAccountGeneration;
+      await _serializeTrustedAccountWrite(() async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.reload();
+        if (generation != _trustedAccountGeneration) return;
+        final trustedId = prefs.getString(_keys['trustedAccountId']!);
+        trustedAccountId = trustedId != null &&
+                RegExp(r'^[0-9]+$').hasMatch(trustedId) && trustedId != '0'
+            ? trustedId : null;
+      });
+      // A newer login/cleanup queued while reload was pending. Read its result.
+      if (generation == _trustedAccountGeneration) return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    final trustedId = prefs.getString(_keys['trustedAccountId']!);
-    trustedAccountId = trustedId != null &&
-            RegExp(r'^[0-9]+$').hasMatch(trustedId) &&
-            trustedId != '0'
-        ? trustedId
-        : null;
   }
 
   Future<void> load() async {
+    await loadLogoutPending();
+    if (logoutPending) throw StateError('请先完成退出清理');
     await retryPendingCredentials();
     final prefs = await SharedPreferences.getInstance();
     // Reload preferences before secret migration removes legacy plaintext.
@@ -216,29 +279,36 @@ class AppConfig {
     await Future.wait([
       _saveSecret(_keys['cookie']!, cookie), saveCredentials(),
     ]);
-    if (prefs.containsKey(_keys['cookie']!)) await prefs.remove(_keys['cookie']!);
+    await _removePreference(prefs, _keys['cookie']!);
     await _saveAiConfig(prefs);
   }
 
   Future<void> clear() async {
-    await clearTrustedAccount();
     cookie = '';
     credentials = null;
     pendingCredentials = null;
     credentialsInvalid.value = false;
+    credentialRevalidation.value = null;
     apiKey = '';
     baseUrl = 'https://api.deepseek.com';
     modelName = 'deepseek-chat';
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keys['cookie']!);
-    await prefs.remove(_keys['apiKey']!);
-    await prefs.remove(_keys['baseUrl']!);
-    await prefs.remove(_keys['modelName']!);
-    await _secureStorage.delete(key: _keys['cookie']!);
-    await _secureStorage.delete(key: _keys['credentials']!);
-    await _secureStorage.delete(key: _keys['apiKey']!);
-    await _secureStorage.delete(key: _aiConfigKey);
+    final failures = <Object>[];
+    Future<void> clean(Future<void> Function() action) async {
+      try { await action(); } catch (error) { failures.add(error); }
+    }
+    // Each store/key is independent. An unavailable preference or secret must
+    // not prevent deleting the remaining credentials, including mobile tokens.
+    await clean(clearTrustedAccount);
+    for (final name in ['cookie', 'apiKey', 'baseUrl', 'modelName']) {
+      await clean(() async => _removePreference(
+          await SharedPreferences.getInstance(), _keys[name]!));
+    }
+    await clean(() => _secureStorage.delete(key: _keys['cookie']!));
+    await clean(() => _serializeCredentialWrite(() => _secureStorage.delete(key: _keys['credentials']!)));
+    await clean(() => _secureStorage.delete(key: _keys['apiKey']!));
+    await clean(() => _secureStorage.delete(key: _aiConfigKey));
     _persistedSecrets.clear();
+    if (failures.isNotEmpty) throw StateError('凭据和配置清理未完成，请重试');
   }
 
   /// 仅在服务器确认账号归属后调用，不从 Cookie 推导可信记录。
@@ -246,22 +316,37 @@ class AppConfig {
     if (!RegExp(r'^[0-9]+$').hasMatch(accountId) || accountId == '0') {
       throw ArgumentError('无效的账号 ID');
     }
-    final prefs = await SharedPreferences.getInstance();
+    final revision = ++_trustedAccountRevision;
+    final generation = ++_trustedAccountGeneration;
     _pendingTrustedAccountId = accountId;
-    if (!await prefs.setString(_keys['trustedAccountId']!, accountId)) {
-      throw StateError('可信账号保存失败');
+    _pendingTrustedAccountGeneration = generation;
+    await _serializeTrustedAccountWrite(() async {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setString(_keys['trustedAccountId']!, accountId)) {
+        throw StateError('可信账号保存失败');
+      }
+    });
+    if (revision == _trustedAccountRevision && generation == _trustedAccountGeneration) {
+      _pendingTrustedAccountId = null;
+      _pendingTrustedAccountGeneration = null;
+      trustedAccountId = accountId;
     }
-    _pendingTrustedAccountId = null;
-    trustedAccountId = accountId;
   }
 
   Future<void> clearTrustedAccount() async {
+    final revision = ++_trustedAccountRevision;
+    final generation = ++_trustedAccountGeneration;
     _pendingTrustedAccountId = null;
-    final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.remove(_keys['trustedAccountId']!)) {
-      throw StateError('可信账号清除失败');
+    _pendingTrustedAccountGeneration = null;
+    await _serializeTrustedAccountWrite(() async {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.remove(_keys['trustedAccountId']!)) {
+        throw StateError('可信账号清除失败');
+      }
+    });
+    if (revision == _trustedAccountRevision && generation == _trustedAccountGeneration) {
+      trustedAccountId = null;
     }
-    trustedAccountId = null;
   }
 
   Map<String, dynamic> toJson() => {

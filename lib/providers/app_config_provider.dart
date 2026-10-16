@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../services/config.dart';
 import '../services/database.dart';
@@ -20,7 +22,10 @@ class AppConfigProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _configLoadError;
   int _sessionRevision = 0;
-  bool _canBrowseLocal = false;
+  DatabaseService? _localDatabase;
+  bool _disposed = false;
+  Future<bool>? _syncVerification;
+  CancelToken? _verificationCancellation;
   final WeReadApi Function(AppConfig) _loginApi;
   int get sessionRevision => _sessionRevision;
 
@@ -49,28 +54,35 @@ class AppConfigProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _verificationCancellation?.cancel('配置会话已结束');
     config.credentialRevalidation.removeListener(_requireRevalidation);
     config.credentialsInvalid.removeListener(_invalidateCredentials);
     super.dispose();
   }
 
-  bool get isLoggedIn => _loginStatus == LoginStatus.verified;
-  bool get canBrowseLocal => _canBrowseLocal;
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  bool get isLoggedIn => loginStatus == LoginStatus.verified;
+  bool get canBrowseLocal => _localDatabase?.isActive == true;
   bool get needsOnlineSync => canBrowseLocal && !isLoggedIn;
   bool get hasSavedCredentials => config.isConfigured;
   bool get cleanupPending => config.logoutPending;
   bool get isBusy => _busy;
-  LoginStatus get loginStatus => _loginStatus;
+  bool get canVerifyForSync => !_disposed && !cleanupPending &&
+      (!isBusy || _syncVerification != null);
+  LoginStatus get loginStatus => _loginStatus == LoginStatus.verified && !canBrowseLocal
+      ? LoginStatus.saved : _loginStatus;
   String? get loginError => _loginError;
-  String get loginStatusText => _loginStatus == LoginStatus.invalid
-      ? '凭据失效 · 请重新登录'
-      : needsOnlineSync
-      ? '本地数据可浏览 · 需要联网验证后同步'
-      : switch (_loginStatus) {
+  String get loginStatusText => switch (loginStatus) {
+          LoginStatus.invalid => '凭据失效 · 请重新登录',
+          _ when needsOnlineSync => '本地数据可浏览 · 需要联网验证后同步',
           LoginStatus.signedOut => '未登录',
           LoginStatus.saved => '已保存凭据',
           LoginStatus.verified => '验证成功',
-          LoginStatus.invalid => '凭据失效',
           LoginStatus.cleanupPending => '清理未完成',
         };
   String get userName => _userName;
@@ -81,7 +93,7 @@ class AppConfigProvider extends ChangeNotifier {
 
   /// 初始化：从存储加载配置
   Future<void> init() async {
-    if (_busy) return;
+    if (_busy || _disposed) return;
     _busy = true;
     _isLoading = true;
     _isLoaded = false;
@@ -90,6 +102,7 @@ class AppConfigProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await config.loadLogoutPending();
+      if (_disposed) return;
       if (config.logoutPending) {
         _isLoaded = true;
         _isLoading = false;
@@ -98,18 +111,30 @@ class AppConfigProvider extends ChangeNotifier {
       }
       Future<void> restoreLocal() async {
         await config.loadTrustedAccount();
+        if (_disposed) return;
         final trustedId = config.trustedAccountId;
         if (trustedId != null) {
-          await DatabaseService.selectAccount(trustedId);
-          await DatabaseService.instance.database;
-          _canBrowseLocal = true;
+          final database = await DatabaseService.selectAccount(trustedId,
+              isCancelled: () => _disposed);
+          try {
+            await database.database;
+            if (_disposed || !database.isActive) {
+              throw StateError('配置会话已结束');
+            }
+          } catch (_) {
+            if (database.isActive) await DatabaseService.endSession();
+            rethrow;
+          }
+          _localDatabase = database;
           notifyListeners();
           // Deliver the local-ready state before completing configuration load.
           await Future<void>.delayed(Duration.zero);
         }
       }
       await restoreLocal();
+      if (_disposed) return;
       await config.load();
+      if (_disposed) return;
       _isLoaded = true;
       _isLoading = false;
       notifyListeners();
@@ -160,6 +185,10 @@ class AppConfigProvider extends ChangeNotifier {
           _userName = Uri.decodeComponent(trimmed.substring(8));
         } on FormatException {
           _userName = '微信用户';
+        } on ArgumentError {
+          // Invalid percent escapes are ArgumentError; malformed UTF-8 is
+          // FormatException. A display name must not invalidate a login.
+          _userName = '微信用户';
         }
         break;
       }
@@ -167,69 +196,119 @@ class AppConfigProvider extends ChangeNotifier {
   }
 
   void _beginOperation() {
+    if (_disposed) throw StateError('配置会话已结束');
     if (_busy) throw StateError('配置操作进行中，请稍后重试');
     _busy = true;
     notifyListeners();
   }
 
-  Future<void> _verifyCredentials() async {
+  Future<bool> _verifyCredentials() async {
+    if (_disposed) return false;
+    final revision = _sessionRevision;
+    final cookie = config.cookie;
     final accountId = config.credentials?.vid ?? _accountId(config.cookie);
     if (accountId == null) {
       _loginStatus = LoginStatus.invalid;
       _loginError = 'Cookie 缺少有效的 wr_vid，请重新导入';
-      return;
+      return false;
     }
-    if (_canBrowseLocal && config.trustedAccountId != accountId) {
+    if (canBrowseLocal && config.trustedAccountId != accountId) {
       _loginStatus = LoginStatus.invalid;
       _loginError = '本地数据可浏览；凭据与可信账号不匹配，请重新登录后同步';
-      return;
+      return false;
     }
     final api = _loginApi(config);
+    final cancellation = CancelToken();
+    _verificationCancellation = cancellation;
+    DatabaseService? opened;
+    String? localFailure;
+    bool isCurrent() => !_disposed && !cancellation.isCancelled &&
+        !api.syncCancelled && !cleanupPending && revision == _sessionRevision &&
+        (config.credentials?.vid ?? _accountId(config.cookie)) == accountId &&
+        (config.credentials != null || config.cookie == cookie);
+    void checkSession() {
+      if (!isCurrent()) throw StateError('配置会话已结束');
+    }
     try {
-      final valid = await api.checkLogin();
+      final valid = await api.checkLogin(cancelToken: cancellation);
+      checkSession();
       if (!valid || api.authenticatedAccountId != accountId) {
         _loginStatus = LoginStatus.invalid;
         _loginError = '凭据失效或账号不匹配，请重新登录';
-        return;
+        return false;
       }
-      if (!_canBrowseLocal || DatabaseService.instance.accountId != accountId) {
-        await DatabaseService.selectAccount(accountId);
-        await DatabaseService.instance.database;
+      localFailure = '本地数据库暂时无法打开，请重试';
+      if (!canBrowseLocal || _localDatabase!.accountId != accountId) {
+        opened = await DatabaseService.selectAccount(accountId,
+            isCancelled: () => !isCurrent());
+        checkSession();
+        await opened.database;
       }
+      checkSession();
+      final database = opened ?? _localDatabase!;
+      database.requireActive();
+      localFailure = '登录状态保存失败，请检查本地存储后重试';
       await config.trustAccount(accountId);
-      _canBrowseLocal = true;
+      checkSession();
+      database.requireActive();
+      _localDatabase = database;
       _loginStatus = LoginStatus.verified;
       config.credentialsInvalid.value = false;
       _loginError = null;
       _userName = '微信用户';
       _extractUserName();
+      return true;
     } catch (_) {
       // 首次验证若未能持久化可信账号，不留下可访问的数据库会话。
-      if (!_canBrowseLocal) await DatabaseService.endSession();
+      // Only close the database created by this attempt, never a newer login.
+      var closeFailed = false;
+      if (opened?.isActive == true) {
+        try {
+          await DatabaseService.endSession();
+        } catch (_) {
+          // The inactive handle remains available for the next close attempt.
+          closeFailed = true;
+        }
+      }
+      if (!isCurrent()) return false;
       _loginStatus = config.credentialsInvalid.value ? LoginStatus.invalid : LoginStatus.saved;
       _loginError = config.credentialsInvalid.value
           ? const LoginExpiredException().toString()
-          : config.credentialRevalidation.value ?? (canBrowseLocal
+          : localFailure ?? config.credentialRevalidation.value ?? (canBrowseLocal
           ? '暂时无法联网验证，本地数据可浏览；同步需要联网后重试'
           : '已保存凭据，暂时无法完成验证，请检查网络后重试');
+      if (closeFailed) _loginError = '$_loginError；本地数据库关闭失败，重试时将继续清理';
+      return false;
     } finally {
-      api.dispose();
+      if (identical(_verificationCancellation, cancellation)) {
+        _verificationCancellation = null;
+      }
+      api.disposeAfterRefresh();
     }
   }
 
   /// 离线恢复网络后，可从同步入口重试验证。
-  Future<bool> verifyForSync() async {
-    if (_busy) return false;
-    if (cleanupPending) return false;
-    _beginOperation();
+  Future<bool> verifyForSync() {
+    final pending = _syncVerification;
+    if (pending != null) return pending;
+    if (_disposed || _busy || cleanupPending) return Future.value(false);
+    final done = Completer<bool>();
+    // Publish before notifying listeners, including reentrant sync entries.
+    _syncVerification = done.future;
+    _verifyForSync().then(done.complete, onError: done.completeError);
+    return done.future;
+  }
+
+  Future<bool> _verifyForSync() async {
     try {
+      _beginOperation();
       if (!config.isConfigured) {
         _loginError = '本地数据可浏览；同步需要联网并重新登录';
         return false;
       }
-      await _verifyCredentials();
-      return isLoggedIn;
+      return await _verifyCredentials();
     } finally {
+      _syncVerification = null;
       _busy = false;
       notifyListeners();
     }
@@ -254,14 +333,14 @@ class AppConfigProvider extends ChangeNotifier {
     try {
       WeReadApi.reset();
       AIService.cancelAll();
-      await config.clearTrustedAccount();
-      _canBrowseLocal = false;
+      _localDatabase = null;
       _loginStatus = LoginStatus.signedOut;
       _userName = '';
       _loginError = null;
       _sessionRevision++;
       notifyListeners();
       await DatabaseService.endSession();
+      await config.clearTrustedAccount();
       config.cookie = cookie;
       config.credentials = credentials;
       config.pendingCredentials = null;
@@ -292,7 +371,7 @@ class AppConfigProvider extends ChangeNotifier {
   Future<void> _completeLogout() async {
     WeReadApi.reset();
     AIService.cancelAll();
-    _canBrowseLocal = false;
+    _localDatabase = null;
     _loginStatus = LoginStatus.cleanupPending;
     _userName = '';
     _loginError = null;
@@ -322,7 +401,11 @@ class AppConfigProvider extends ChangeNotifier {
       _loginError = '清理未完成（${failures.join('、')}），请继续清理';
       throw StateError(_loginError!);
     }
-    await config.finishLogout();
+    await clean('退出标记', config.finishLogout);
+    if (failures.isNotEmpty) {
+      _loginError = '清理未完成（${failures.join('、')}），请继续清理';
+      throw StateError(_loginError!);
+    }
     _loginStatus = LoginStatus.signedOut;
     _loginError = null;
   }

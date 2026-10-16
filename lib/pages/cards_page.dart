@@ -3,16 +3,31 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/bookmark.dart';
 import '../services/database.dart';
+import '../services/export_service.dart';
+import '../services/card_image_renderer.dart';
 import '../services/sync_service.dart';
+
+// A bottom sheet can outlive the page that opened it. Share the owner's
+// lifetime, and invalidate an in-flight export even when the user returns.
+class _CardExportScope {
+  bool active = true;
+  int revision = 0;
+
+  void setActive(bool value) {
+    if (active && !value) revision++;
+    active = value;
+  }
+}
 
 class CardsPage extends StatefulWidget {
   final bool isActive;
-  const CardsPage({super.key, this.isActive = true});
+  final CardImageRenderer renderer;
+  const CardsPage({super.key, this.isActive = true,
+    this.renderer = const CardImageRenderer()});
 
   @override
   State<CardsPage> createState() => _CardsPageState();
@@ -31,12 +46,23 @@ class _CardsPageState extends State<CardsPage> {
   List<Bookmark> _allBookmarks = [];
   int _totalCount = 0;
   int _request = 0;
+  String? _loadedQuery;
+  int? _loadedPage;
   bool _exporting = false;
   bool _refreshPending = false;
+  final _exportScope = _CardExportScope();
 
   @override
   void didUpdateWidget(covariant CardsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _exportScope.setActive(widget.isActive);
+    if (!widget.isActive && oldWidget.isActive &&
+        (_loading || _searchTimer?.isActive == true)) {
+      _request++;
+      _searchTimer?.cancel();
+      _refreshPending = true;
+      _loading = false;
+    }
     if (widget.isActive && !oldWidget.isActive && _refreshPending) _loadBookmarks();
   }
 
@@ -52,6 +78,7 @@ class _CardsPageState extends State<CardsPage> {
   @override
   void initState() {
     super.initState();
+    _exportScope.setActive(widget.isActive);
     SyncService.changes.addListener(_onSyncChanged);
     _loadBookmarks();
   }
@@ -65,23 +92,29 @@ class _CardsPageState extends State<CardsPage> {
     if (SyncService.changes.value?.isActive == true) _loadBookmarks();
   }
 
-  Future<void> _loadBookmarks() async {
+  Future<void> _loadBookmarks({bool recount = true}) async {
+    if (!mounted) return;
     if (_exporting || !widget.isActive) {
       _refreshPending = true;
       return;
     }
+    // A sync/refresh during debounce already loads the current query.
+    _searchTimer?.cancel();
     _refreshPending = false;
     final request = ++_request;
     final query = _searchQuery;
+    final selected = _loadedQuery == query && _loadedPage == _currentPage &&
+        _selectedIndex < _allBookmarks.length
+        ? _allBookmarks[_selectedIndex] : null;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final db = DatabaseService.instance;
-      final count = await db.countBookmarks(query: query);
-      if (!widget.isActive) { _refreshPending = true; return; }
+      final count = recount ? await db.countBookmarks(query: query) : _totalCount;
       if (!mounted || request != _request || !db.isActive) return;
+      // didUpdateWidget invalidates _request when a loading page is hidden.
       final totalPages = (count / _itemsPerPage).ceil();
       final page = _currentPage.clamp(1, totalPages > 0 ? totalPages : 1);
       final raw = await db.getAllBookmarks(query: query,
@@ -91,6 +124,11 @@ class _CardsPageState extends State<CardsPage> {
         _currentPage = page;
         _totalCount = count;
         _allBookmarks = raw.map((m) => Bookmark.fromJson(m)).toList();
+        final selectedIndex = selected == null ? -1 : _allBookmarks.indexWhere(
+            (item) => item.bookId == selected.bookId && item.bookmarkId == selected.bookmarkId);
+        _selectedIndex = selectedIndex < 0 ? 0 : selectedIndex;
+        _loadedQuery = query;
+        _loadedPage = page;
         _loading = false;
       });
     } catch (e) {
@@ -104,6 +142,10 @@ class _CardsPageState extends State<CardsPage> {
 
   List<Bookmark> get _pagedBookmarks => _allBookmarks;
 
+  bool get _canChangePage => mounted && widget.isActive && !_exporting &&
+      !_loading && _error == null &&
+      _searchTimer?.isActive != true;
+
   int get _totalPages {
     final pages = (_totalCount / _itemsPerPage).ceil();
     return pages > 0 ? pages : 1;
@@ -111,6 +153,7 @@ class _CardsPageState extends State<CardsPage> {
 
   @override
   void dispose() {
+    _exportScope.setActive(false);
     _searchTimer?.cancel();
     SyncService.changes.removeListener(_onSyncChanged);
     _searchController.dispose();
@@ -128,8 +171,6 @@ class _CardsPageState extends State<CardsPage> {
   @override
   Widget build(BuildContext context) {
     final pagedBookmarks = _pagedBookmarks;
-    final hasSelected = _selectedIndex < pagedBookmarks.length;
-    final selectedBookmark = hasSelected ? pagedBookmarks[_selectedIndex] : null;
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 600;
 
@@ -215,13 +256,13 @@ class _CardsPageState extends State<CardsPage> {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        onPressed: _currentPage > 1
+                        onPressed: _canChangePage && _currentPage > 1
                             ? () {
                                 setState(() {
                                   _currentPage--;
                                   _selectedIndex = 0;
                                 });
-                                _loadBookmarks();
+                                _loadBookmarks(recount: false);
                               }
                             : null,
                         icon: const Icon(Icons.chevron_left_rounded),
@@ -246,13 +287,13 @@ class _CardsPageState extends State<CardsPage> {
                         ),
                       ),
                       IconButton(
-                        onPressed: _currentPage < _totalPages
+                        onPressed: _canChangePage && _currentPage < _totalPages
                             ? () {
                                 setState(() {
                                   _currentPage++;
                                   _selectedIndex = 0;
                                 });
-                                _loadBookmarks();
+                                _loadBookmarks(recount: false);
                               }
                             : null,
                         icon: const Icon(Icons.chevron_right_rounded),
@@ -265,7 +306,7 @@ class _CardsPageState extends State<CardsPage> {
                       ),
                       const SizedBox(width: 4),
                       GestureDetector(
-                        onTap: () => _showJumpToPageDialog(context),
+                        onTap: _canChangePage ? () => _showJumpToPageDialog(context) : null,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
@@ -286,14 +327,14 @@ class _CardsPageState extends State<CardsPage> {
           ),
           // 主内容
           Expanded(
-            child: _buildContent(pagedBookmarks, selectedBookmark, isWide),
+            child: _buildContent(pagedBookmarks, isWide),
           ),
         ],
       )),
     );
   }
 
-  Widget _buildContent(List<Bookmark> pagedBookmarks, Bookmark? selectedBookmark, bool isWide) {
+  Widget _buildContent(List<Bookmark> pagedBookmarks, bool isWide) {
     // 加载中
     if (_loading) {
       return const Center(
@@ -353,10 +394,10 @@ class _CardsPageState extends State<CardsPage> {
                     Icon(Icons.format_quote_rounded, size: 64, color: Colors.grey[300]),
                     const SizedBox(height: 16),
                     Text(
-                      _allBookmarks.isEmpty ? '暂无引文，请先同步书架' : '没有匹配的引文',
+                      _searchQuery.isEmpty ? '暂无引文，请先同步书架' : '没有匹配的引文',
                       style: TextStyle(fontSize: 16, color: Colors.grey[400]),
                     ),
-                    if (_allBookmarks.isEmpty) ...[
+                    if (_searchQuery.isEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
                         '下拉刷新重新加载',
@@ -374,11 +415,11 @@ class _CardsPageState extends State<CardsPage> {
 
     // 正常内容
     return isWide
-        ? _buildWideLayout(pagedBookmarks, selectedBookmark)
+        ? _buildWideLayout(pagedBookmarks, pagedBookmarks[_selectedIndex])
         : _buildNarrowLayout(pagedBookmarks);
   }
 
-  Widget _buildWideLayout(List<Bookmark> pagedBookmarks, Bookmark? selectedBookmark) {
+  Widget _buildWideLayout(List<Bookmark> pagedBookmarks, Bookmark selectedBookmark) {
     return Row(
       children: [
         Expanded(
@@ -392,12 +433,9 @@ class _CardsPageState extends State<CardsPage> {
         ),
         Expanded(
           flex: 1,
-          child: selectedBookmark != null
-              ? _CardPreview(key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
-                  bookmark: selectedBookmark, onExportChanged: _onExportChanged)
-              : Center(
-                  child: Text('选择一条引文', style: TextStyle(color: Colors.grey[400], fontSize: 14)),
-                ),
+          child: _CardPreview(key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
+                  bookmark: selectedBookmark, scope: _exportScope,
+                  renderer: widget.renderer, onExportChanged: _onExportChanged),
         ),
       ],
     );
@@ -509,7 +547,8 @@ class _CardsPageState extends State<CardsPage> {
                   ),
                   Expanded(
                     child: _CardPreview(key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
-                      bookmark: bookmark, onExportChanged: _onExportChanged),
+                      bookmark: bookmark, scope: _exportScope,
+                      renderer: widget.renderer, onExportChanged: _onExportChanged),
                   ),
                 ],
               ),
@@ -521,14 +560,18 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   void _showJumpToPageDialog(BuildContext context) {
-    final controller = TextEditingController();
+    if (!_canChangePage) return;
+    // The dialog can outlive its owning tab. Keep only the input value here;
+    // TextFormField owns and disposes its internal controller with the route.
+    var input = '';
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('跳转到页面'),
-          content: TextField(
-            controller: controller,
+          content: TextFormField(
+            initialValue: input,
+            onChanged: (value) => input = value,
             keyboardType: TextInputType.number,
             autofocus: true,
             decoration: InputDecoration(
@@ -543,13 +586,13 @@ class _CardsPageState extends State<CardsPage> {
             ),
             TextButton(
               onPressed: () {
-                final page = int.tryParse(controller.text);
-                if (page != null && page >= 1 && page <= _totalPages) {
+                final page = int.tryParse(input);
+                if (_canChangePage && page != null && page >= 1 && page <= _totalPages) {
                   setState(() {
                     _currentPage = page;
                     _selectedIndex = 0;
                   });
-                  _loadBookmarks();
+                  _loadBookmarks(recount: false);
                   Navigator.pop(context);
                 }
               },
@@ -577,22 +620,14 @@ class _CardsPageState extends State<CardsPage> {
 }
 
 /// 卡片预览组件（支持调节文字大小 + 导出图片）
-class _ExportBoundary extends SingleChildRenderObjectWidget {
-  const _ExportBoundary({super.key, required super.child});
-  @override
-  RenderRepaintBoundary createRenderObject(BuildContext context) => _ExportRenderBoundary();
-}
-
-class _ExportRenderBoundary extends RenderRepaintBoundary {
-  Future<ui.Image> captureRegion(Rect region, double ratio) =>
-      (layer! as OffsetLayer).toImage(region, pixelRatio: ratio);
-}
-
 class _CardPreview extends StatefulWidget {
   final Bookmark bookmark;
+  final _CardExportScope scope;
+  final CardImageRenderer renderer;
   final ValueChanged<bool> onExportChanged;
 
-  const _CardPreview({super.key, required this.bookmark, required this.onExportChanged});
+  const _CardPreview({super.key, required this.bookmark, required this.scope,
+    required this.renderer, required this.onExportChanged});
 
   @override
   State<_CardPreview> createState() => _CardPreviewState();
@@ -604,11 +639,33 @@ class _CardPreviewState extends State<_CardPreview> {
   bool _exporting = false;
   Bookmark? _exportBookmark;
   double? _exportFontSize;
+  bool _routeCurrent = true;
+  int _routeRevision = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final current = ModalRoute.of(context)?.isCurrent ?? true;
+    if (_routeCurrent && !current) _routeRevision++;
+    _routeCurrent = current;
+  }
 
   /// 将卡片渲染为图片并分享
   Future<void> _exportAsImage() async {
-    if (_exporting) return;
-    final db = DatabaseService.instance;
+    if (!mounted || _exporting || !widget.scope.active) return;
+    final route = ModalRoute.of(context);
+    if (route?.isCurrent == false) return;
+    final scope = widget.scope;
+    final revision = scope.revision;
+    final routeRevision = _routeRevision;
+    DatabaseService db;
+    try {
+      db = DatabaseService.instance;
+    } on StateError {
+      return;
+    }
+    bool isCurrent() => mounted && scope.active && scope.revision == revision &&
+        _routeRevision == routeRevision && route?.isCurrent != false && db.isActive;
     final snapshot = Bookmark.fromJson(Map<String, dynamic>.from(widget.bookmark.toJson()));
     final onExportChanged = widget.onExportChanged;
     _exportBookmark = snapshot;
@@ -617,8 +674,9 @@ class _CardPreviewState extends State<_CardPreview> {
     onExportChanged(true);
     final files = <XFile>[];
     var shared = false;
+    Object? failure;
     try {
-      final boundary = _cardKey.currentContext?.findRenderObject() as _ExportRenderBoundary?;
+      final boundary = widget.renderer.findBoundary(_cardKey);
       if (boundary == null) return;
 
       final size = boundary.size;
@@ -631,12 +689,18 @@ class _CardPreviewState extends State<_CardPreview> {
           throw StateError('布局已变化，请勿在导出时旋转屏幕，请重试');
         }
       }
+      await ExportService.retryFailedCardExports();
+      if (!isCurrent()) return;
       final tempDir = await getTemporaryDirectory();
+      if (!isCurrent()) return;
       final stamp = DateTime.now().millisecondsSinceEpoch;
+      final random = math.Random.secure();
+      final id = List.generate(16, (_) => random.nextInt(256)
+          .toRadixString(16).padLeft(2, '0')).join();
       // Render one bounded region at a time, never allocate a full long image.
       const pageHeight = 1600.0;
       for (var top = 0.0; top < size.height; top += pageHeight) {
-        if (!mounted || !db.isActive) {
+        if (!isCurrent()) {
           return;
         }
         checkLayout();
@@ -646,41 +710,41 @@ class _CardPreviewState extends State<_CardPreview> {
         while ((size.width * ratio).ceil() * (height * ratio).ceil() > 8000000) {
           ratio *= 0.999;
         }
-        final image = await boundary.captureRegion(
-          Rect.fromLTWH(0, top, size.width, height), ratio);
+        final image = await widget.renderer.capture(
+          boundary, Rect.fromLTWH(0, top, size.width, height), ratio);
         try {
+          if (!isCurrent()) return;
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (!isCurrent()) return;
           if (bytes == null) throw StateError('图片编码失败');
           checkLayout();
-          final file = File('${tempDir.path}/weread_card_${stamp}_${files.length + 1}.png');
+          final file = File('${tempDir.path}/weread_card_${stamp}_${id}_${files.length + 1}.png');
           files.add(XFile(file.path));
-          await file.writeAsBytes(bytes.buffer.asUint8List());
+          await file.writeAsBytes(bytes.buffer.asUint8List(
+              bytes.offsetInBytes, bytes.lengthInBytes));
         } finally {
           image.dispose();
         }
       }
-      if (!mounted || !db.isActive) return;
+      if (!isCurrent()) return;
       checkLayout();
       await Share.shareXFiles(
         files,
         text: '「${snapshot.markText}」—— ${snapshot.bookTitle}',
       );
-      shared = true;
+      // The native share cannot be revoked once opened. Keep its files until
+      // it completes, then clean them if this page/session was cancelled.
+      shared = isCurrent();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
-        );
-      }
+      failure = e;
     } finally {
       if (!shared) {
-        for (final file in files) {
-          final partial = File(file.path);
-          try {
-            if (await partial.exists()) await partial.delete();
-          } on FileSystemException {
-            // Cleanup failure must not leave the preview interaction locked.
-          }
+        try {
+          await ExportService.removeCardExports(files.map((file) => file.path));
+        } catch (e) {
+          // Preserve the export error and release both interaction locks even
+          // when cleanup fails. The next attempt retries these deletions first.
+          failure ??= e;
         }
       }
       if (mounted) {
@@ -689,6 +753,11 @@ class _CardPreviewState extends State<_CardPreview> {
           _exportBookmark = null;
           _exportFontSize = null;
         });
+      }
+      if (mounted && failure != null && isCurrent()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $failure'), backgroundColor: Colors.red),
+        );
       }
       onExportChanged(false);
     }
@@ -706,7 +775,7 @@ class _CardPreviewState extends State<_CardPreview> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: _ExportBoundary(
+            child: CardRepaintBoundary(
               key: _cardKey,
               child: Container(
                 width: double.infinity,

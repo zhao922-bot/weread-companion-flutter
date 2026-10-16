@@ -6,25 +6,30 @@ import '../models/book.dart';
 import '../services/database.dart';
 import '../providers/notes_provider.dart';
 import '../services/sync_service.dart';
+import '../widgets/account_session_guard.dart';
 
 /// 书籍详情页
 /// 展示书籍信息、进度、划线和笔记（真实数据）
 class BookDetailPage extends StatefulWidget {
   final Book book;
+  final DatabaseService? database;
 
-  const BookDetailPage({super.key, required this.book});
+  const BookDetailPage({super.key, required this.book, this.database});
 
   @override
   State<BookDetailPage> createState() => _BookDetailPageState();
 }
 
 class _BookDetailPageState extends State<BookDetailPage> {
+  late final DatabaseService _database =
+      widget.database ?? DatabaseService.instance;
   List<NoteItem> _allItems = [];
   bool _loading = true;
   int _loadRequest = 0;
   static const _pageSize = 100;
   int _totalCount = 0;
   int _favoriteCount = 0;
+  bool _resetRequired = true;
   String? _error;
   final ScrollController _scrollController = ScrollController();
   bool _publishingFavorite = false;
@@ -39,8 +44,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
     super.initState();
     SyncService.changes.addListener(_onDataChanged);
     _scrollController.addListener(() {
-      if (_scrollController.position.extentAfter < 600 && !_loading &&
-          _allItems.length < _totalCount && _error == null) {
+      if (_scrollController.position.extentAfter < 600 &&
+          !_loading &&
+          _allItems.length < _totalCount &&
+          _error == null) {
         _loadPage(reset: false);
       }
     });
@@ -48,10 +55,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   void _onDataChanged() {
-    if (!mounted || SyncService.changes.value?.isActive != true || _publishingFavorite) return;
+    if (!mounted ||
+        !_database.isActive ||
+        !identical(SyncService.changes.value, _database) ||
+        _publishingFavorite) {
+      return;
+    }
     final event = SyncService.changes;
     if (event.kind == SyncChangeKind.bookshelf ||
-        (event.bookIds.isNotEmpty && !event.bookIds.contains(widget.book.bookId))) {
+        (event.bookIds.isNotEmpty &&
+            !event.bookIds.contains(widget.book.bookId))) {
       return;
     }
     if (event.favoritesOnly && event.itemIds.isNotEmpty) {
@@ -60,7 +73,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     }
     final version = SyncService.changes.dataVersion;
     final limit = version == _dataVersion && _allItems.length > _pageSize
-        ? _allItems.length : _pageSize;
+        ? _allItems.length
+        : _pageSize;
     _dataVersion = version;
     _loadPage(reset: true, limit: limit);
   }
@@ -74,23 +88,43 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _refreshFavorites(Set<String> keys) async {
+    // Both callers validate the page/session immediately before this call.
     final request = _loadRequest;
+    final favoriteRevision = _favoriteRevision;
     try {
-      final db = DatabaseService.instance;
+      final db = _database;
       final updates = <(NoteItem, bool)>[];
-      for (final item in _allItems.where((n) => keys.contains(_itemKey(n)))) {
-        final row = await db.getReadingItem(item.id, item.source.name, item.bookId);
+      for (final item
+          in _allItems.where((n) => keys.contains(_itemKey(n))).toList()) {
+        final row =
+            await db.getReadingItem(item.id, item.source.name, item.bookId);
+        if (!mounted || !db.isActive || request != _loadRequest) return;
         if (row != null) updates.add((item, row['is_fav'] == 1));
       }
-      final count = await db.countReadingItems(bookId: widget.book.bookId, filter: ReadingFilter.favorites);
+      final count = await db.countReadingItems(
+          bookId: widget.book.bookId, filter: ReadingFilter.favorites);
       if (!mounted || !db.isActive || request != _loadRequest) return;
+      if (favoriteRevision != _favoriteRevision) {
+        await _refreshFavorites(keys);
+        return;
+      }
       setState(() {
         _favoriteRevision++;
-        for (final (item, favorite) in updates) { item.isFav = favorite; }
+        for (final (item, favorite) in updates) {
+          item.isFav = favorite;
+        }
         _favoriteCount = count;
       });
     } catch (e) {
-      if (mounted && request == _loadRequest) setState(() => _error = e.toString());
+      if (mounted &&
+          _database.isActive &&
+          request == _loadRequest &&
+          favoriteRevision == _favoriteRevision) {
+        setState(() {
+          _resetRequired = true;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -106,64 +140,94 @@ class _BookDetailPageState extends State<BookDetailPage> {
   ''';
 
   Future<void> _loadPage({required bool reset, int limit = _pageSize}) async {
-    if (!mounted) return;
+    if (!mounted || !_database.isActive) return;
+    final reload = reset || _resetRequired;
+    if (reload) _resetRequired = true;
     final request = ++_loadRequest;
     final favoriteRevision = _favoriteRevision;
-    final after = reset || _allItems.isEmpty ? null : _allItems.last;
-    setState(() { _loading = true; _error = null; });
+    final after = reload || _allItems.isEmpty ? null : _allItems.last;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final db = DatabaseService.instance;
-      final connection = await db.database;
-      final counts = await connection.rawQuery(
-        'SELECT COUNT(*) AS total, COALESCE(SUM(is_fav), 0) AS favorites '
-        'FROM ($_bookItems) WHERE book_id = ?', [widget.book.bookId]);
-      final rows = await db.getReadingItems(bookId: widget.book.bookId,
-          limit: limit, after: after);
+      final db = _database;
+      var total = _totalCount;
+      var favorites = _favoriteCount;
+      if (reload) {
+        final connection = await db.database;
+        final counts = await connection.rawQuery(
+            'SELECT COUNT(*) AS total, COALESCE(SUM(is_fav), 0) AS favorites '
+            'FROM ($_bookItems) WHERE book_id = ?',
+            [widget.book.bookId]);
+        total = counts.first['total'] as int;
+        favorites = counts.first['favorites'] as int;
+      }
+      if (!mounted || request != _loadRequest || !db.isActive) return;
+      final rows = await db.getReadingItems(
+          bookId: widget.book.bookId, limit: limit, after: after);
       if (!mounted || request != _loadRequest || !db.isActive) return;
       if (favoriteRevision != _favoriteRevision) {
-        await _loadPage(reset: reset, limit: limit);
+        await _loadPage(reset: reload, limit: limit);
         return;
       }
-      final items = rows.map((m) => NoteItem(
-          id: m['id'] as String? ?? '',
-          bookId: m['book_id'] as String? ?? '',
-          bookTitle: (m['book_title'] as String?)?.isNotEmpty == true
-              ? m['book_title'] as String : widget.book.title,
-          content: m['content'] as String? ?? '',
-          chapterTitle: m['chapter_title'] as String? ?? '',
-          createdAt: m['created_at'] as int? ?? 0,
-          isFav: (m['is_fav'] ?? 0) == 1,
-          source: NoteSource.values.byName(m['source'] as String),
-        )).toList();
+      final items = rows
+          .map((m) => NoteItem(
+                id: m['id'] as String? ?? '',
+                bookId: m['book_id'] as String? ?? '',
+                bookTitle: (m['book_title'] as String?)?.isNotEmpty == true
+                    ? m['book_title'] as String
+                    : widget.book.title,
+                content: m['content'] as String? ?? '',
+                chapterTitle: m['chapter_title'] as String? ?? '',
+                createdAt: m['created_at'] as int? ?? 0,
+                isFav: (m['is_fav'] ?? 0) == 1,
+                source: NoteSource.values.byName(m['source'] as String),
+              ))
+          .toList();
 
       setState(() {
-        _allItems = reset ? items : [..._allItems, ...items];
-        _totalCount = counts.first['total'] as int;
-        _favoriteCount = counts.first['favorites'] as int;
+        _allItems = reload ? items : [..._allItems, ...items];
+        _totalCount = total;
+        _favoriteCount = favorites;
+        _resetRequired = false;
         _loading = false;
       });
     } catch (e) {
-      if (!mounted || request != _loadRequest) return;
-      setState(() { _loading = false; _error = e.toString(); });
+      if (!mounted || !_database.isActive || request != _loadRequest) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
     }
   }
 
   String _itemKey(NoteItem note) => '${note.source.name}:${note.id}';
 
   Future<void> _copyNote(NoteItem note) async {
-    await Clipboard.setData(ClipboardData(text: note.content));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)));
+    if (!mounted || !_database.isActive) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: note.content));
+      if (!mounted || !_database.isActive) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)));
+    } catch (_) {
+      if (mounted && _database.isActive) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('复制失败，请重试')));
+      }
+    }
   }
 
   Future<void> _toggleFavorite(NoteItem note) async {
     final key = _itemKey(note);
-    if (_savingFavorites.contains(key)) return;
+    if (!mounted || !_database.isActive || _savingFavorites.contains(key)) {
+      return;
+    }
     final favorite = !note.isFav;
     setState(() => _savingFavorites.add(key));
     try {
-      final db = DatabaseService.instance;
+      final db = _database;
       if (note.source == NoteSource.bookmark) {
         await db.toggleBookmarkFavorite(note.id, favorite);
       } else {
@@ -175,19 +239,25 @@ class _BookDetailPageState extends State<BookDetailPage> {
         final current = _allItems.where((item) => _itemKey(item) == key);
         final wasFavorite = current.isEmpty ? note.isFav : current.first.isFav;
         note.isFav = favorite;
-        for (final item in current) { item.isFav = favorite; }
+        for (final item in current) {
+          item.isFav = favorite;
+        }
         if (wasFavorite != favorite) _favoriteCount += favorite ? 1 : -1;
       });
       _publishingFavorite = true;
       try {
-        SyncService.changes.publish(db, favoritesOnly: true, bookIds: {note.bookId},
-          itemIds: {_itemKey(note)}, sources: {note.source.name});
+        SyncService.changes.publish(db,
+            favoritesOnly: true,
+            bookIds: {note.bookId},
+            itemIds: {_itemKey(note)},
+            sources: {note.source.name});
       } finally {
         _publishingFavorite = false;
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('收藏保存失败')));
+      if (!mounted || !_database.isActive) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('收藏保存失败')));
     } finally {
       if (mounted) setState(() => _savingFavorites.remove(key));
     }
@@ -198,31 +268,39 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _aiSummarize() async {
-    if (_preparingSummary) return;
+    if (!mounted || !_database.isActive || _preparingSummary) return;
     setState(() => _preparingSummary = true);
     try {
       // 数据库筛选最新非空条目，最多读取 30 条，不受详情分页影响。
-      final db = DatabaseService.instance;
+      final db = _database;
       final rows = await db.getSummaryItems(bookId: widget.book.bookId);
       if (!mounted || !db.isActive) return;
-      final notes = rows.map((m) => NoteItem(
-        id: m['id'] as String, bookId: m['book_id'] as String,
-        bookTitle: widget.book.title, content: m['content'] as String? ?? '',
-        chapterTitle: m['chapter_title'] as String? ?? '',
-        createdAt: m['created_at'] as int? ?? 0, isFav: m['is_fav'] == 1,
-        source: NoteSource.values.byName(m['source'] as String))).toList();
-      await generateSummary(context, widget.book.title, widget.book.author, notes);
+      final notes = rows
+          .map((m) => NoteItem(
+              id: m['id'] as String,
+              bookId: m['book_id'] as String,
+              bookTitle: widget.book.title,
+              content: m['content'] as String? ?? '',
+              chapterTitle: m['chapter_title'] as String? ?? '',
+              createdAt: m['created_at'] as int? ?? 0,
+              isFav: m['is_fav'] == 1,
+              source: NoteSource.values.byName(m['source'] as String)))
+          .toList();
+      await generateSummary(
+          context, widget.book.title, widget.book.author, notes,
+          database: db);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('摘要准备失败: $e')));
+      if (mounted && _database.isActive) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('摘要准备失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _preparingSummary = false);
     }
   }
 
-  void _shareBook(BuildContext context) {
+  Future<void> _shareBook(BuildContext context) async {
+    if (!mounted || !_database.isActive) return;
     final book = widget.book;
     final highlights = _allItems
         .where((n) => n.source == NoteSource.bookmark)
@@ -244,7 +322,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
     text.writeln('');
     text.writeln('—— 来自微信读书伴侣');
 
-    Share.share(text.toString());
+    try {
+      await Share.share(text.toString());
+    } catch (_) {
+      if (context.mounted && _database.isActive) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('分享失败，请重试')));
+      }
+    }
   }
 
   @override
@@ -253,72 +338,82 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isNarrow = screenWidth < 400;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: Text(book.title, style: const TextStyle(fontSize: 16)),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.auto_awesome_rounded),
-            tooltip: 'AI 摘要',
-            onPressed: _loading || _preparingSummary ? null : _aiSummarize,
+    return AccountSessionGuard(
+        database: _database,
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: AppBar(
+            title: Text(book.title, style: const TextStyle(fontSize: 16)),
+            centerTitle: true,
+            elevation: 0,
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.auto_awesome_rounded),
+                tooltip: 'AI 摘要',
+                onPressed: _loading || _preparingSummary ? null : _aiSummarize,
+              ),
+              IconButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: '历史摘要',
+                  onPressed: () {
+                    if (!_database.isActive) return;
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => AISummaryHistoryPage(
+                            bookId: book.bookId, database: _database)));
+                  }),
+              IconButton(
+                icon: const Icon(Icons.share_rounded),
+                tooltip: '分享',
+                onPressed: () => _shareBook(context),
+              ),
+            ],
           ),
-          IconButton(icon: const Icon(Icons.history), tooltip: '历史摘要',
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => AISummaryHistoryPage(bookId: book.bookId)))),
-          IconButton(
-            icon: const Icon(Icons.share_rounded),
-            tooltip: '分享',
-            onPressed: () => _shareBook(context),
+          body: RefreshIndicator(
+            onRefresh: _loadBookmarks,
+            child: ListView.builder(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              itemCount: 8 + _allItems.length,
+              itemBuilder: (context, index) {
+                if (index >= 7 && index < 7 + _allItems.length) {
+                  return _buildNoteItem(_allItems[index - 7]);
+                }
+                if (index == 7 + _allItems.length) {
+                  if (_error != null) {
+                    return Column(children: [
+                      Text('加载失败: $_error'),
+                      TextButton(
+                          onPressed: () => _loadPage(reset: _allItems.isEmpty),
+                          child: const Text('重试')),
+                    ]);
+                  }
+                  if (_loading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (_allItems.isEmpty) {
+                    return const Center(child: Text('暂无划线和笔记'));
+                  }
+                  if (_allItems.length < _totalCount) {
+                    return TextButton(
+                        onPressed: () => _loadPage(reset: false),
+                        child: const Text('加载更多'));
+                  }
+                  return const SizedBox(height: 8);
+                }
+                return switch (index) {
+                  0 => _buildBookHeader(context, isNarrow),
+                  2 => _buildStatsSection(context),
+                  4 => _buildProgressSection(context),
+                  6 => _buildNotesSection(context),
+                  _ => const SizedBox(height: 20),
+                };
+              },
+            ),
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadBookmarks,
-        child: ListView.builder(
-          controller: _scrollController,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          itemCount: 8 + _allItems.length,
-          itemBuilder: (context, index) {
-            if (index >= 7 && index < 7 + _allItems.length) {
-              return _buildNoteItem(_allItems[index - 7]);
-            }
-            if (index == 7 + _allItems.length) {
-              if (_error != null) {
-                return Column(children: [
-                  Text('加载失败: $_error'),
-                  TextButton(onPressed: () => _loadPage(reset: _allItems.isEmpty), child: const Text('重试')),
-                ]);
-              }
-              if (_loading) return const Center(child: CircularProgressIndicator());
-              if (_allItems.isEmpty) return const Center(child: Text('暂无划线和笔记'));
-              if (_allItems.length < _totalCount) {
-                return TextButton(onPressed: () => _loadPage(reset: false), child: const Text('加载更多'));
-              }
-              return const SizedBox(height: 8);
-            }
-            return [
-              // 书籍头部信息
-              _buildBookHeader(context, isNarrow),
-              const SizedBox(height: 20),
-              // 阅读统计
-              _buildStatsSection(context),
-              const SizedBox(height: 20),
-              // 阅读进度
-              _buildProgressSection(context),
-              const SizedBox(height: 20),
-              // 划线和笔记标题；条目由外层列表按需构建。
-              _buildNotesSection(context),
-            ][index];
-          },
-        ),
-      ),
-    );
+        ));
   }
 
   Widget _buildBookHeader(BuildContext context, bool isNarrow) {
@@ -428,10 +523,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
           ),
         ],
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _buildStatusChip(status),
-            const SizedBox(width: 8),
             Text(
               '${book.progress}%',
               style: TextStyle(
@@ -471,7 +567,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
       ),
       child: Text(
         status,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color),
+        style:
+            TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color),
       ),
     );
   }
@@ -493,11 +590,17 @@ class _BookDetailPageState extends State<BookDetailPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatItem(Icons.note_rounded, '划线笔记', '$_totalCount条'),
+          Expanded(
+              child:
+                  _buildStatItem(Icons.note_rounded, '划线笔记', '$_totalCount条')),
           _buildStatDivider(),
-          _buildStatItem(Icons.star_rounded, '收藏', '$_favoriteCount条'),
+          Expanded(
+              child:
+                  _buildStatItem(Icons.star_rounded, '收藏', '$_favoriteCount条')),
           _buildStatDivider(),
-          _buildStatItem(Icons.trending_up_rounded, '进度', '${widget.book.progress}%'),
+          Expanded(
+              child: _buildStatItem(
+                  Icons.trending_up_rounded, '进度', '${widget.book.progress}%')),
         ],
       ),
     );
@@ -510,10 +613,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
         const SizedBox(height: 6),
         Text(
           value,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
         ),
         const SizedBox(height: 2),
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+        Text(label,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
       ],
     );
   }
@@ -542,11 +649,15 @@ class _BookDetailPageState extends State<BookDetailPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.trending_up_rounded, size: 18, color: Colors.grey[600]),
+              Icon(Icons.trending_up_rounded,
+                  size: 18, color: Colors.grey[600]),
               const SizedBox(width: 6),
               Text(
                 '阅读进度',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey[800]),
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800]),
               ),
             ],
           ),
@@ -563,19 +674,25 @@ class _BookDetailPageState extends State<BookDetailPage> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               Text(
                 '${widget.book.progress}% 已完成',
                 style: TextStyle(fontSize: 13, color: Colors.grey[600]),
               ),
               Text(
-                widget.book.isFinished ? '🎉 恭喜读完！'
-                    : widget.book.isNearlyFinished ? '接近读完' : '继续加油',
+                widget.book.isFinished
+                    ? '🎉 恭喜读完！'
+                    : widget.book.isNearlyFinished
+                        ? '接近读完'
+                        : '继续加油',
                 style: TextStyle(
                   fontSize: 13,
-                  color: widget.book.isFinished ? Colors.green : Colors.grey[500],
+                  color:
+                      widget.book.isFinished ? Colors.green : Colors.grey[500],
                 ),
               ),
             ],
@@ -605,13 +722,17 @@ class _BookDetailPageState extends State<BookDetailPage> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
-                Icon(Icons.note_alt_outlined, size: 18, color: Colors.grey[600]),
+                Icon(Icons.note_alt_outlined,
+                    size: 18, color: Colors.grey[600]),
                 const SizedBox(width: 6),
-                Text(
+                Expanded(
+                    child: Text(
                   '划线与笔记',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.grey[800]),
-                ),
-                const Spacer(),
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800]),
+                )),
                 if (_loading)
                   const SizedBox(
                     width: 14,
@@ -637,7 +758,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final key = _itemKey(bookmark);
     final expanded = _expanded.contains(key);
     final isHighlight = bookmark.source == NoteSource.bookmark;
-    final accentColor = isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
+    final accentColor =
+        isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
 
     return Padding(
       key: ValueKey(key),
@@ -655,7 +777,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 ),
                 child: Text(
                   isHighlight ? '划线' : '笔记',
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: accentColor),
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: accentColor),
                 ),
               ),
               const SizedBox(width: 8),
@@ -667,10 +792,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(
+              Flexible(
+                  child: Text(
                 _formatTimestamp(bookmark.createdAt),
+                textAlign: TextAlign.end,
                 style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 8),
@@ -686,26 +813,40 @@ class _BookDetailPageState extends State<BookDetailPage> {
             ),
             child: Text(
               bookmark.content,
-              style: TextStyle(fontSize: 13, height: 1.5, color: Colors.grey[700]),
+              style:
+                  TextStyle(fontSize: 13, height: 1.5, color: Colors.grey[700]),
               maxLines: expanded ? null : 3,
               overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
             ),
           ),
           Row(children: [
             TextButton(
-              key: ValueKey('expand-$key'),
-              onPressed: () => setState(() {
-                if (expanded) { _expanded.remove(key); } else { _expanded.add(key); }
-              }),
-              child: Text(expanded ? '收起' : '展开全文')),
+                key: ValueKey('expand-$key'),
+                onPressed: () => setState(() {
+                      if (expanded) {
+                        _expanded.remove(key);
+                      } else {
+                        _expanded.add(key);
+                      }
+                    }),
+                child: Text(expanded ? '收起' : '展开全文')),
             const Spacer(),
-            IconButton(key: ValueKey('copy-$key'), tooltip: '复制笔记',
-              icon: const Icon(Icons.copy, size: 20), onPressed: () => _copyNote(bookmark)),
-            IconButton(key: ValueKey('favorite-$key'),
-              tooltip: bookmark.isFav ? '取消收藏' : '收藏笔记',
-              icon: Icon(bookmark.isFav ? Icons.star_rounded : Icons.star_border_rounded,
-                color: bookmark.isFav ? Colors.amber : Colors.grey),
-              onPressed: _savingFavorites.contains(key) ? null : () => _toggleFavorite(bookmark)),
+            IconButton(
+                key: ValueKey('copy-$key'),
+                tooltip: '复制笔记',
+                icon: const Icon(Icons.copy, size: 20),
+                onPressed: () => _copyNote(bookmark)),
+            IconButton(
+                key: ValueKey('favorite-$key'),
+                tooltip: bookmark.isFav ? '取消收藏' : '收藏笔记',
+                icon: Icon(
+                    bookmark.isFav
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: bookmark.isFav ? Colors.amber : Colors.grey),
+                onPressed: _savingFavorites.contains(key)
+                    ? null
+                    : () => _toggleFavorite(bookmark)),
           ]),
           const SizedBox(height: 12),
           Divider(height: 1, color: Colors.grey[100]),

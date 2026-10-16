@@ -120,10 +120,10 @@ class AIService {
     final DatabaseService db;
     try {
       db = DatabaseService.instance;
+      db.requireActive();
     } on StateError catch (e, stack) {
       Error.throwWithStackTrace(AICancelledException('账号会话已结束', e), stack);
     }
-    if (!db.isActive) throw const AICancelledException('账号会话已结束');
     // Callers use the database's stable, nonempty LIMIT 30 selection.
     final selected = notes.take(DatabaseService.summaryItemLimit)
         .where((n) => n.content.trim().isNotEmpty).toList();

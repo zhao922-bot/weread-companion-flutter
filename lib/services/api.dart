@@ -24,6 +24,13 @@ class CredentialPersistenceException implements Exception {
   String toString() => '刷新凭据保存失败，请检查安全存储并重新验证登录';
 }
 
+class _CredentialRefresh {
+  final WeReadApi owner;
+  final Credentials credentials;
+  final Future<void> future;
+  _CredentialRefresh(this.owner, this.credentials, this.future);
+}
+
 class WeReadApi {
   late Dio _dio;
   final AppConfig config;
@@ -31,7 +38,14 @@ class WeReadApi {
   DatabaseService get db => _database ?? (throw StateError('登录验证不能访问阅读数据'));
   bool _cancelled = false;
   bool get syncCancelled => _cancelled;
-  Future<void>? _refreshing;
+  // Verification and sync use separate API instances but share one config.
+  // Scope refreshes to that config and credential generation, not the client.
+  static final _refreshes = Expando<_CredentialRefresh>();
+  Future<void>? get _refreshing {
+    final refresh = _refreshes[config];
+    return refresh != null && !refresh.owner._cancelled &&
+        identical(refresh.credentials, config.credentials) ? refresh.future : null;
+  }
   String? authenticatedAccountId;
   static final Set<WeReadApi> _sessions = {};
   static Map<String, dynamic>? _shelfSnapshot;
@@ -61,10 +75,27 @@ class WeReadApi {
     _sessions.remove(this);
   }
 
+  // A cancelled verification can own a refresh shared by other clients. Let
+  // that rotation persist before closing its transport; logout/reset still
+  // disposes every session immediately.
+  void disposeAfterRefresh() {
+    final refresh = _refreshes[config];
+    if (refresh != null && identical(refresh.owner, this)) {
+      refresh.future.then((_) => dispose(), onError: (Object _, StackTrace __) => dispose());
+    } else {
+      dispose();
+    }
+  }
+
   factory WeReadApi.forLogin({required AppConfig config, Dio? dio}) =>
       WeReadApi._(config: config, dio: dio);
 
   static Future<WeReadApi> init({required AppConfig config, required DatabaseService db, Dio? dio}) async {
+    if (!db.isActive) throw StateError('账号会话已结束');
+    if (_instance != null && (!identical(_instance!._database, db) || _instance!._cancelled)) {
+      _instance!.dispose();
+      _instance = null;
+    }
     _instance ??= WeReadApi._(config: config, db: db, dio: dio);
     return _instance!;
   }
@@ -107,6 +138,7 @@ class WeReadApi {
         if (credentials != null) {
           options.headers.remove('Cookie');
           if (options.extra['tokenMint'] != true) {
+            options.extra['authCredentials'] = credentials;
             options.headers['vid'] = credentials.vid;
             options.headers['accessToken'] = credentials.accessToken;
           }
@@ -159,6 +191,7 @@ class WeReadApi {
   }
 
   bool _shouldRefresh(Response<dynamic> response) =>
+      !_cancelled && response.requestOptions.cancelToken?.isCancelled != true &&
       config.credentials != null &&
       response.requestOptions.extra['tokenMint'] != true &&
       response.requestOptions.extra['authRetried'] != true &&
@@ -166,15 +199,32 @@ class WeReadApi {
 
   Future<Response<dynamic>> _retryAuthenticated(Response<dynamic> response) async {
     final options = response.requestOptions;
-    if (_refreshing != null) await _refreshing;
+    final sent = options.extra['authCredentials'] as Credentials?;
+    void checkCancelled() {
+      final cancellation = options.cancelToken?.cancelError;
+      if (cancellation != null) throw cancellation;
+      if (_cancelled || config.logoutPending || sent == null ||
+          sent.vid != config.credentials?.vid) {
+        throw StateError('账号会话已结束');
+      }
+    }
+    checkCancelled();
+    final pending = _refreshing;
+    if (pending != null) await pending;
+    checkCancelled();
     if (config.credentialRevalidation.value != null) {
       throw const CredentialPersistenceException();
     }
     // 迟到的旧 token 响应复用已刷新的凭据，多个并发请求只刷新一次。
-    if (options.headers['accessToken'] == config.credentials?.accessToken) {
+    final current = config.credentials;
+    // Some refreshes rotate only refreshToken. A late auth failure from the
+    // previous pair should replay once, even when accessToken is unchanged.
+    if (pending == null && sent != null && current != null &&
+        sent.vid == current.vid && sent.accessToken == current.accessToken &&
+        sent.refreshToken == current.refreshToken) {
       await _refreshToken();
     }
-    if (_cancelled) throw StateError('账号会话已结束');
+    checkCancelled();
     final retried = await _dio.fetch<dynamic>(options.copyWith(
       extra: {...options.extra, 'authRetried': true},
     ));
@@ -186,14 +236,15 @@ class WeReadApi {
   }
 
   Future<void> _refreshToken() async {
-    final pending = _refreshing;
-    if (pending != null) return pending;
+    // _retryAuthenticated already joins an existing refresh before calling us.
+    final previous = config.credentials!;
     final started = _mintAccessToken();
-    _refreshing = started;
+    final refresh = _CredentialRefresh(this, previous, started);
+    _refreshes[config] = refresh;
     try {
       await started;
     } finally {
-      if (identical(_refreshing, started)) _refreshing = null;
+      if (identical(_refreshes[config], refresh)) _refreshes[config] = null;
     }
   }
 
@@ -302,12 +353,11 @@ class WeReadApi {
           }
           add(item['name'], item['value'] ?? '');
         }
-      } else if (decoded is Map) {
-        for (final entry in decoded.entries) {
+      } else {
+        // The leading '['/'{' gate and jsonDecode guarantee a list or map.
+        for (final entry in (decoded as Map).entries) {
           add(entry.key, entry.value);
         }
-      } else {
-        throw const FormatException('Cookie JSON 格式无效');
       }
     } else if (raw.contains('\t')) {
       for (final line in raw.split(RegExp(r'\r?\n'))) {
@@ -333,27 +383,46 @@ class WeReadApi {
   }
 
   /// 检查登录状态
-  Future<bool> checkLogin() async {
+  Future<bool> checkLogin({CancelToken? cancelToken}) async {
+    final accountId = config.credentials?.vid;
+    final cookie = config.cookie;
+    void checkSession() {
+      final cancellation = cancelToken?.cancelError;
+      if (cancellation != null) throw cancellation;
+      if (_cancelled || config.logoutPending ||
+          config.credentials?.vid != accountId ||
+          (accountId == null && config.cookie != cookie)) {
+        throw DioException(
+          requestOptions: RequestOptions(path: accountId == null ? '/user?userVid=0' : '/shelf/sync'),
+          type: DioExceptionType.cancel,
+          message: '账号会话已结束',
+        );
+      }
+    }
+    checkSession();
     _clearSnapshot();
     authenticatedAccountId = null;
     await config.retryPendingCredentials();
+    checkSession();
     try {
-      if (config.credentials != null) {
+      if (accountId != null) {
         // 书架同步是需要认证的接口，不用公开用户资料接口验证移动端 token。
-        final resp = await _dio.get('/shelf/sync');
+        final resp = await _dio.get('/shelf/sync', cancelToken: cancelToken);
+        checkSession();
         final data = resp.data;
         final code = data is Map ? data['errCode'] ?? data['errcode'] : null;
         if (data is! Map || data['books'] is! List || _authFailed(resp) ||
             (code != null && code.toString() != '0')) {
           throw StateError('暂时无法验证移动端登录');
         }
-        authenticatedAccountId = config.credentials!.vid;
+        authenticatedAccountId = accountId;
         _shelfSnapshot = Map<String, dynamic>.from(data);
         _snapshotCredential = _credentialKey;
         _snapshotTime = DateTime.now();
         return true;
       }
-      final resp = await _dio.get('/user?userVid=0');
+      final resp = await _dio.get('/user?userVid=0', cancelToken: cancelToken);
+      checkSession();
       final data = resp.data;
       final id = data is Map ? data['vid']?.toString() : null;
       if (id != null && RegExp(r'^[0-9]+$').hasMatch(id) && id != '0') {
@@ -362,7 +431,8 @@ class WeReadApi {
       }
       return false;
     } on DioException catch (e) {
-      if (config.credentials != null) {
+      checkSession();
+      if (accountId != null) {
         if (e.error is LoginExpiredException) return false;
         rethrow;
       }
@@ -403,10 +473,19 @@ class WeReadApi {
     throw const FormatException('ID 字段类型无效');
   }
 
+  String? _syncCursor(dynamic value) {
+    // Missing cursors are supported by full responses. Present cursors must
+    // remain usable as the next request's opaque string (or integer) token.
+    if (value == null) return null;
+    if (value is int) return value.toString();
+    if (value is String && value.trim().isNotEmpty) return value;
+    throw const FormatException('同步响应 synckey 无效，未提交数据或推进同步游标，请重试');
+  }
+
   void _invalidRow(String kind, Object error) => debugPrint('同步跳过无效$kind：$error');
 
   /// 书架同步 — GET /web/shelf/sync
-  Future<List<Book>> fetchBookshelf() async {
+  Future<List<Book>> fetchBookshelf({CancelToken? cancelToken}) async {
     try {
       final reusable = !_cancelled && _database?.isActive == true &&
           _database?.accountId == config.credentials?.vid &&
@@ -414,7 +493,7 @@ class WeReadApi {
           _snapshotTime != null && DateTime.now().difference(_snapshotTime!) < const Duration(seconds: 30);
       final snapshot = reusable ? _shelfSnapshot : null;
       _clearSnapshot();
-      final data = snapshot ?? (await _dio.get('/shelf/sync')).data;
+      final data = snapshot ?? (await _dio.get('/shelf/sync', cancelToken: cancelToken)).data;
 
       _checkSyncResponse(data);
 
@@ -429,7 +508,7 @@ class WeReadApi {
             if (p is! Map) throw const FormatException('阅读进度条目类型无效');
             final bookId = _id(p['bookId']);
             final progress = p['progress'] ?? 0;
-            if (bookId.isEmpty) throw const FormatException('阅读进度缺少 bookId');
+            if (bookId.trim().isEmpty) throw const FormatException('阅读进度缺少 bookId');
             progressMap[bookId] = _integer(progress);
           } on FormatException catch (e) {
             _invalidRow('阅读进度', e);
@@ -448,7 +527,7 @@ class WeReadApi {
           if (b is! Map) throw const FormatException('book 字段类型无效');
 
           final bookId = _id(b['bookId']);
-          if (bookId.isEmpty) throw const FormatException('书籍缺少 bookId');
+          if (bookId.trim().isEmpty) throw const FormatException('书籍缺少 bookId');
 
           final progress = progressMap[bookId] ?? (b['progress'] ?? 0);
           final progressInt = _integer(progress);
@@ -485,30 +564,35 @@ class WeReadApi {
 
   /// 划线/书签 — GET /web/book/bookmarklist?bookId=xxx
   Future<List<Bookmark>> fetchBookmarks(String bookId, String bookTitle,
-      {String synckey = '0', void Function(String?, List<String>)? onDelta}) async {
+      {String synckey = '0', void Function(String?, List<String>)? onDelta,
+      CancelToken? cancelToken}) async {
     try {
       final resp = await _dio.get(
         '/book/bookmarklist',
         queryParameters: {'bookId': bookId, 'synckey': synckey},
+        cancelToken: cancelToken,
       );
       final data = resp.data;
       _checkSyncResponse(data);
+
+      final cursor = _syncCursor(data['synckey']);
 
       // 构建 chapterUid -> chapterTitle 映射
       final chMap = <int, String>{};
       var invalidRows = false;
       final chapters = data['chapters'] ?? [];
-      if (chapters is List) {
-        for (final c in chapters) {
-          try {
-            if (c is! Map) throw const FormatException('章节条目类型无效');
-            final uid = _integer(c['chapterUid']);
-            final title = _text(c['title']);
-            if (uid != 0) chMap[uid] = title;
-          } on FormatException catch (e) {
-            invalidRows = true;
-            _invalidRow('章节', e);
-          }
+      if (chapters is! List) {
+        throw const FormatException('同步响应 chapters 必须是列表，未提交数据或推进同步游标，请重试');
+      }
+      for (final c in chapters) {
+        try {
+          if (c is! Map) throw const FormatException('章节条目类型无效');
+          final uid = _integer(c['chapterUid']);
+          final title = _text(c['title']);
+          if (uid != 0) chMap[uid] = title;
+        } on FormatException catch (e) {
+          invalidRows = true;
+          _invalidRow('章节', e);
         }
       }
 
@@ -520,7 +604,7 @@ class WeReadApi {
           if (item is! Map) throw const FormatException('划线条目类型无效');
 
           final bmId = _id(item['bookmarkId']);
-          if (bmId.isEmpty) throw const FormatException('划线缺少 bookmarkId');
+          if (bmId.trim().isEmpty) throw const FormatException('划线缺少 bookmarkId');
 
           final chapterUid = _integer(item['chapterUid']);
           final chapterTitle = chMap[chapterUid] ?? _text(item['chapterName']);
@@ -545,7 +629,7 @@ class WeReadApi {
       }
       _checkDeltaRows(data, invalidRows);
       final deleted = _deletedIds(data, 'bookmarkId');
-      onDelta?.call(data['synckey']?.toString(), deleted);
+      onDelta?.call(cursor, deleted);
       return bookmarks;
     } on DioException {
       rethrow;
@@ -556,7 +640,8 @@ class WeReadApi {
   Future<List<Map<String, dynamic>>> fetchNotes(
     String bookId,
     String bookTitle,
-    {String synckey = '0', void Function(String?, List<String>)? onDelta}
+    {String synckey = '0', void Function(String?, List<String>)? onDelta,
+    CancelToken? cancelToken}
   ) async {
     try {
       final resp = await _dio.get('/review/list', queryParameters: {
@@ -564,9 +649,10 @@ class WeReadApi {
         'listType': '11',
         'mine': '1',
         'synckey': synckey,
-      });
+      }, cancelToken: cancelToken);
       final data = resp.data;
       _checkSyncResponse(data);
+      final cursor = _syncCursor(data['synckey']);
       final reviews = _requiredList(data, 'reviews');
 
       final notes = <Map<String, dynamic>>[];
@@ -579,7 +665,7 @@ class WeReadApi {
           if (rv is! Map) throw const FormatException('review 字段类型无效');
 
           final reviewId = _id(rv['reviewId']);
-          if (reviewId.isEmpty) throw const FormatException('笔记缺少 reviewId');
+          if (reviewId.trim().isEmpty) throw const FormatException('笔记缺少 reviewId');
 
           final note = {
             'note_id': reviewId,
@@ -601,7 +687,7 @@ class WeReadApi {
       }
       _checkDeltaRows(data, invalidRows);
       final deleted = _deletedIds(data, 'reviewId');
-      onDelta?.call(data['synckey']?.toString(), deleted);
+      onDelta?.call(cursor, deleted);
       return notes;
     } on DioException {
       rethrow;

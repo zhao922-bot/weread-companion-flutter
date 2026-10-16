@@ -5,13 +5,15 @@ import '../services/export_service.dart';
 import '../services/database.dart';
 import '../services/sync_service.dart';
 import '../models/ai_summary.dart';
+import '../widgets/account_session_guard.dart';
 import 'ai_summary_page.dart';
-
 
 class NotesPage extends StatefulWidget {
   final SummaryReference? reference;
+  final DatabaseService? database;
   final bool isActive;
-  const NotesPage({super.key, this.reference, this.isActive = true});
+  const NotesPage(
+      {super.key, this.reference, this.database, this.isActive = true});
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -24,22 +26,28 @@ class _NotesPageState extends State<NotesPage> {
 
   final _filters = ReadingFilter.values;
   bool _preparingSummary = false;
+  bool _exporting = false;
   Future<Map<String, dynamic>?>? _target;
   NotesProvider? _provider;
+  DatabaseService? _referenceDatabase;
 
   @override
   void initState() {
     super.initState();
     final ref = widget.reference;
-    _target = ref == null ? null : DatabaseService.instance.getReadingItem(
-        ref.noteId, ref.source.name, ref.bookId);
     if (ref != null) {
+      final db =
+          _referenceDatabase = widget.database ?? DatabaseService.instance;
+      if (db.isActive) {
+        _target = db.getReadingItem(ref.noteId, ref.source.name, ref.bookId);
+      }
       SyncService.changes.addListener(_reloadReference);
       return;
     }
     _scrollController.addListener(() {
-      if (_scrollController.position.extentAfter < 600) {
-        context.read<NotesProvider>().loadMore();
+      if (widget.isActive && _scrollController.position.extentAfter < 600) {
+        final provider = context.read<NotesProvider>();
+        if (provider.error == null) provider.loadMore();
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,7 +60,9 @@ class _NotesPageState extends State<NotesPage> {
   @override
   void didUpdateWidget(covariant NotesPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.reference != null || oldWidget.isActive == widget.isActive) return;
+    if (widget.reference != null || oldWidget.isActive == widget.isActive) {
+      return;
+    }
     if (!widget.isActive) {
       _provider?.setActive(false);
     } else {
@@ -73,26 +83,56 @@ class _NotesPageState extends State<NotesPage> {
 
   void _reloadReference() {
     final ref = widget.reference;
-    final db = SyncService.changes.value;
-    if (!mounted || ref == null || db?.isActive != true) return;
-    setState(() => _target = db!.getReadingItem(ref.noteId, ref.source.name, ref.bookId));
+    final event = SyncService.changes;
+    final db = event.value;
+    if (!mounted ||
+        ref == null ||
+        db?.isActive != true ||
+        !identical(db, _referenceDatabase)) {
+      return;
+    }
+    if (event.kind == SyncChangeKind.bookshelf ||
+        (event.bookIds.isNotEmpty && !event.bookIds.contains(ref.bookId)) ||
+        (event.sources.isNotEmpty &&
+            !event.sources.contains(ref.source.name)) ||
+        (event.itemIds.isNotEmpty &&
+            !event.itemIds.contains('${ref.source.name}:${ref.noteId}'))) {
+      return;
+    }
+    _loadReference();
+  }
+
+  void _loadReference() {
+    final ref = widget.reference!;
+    final db = _referenceDatabase!;
+    if (!mounted || !db.isActive) return;
+    final target = db.getReadingItem(ref.noteId, ref.source.name, ref.bookId);
+    setState(() {
+      _target = target;
+    });
   }
 
   /// AI 摘要
   Future<void> _aiSummarize() async {
-    if (_preparingSummary) return;
+    if (!mounted || _preparingSummary) return;
     setState(() => _preparingSummary = true);
+    DatabaseService? owner;
     try {
+      final db = owner = DatabaseService.instance;
       final provider = context.read<NotesProvider>();
       final notes = await provider.getSummaryNotes();
-      if (!mounted) return;
-      final bookTitles = notes.map((n) => n.bookTitle).where((t) => t.isNotEmpty).toSet().toList();
+      if (!mounted || !db.isActive) return;
+      final bookTitles = notes
+          .map((n) => n.bookTitle)
+          .where((t) => t.isNotEmpty)
+          .toSet()
+          .toList();
       final title = bookTitles.length == 1 ? bookTitles.first : '多本书籍合集';
-      await generateSummary(context, title, '', notes);
+      await generateSummary(context, title, '', notes, database: db);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('摘要准备失败: $e')));
+      if (mounted && owner?.isActive == true) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('摘要准备失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _preparingSummary = false);
@@ -101,25 +141,35 @@ class _NotesPageState extends State<NotesPage> {
 
   /// 导出笔记
   Future<void> _exportNotes(BuildContext context) async {
+    if (!mounted || _exporting) return;
+    setState(() => _exporting = true);
+    DatabaseService? owner;
     try {
+      owner = DatabaseService.instance;
       await ExportService.exportAndShare();
-      if (context.mounted) {
+      if (context.mounted && owner.isActive) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('笔记已导出并分享'), backgroundColor: Color(0xFF07C160)),
+          const SnackBar(
+              content: Text('笔记已导出并分享'), backgroundColor: Color(0xFF07C160)),
         );
       }
     } catch (e) {
-      if (context.mounted) {
+      if (context.mounted && owner?.isActive == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.reference != null) return _buildReferencePage();
+    if (widget.reference != null) {
+      return AccountSessionGuard(
+          database: _referenceDatabase!, child: _buildReferencePage());
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -135,14 +185,19 @@ class _NotesPageState extends State<NotesPage> {
             tooltip: 'AI 摘要',
             onPressed: _preparingSummary ? null : _aiSummarize,
           ),
-          IconButton(icon: const Icon(Icons.history), tooltip: '历史摘要',
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => const AISummaryHistoryPage()))),
+          IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: '历史摘要',
+              onPressed: () {
+                final db = DatabaseService.instance;
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AISummaryHistoryPage(database: db)));
+              }),
           // 导出
           IconButton(
             icon: const Icon(Icons.ios_share_rounded),
             tooltip: '导出笔记',
-            onPressed: () => _exportNotes(context),
+            onPressed: _exporting ? null : () => _exportNotes(context),
           ),
         ],
       ),
@@ -168,7 +223,8 @@ class _NotesPageState extends State<NotesPage> {
                         decoration: InputDecoration(
                           hintText: '搜索笔记内容或书名...',
                           hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
+                          prefixIcon:
+                              Icon(Icons.search, color: Colors.grey[400]),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 20),
@@ -183,7 +239,8 @@ class _NotesPageState extends State<NotesPage> {
                               : null,
                           filled: true,
                           fillColor: const Color(0xFFF0F0F0),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 0),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -200,30 +257,38 @@ class _NotesPageState extends State<NotesPage> {
                     // 过滤按钮
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Row(
+                      child: Wrap(
+                        runSpacing: 8,
                         children: _filters.map((filter) {
-                           final isSelected = provider.filter == filter;
-                           final color = filter == ReadingFilter.favorites
+                          final isSelected = provider.filter == filter;
+                          final color = filter == ReadingFilter.favorites
                               ? const Color(0xFFFFB74D)
                               : const Color(0xFF2196F3);
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: GestureDetector(
                               onTap: () {
-                                 provider.setFilter(filter);
+                                provider.setFilter(filter);
                               },
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? color : const Color(0xFFF0F0F0),
+                                  color: isSelected
+                                      ? color
+                                      : const Color(0xFFF0F0F0),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                   filter.label,
+                                  filter.label,
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                    color: isSelected ? Colors.white : Colors.grey[700],
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : Colors.grey[700],
                                   ),
                                 ),
                               ),
@@ -239,14 +304,16 @@ class _NotesPageState extends State<NotesPage> {
                         children: [
                           Text(
                             '共 ${provider.matchedCount} 条',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[500]),
                           ),
                           if (provider.isLoading) ...[
                             const SizedBox(width: 8),
                             const SizedBox(
                               width: 12,
                               height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 1.5),
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 1.5),
                             ),
                           ],
                         ],
@@ -267,38 +334,84 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Widget _buildReferencePage() => Scaffold(
-    appBar: AppBar(title: const Text('原笔记')),
-    body: FutureBuilder<Map<String, dynamic>?>(future: _target, builder: (context, snapshot) {
-      if (snapshot.hasError) return const Center(child: Text('原笔记加载失败'));
-      if (snapshot.connectionState != ConnectionState.done) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      final row = snapshot.data;
-      if (row == null) return const Center(child: Text('原笔记已不存在；可在摘要历史中核对引用 ID'));
-      final note = NoteItem(id: row['id'], bookId: row['book_id'],
-        bookTitle: row['book_title'], content: row['content'],
-        chapterTitle: row['chapter_title'], createdAt: row['created_at'],
-        isFav: row['is_fav'] == 1,
-        source: NoteSource.values.byName(row['source']));
-      return ListView(padding: const EdgeInsets.all(16), children: [
-        Text('笔记 ID：${note.id}'),
-        _NoteCard(key: ValueKey('${note.source.name}:${note.id}'),
-          note: note, initiallyExpanded: true, onFavoriteToggle: () async {
-          final db = DatabaseService.instance;
-          if (note.source == NoteSource.bookmark) {
-            await db.toggleBookmarkFavorite(note.id, !note.isFav);
-          } else {
-            await db.toggleFavorite(note.id, !note.isFav);
-          }
-          if (!mounted || !db.isActive) return;
-          SyncService.changes.publish(db, favoritesOnly: true, bookIds: {note.bookId},
-            itemIds: {'${note.source.name}:${note.id}'}, sources: {note.source.name});
-        }),
-      ]);
-    }),
-  );
+        appBar: AppBar(title: const Text('原笔记')),
+        body: FutureBuilder<Map<String, dynamic>?>(
+            future: _target,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('原笔记加载失败'),
+                  TextButton(
+                      onPressed: _loadReference, child: const Text('重试')),
+                ]));
+              }
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final row = snapshot.data;
+              if (row == null) {
+                return const Center(child: Text('原笔记已不存在；可在摘要历史中核对引用 ID'));
+              }
+              final note = NoteItem(
+                  id: row['id'],
+                  bookId: row['book_id'],
+                  bookTitle: row['book_title'],
+                  content: row['content'],
+                  chapterTitle: row['chapter_title'],
+                  createdAt: row['created_at'],
+                  isFav: row['is_fav'] == 1,
+                  source: NoteSource.values.byName(row['source']));
+              return ListView(padding: const EdgeInsets.all(16), children: [
+                Text('笔记 ID：${note.id}'),
+                _NoteCard(
+                    key: ValueKey('${note.source.name}:${note.id}'),
+                    note: note,
+                    initiallyExpanded: true,
+                    onFavoriteToggle: () async {
+                      final db = _referenceDatabase!;
+                      if (!mounted || !db.isActive) return;
+                      if (note.source == NoteSource.bookmark) {
+                        await db.toggleBookmarkFavorite(note.id, !note.isFav);
+                      } else {
+                        await db.toggleFavorite(note.id, !note.isFav);
+                      }
+                      if (!mounted || !db.isActive) return;
+                      SyncService.changes.publish(db,
+                          favoritesOnly: true,
+                          bookIds: {note.bookId},
+                          itemIds: {'${note.source.name}:${note.id}'},
+                          sources: {note.source.name});
+                    }),
+              ]);
+            }),
+      );
 
-  Widget _buildBody(BuildContext context, NotesProvider provider, List<NoteItem> filteredNotes) {
+  Widget _buildScrollableState(NotesProvider provider, List<Widget> children) =>
+      LayoutBuilder(
+          builder: (context, constraints) => RefreshIndicator(
+                onRefresh: provider.loadNotes,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: children,
+                        ),
+                      ),
+                    )
+                  ],
+                ),
+              ));
+
+  Widget _buildBody(BuildContext context, NotesProvider provider,
+      List<NoteItem> filteredNotes) {
     // 加载中（首次）
     if (provider.isLoading && provider.notes.isEmpty) {
       return const Center(
@@ -315,68 +428,39 @@ class _NotesPageState extends State<NotesPage> {
 
     // 错误状态
     if (provider.error != null && provider.notes.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () => provider.loadNotes(),
-        child: ListView(
-          children: [
-            SizedBox(
-              height: MediaQuery.of(context).size.height * 0.4,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[200]),
-                    const SizedBox(height: 16),
-                    Text('加载失败', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-                    const SizedBox(height: 8),
-                    Text(provider.error!, style: TextStyle(fontSize: 12, color: Colors.grey[400])),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () => provider.loadNotes(),
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重试'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+      return _buildScrollableState(provider, [
+        Icon(Icons.error_outline, size: 64, color: Colors.red[200]),
+        const SizedBox(height: 16),
+        Text('加载失败', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+        const SizedBox(height: 8),
+        Text(provider.error!,
+            style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: () => provider.loadNotes(),
+          icon: const Icon(Icons.refresh),
+          label: const Text('重试'),
         ),
-      );
+      ]);
     }
 
     // 空状态
     if (filteredNotes.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () => provider.loadNotes(),
-        child: ListView(
-          children: [
-            SizedBox(
-              height: MediaQuery.of(context).size.height * 0.4,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                       provider.totalCount == 0 ? '暂无笔记，请先同步书架' : '没有匹配的笔记',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[400]),
-                    ),
-                    if (provider.notes.isEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        '下拉刷新重新加载',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
+      return _buildScrollableState(provider, [
+        Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey[300]),
+        const SizedBox(height: 16),
+        Text(
+          provider.totalCount == 0 ? '暂无笔记，请先同步书架' : '没有匹配的笔记',
+          style: TextStyle(fontSize: 16, color: Colors.grey[400]),
         ),
-      );
+        if (provider.notes.isEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            '下拉刷新重新加载',
+            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+          ),
+        ],
+      ]);
     }
 
     // 正常列表
@@ -388,14 +472,21 @@ class _NotesPageState extends State<NotesPage> {
       onRefresh: () => provider.loadNotes(),
       child: ListView.builder(
         controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: filteredNotes.length + (provider.hasMore || provider.error != null ? 1 : 0),
+        itemCount: filteredNotes.length +
+            (provider.hasMore || provider.error != null ? 1 : 0),
         findChildIndexCallback: (key) => childIndices[key],
         itemBuilder: (context, index) {
           if (index == filteredNotes.length) {
-            if (provider.isLoading) return const Center(child: CircularProgressIndicator());
-            return TextButton(onPressed: provider.loadMore,
-              child: Text(provider.error == null ? '加载更多' : '加载失败，点击重试: ${provider.error}'));
+            if (provider.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return TextButton(
+                onPressed: provider.loadMore,
+                child: Text(provider.error == null
+                    ? '加载更多'
+                    : '加载失败，点击重试: ${provider.error}'));
           }
           final note = filteredNotes[index];
           return _NoteCard(
@@ -430,14 +521,14 @@ class _NoteCardState extends State<_NoteCard> {
   bool _saving = false;
 
   Future<void> _toggleFavorite() async {
-    if (_saving) return;
+    if (!mounted || _saving) return;
     setState(() => _saving = true);
     try {
       await widget.onFavoriteToggle();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('收藏保存失败: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('收藏保存失败: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -449,14 +540,15 @@ class _NoteCardState extends State<_NoteCard> {
     final note = widget.note;
     // 使用数据来源区分划线和笔记，与文本长度无关。
     final isHighlight = note.source == NoteSource.bookmark;
-    final accentColor = isHighlight
-        ? const Color(0xFFFF6B6B)
-        : const Color(0xFF4ECDC4);
-    final displayContent = _isExpanded
+    final accentColor =
+        isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
+    // Inspect only the preview boundary, preserving emoji/combining sequences
+    // without scanning the rest of a potentially very long note.
+    final preview = note.content.characters.take(81).toList(growable: false);
+    final hasMore = preview.length > 80;
+    final displayContent = _isExpanded || !hasMore
         ? note.content
-        : (note.content.length > 80
-            ? '${note.content.substring(0, 80)}...'
-            : note.content);
+        : '${preview.take(80).join()}...';
 
     return GestureDetector(
       onTap: () {
@@ -485,7 +577,8 @@ class _NoteCardState extends State<_NoteCard> {
               height: 3,
               decoration: BoxDecoration(
                 color: accentColor,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
               ),
             ),
             Padding(
@@ -497,7 +590,8 @@ class _NoteCardState extends State<_NoteCard> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: accentColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
@@ -525,9 +619,11 @@ class _NoteCardState extends State<_NoteCard> {
                         ),
                       ),
                       GestureDetector(
-                         onTap: _saving ? null : _toggleFavorite,
+                        onTap: _saving ? null : _toggleFavorite,
                         child: Icon(
-                          note.isFav ? Icons.star_rounded : Icons.star_border_rounded,
+                          note.isFav
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
                           size: 22,
                           color: note.isFav
                               ? const Color(0xFFFFB74D)
@@ -558,16 +654,18 @@ class _NoteCardState extends State<_NoteCard> {
                       ),
                       child: Text(
                         displayContent,
-                        style: TextStyle(fontSize: 14, height: 1.6, color: Colors.grey[800]),
+                        style: TextStyle(
+                            fontSize: 14, height: 1.6, color: Colors.grey[800]),
                       ),
                     )
                   else
                     Text(
                       displayContent,
-                      style: TextStyle(fontSize: 14, height: 1.6, color: Colors.grey[800]),
+                      style: TextStyle(
+                          fontSize: 14, height: 1.6, color: Colors.grey[800]),
                     ),
                   // 展开/收起
-                  if (note.content.length > 80) ...[
+                  if (hasMore) ...[
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -581,7 +679,8 @@ class _NoteCardState extends State<_NoteCard> {
                         ),
                         Text(
                           _isExpanded ? '收起' : '展开全部',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.grey[400]),
                         ),
                       ],
                     ),
@@ -590,12 +689,14 @@ class _NoteCardState extends State<_NoteCard> {
                   // 时间
                   Row(
                     children: [
-                      Icon(Icons.access_time_rounded, size: 14, color: Colors.grey[400]),
+                      Icon(Icons.access_time_rounded,
+                          size: 14, color: Colors.grey[400]),
                       const SizedBox(width: 4),
-                      Text(
+                      Flexible(
+                          child: Text(
                         _formatTimestamp(note.createdAt),
                         style: TextStyle(fontSize: 11, color: Colors.grey[400]),
-                      ),
+                      )),
                     ],
                   ),
                 ],

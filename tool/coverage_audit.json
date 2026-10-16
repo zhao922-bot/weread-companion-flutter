@@ -1,0 +1,6 @@
+{
+  "minimumLinePercent": 100,
+  "minimumBranchPercent": 100,
+  "note": "所有 lib 可执行 Dart 文件要求实测行覆盖和分支覆盖均为 100%；不排除文件、行或分支，不将审查说明计为覆盖。纯数值常量文件没有可执行记录，报告单独列出。",
+  "findings": []
+}

@@ -1,6 +1,13 @@
 # 微信读书伴侣 (WeRead Companion)
 
-微信读书的 Android 伴侣应用：同步书架与笔记，离线随时看，AI 生成带引用回跳的读书摘要，一键导出金句卡片和 Markdown 笔记。
+微信读书的 Android / Windows 伴侣应用：同步书架与笔记，离线随时看，AI 生成带引用回跳的读书摘要，一键导出金句卡片和 Markdown 笔记。
+
+## 下载 v2.7.0
+
+从 [GitHub Releases](https://github.com/zhao922-bot/weread-companion-flutter/releases/tag/v2.7.0) 下载 Android APK、Windows x64 自解压 EXE 或便携 ZIP。
+
+- Windows EXE 解压部署到当前用户的 `%LOCALAPPDATA%\Programs\WeReadCompanion`，创建开始菜单快捷方式。ZIP 需完整解压后运行 `weread_companion.exe`，保留同目录 DLL 和 `data` 文件夹；数据库位于用户应用数据目录。
+- Android APK 使用新发布签名，旧签名版本需先备份数据并卸载后安装。
 
 ## 功能
 
@@ -37,7 +44,7 @@
 - 统计全部在 SQLite 内聚合完成，不把全库读进内存
 
 ### 笔记导出
-- 一键导出为 Markdown，流式写入不占内存
+- 一键导出为 Markdown，先生成临时磁盘快照，再以每批最多 500 条分批格式化、流式写入；导出内容保持一致，避免在 Dart 内存中保存全部笔记
 - 先写临时文件、成功后原子替换，导出失败不会删掉旧文件
 - 文件名带时间戳，同一天多次导出互不覆盖
 
@@ -52,13 +59,15 @@
 - **多账号隔离**：每个账号独立数据库 + 独立同步游标
 - **鲁棒的认证链路**：refreshToken 轮换、落盘失败降级、失效状态全局同步，避免"假登录"
 - **性能优化**：数据库聚合、复合索引、游标分页、标签页懒加载、封面按需解码、搜索索引后台生成
-- **质量保障**：160 个自动化测试全过，`flutter analyze` 零问题
+- **旧库升级**：搜索索引按每批最多 100 条回填，进度与索引原子提交，中断后继续处理剩余批次
+- **质量保障**：检查脚本要求全部自动化测试通过、`flutter analyze` 零问题，以及 `lib` 可执行 Dart 代码行覆盖 **100%**、分支覆盖 **100%**（Flutter 3.44.0 / Dart 3.12.0）。实测结果见 [更新日志](CHANGELOG.md)，默认检查执行 [100% 门槛](tool/coverage_audit.json)。
 
 ## 开发
 
 ### 环境要求
 - Flutter 3.x + Dart 3.x
 - Android SDK（打包 APK 用）
+- Visual Studio C++ 桌面开发工具与 Windows SDK（打包 Windows 用）
 
 ### 运行与构建
 
@@ -72,7 +81,26 @@ flutter run
 # 打包 release APK
 flutter build apk --release
 # 输出: build/app/outputs/flutter-apk/app-release.apk
+
+# Windows 发布构建（包含 SQLite 和 VC++ 运行库）
+flutter build windows --release
 ```
+
+Android 发布构建需要自行配置未纳入版本管理的 `android/key.properties` 与 keystore。Windows 构建后运行 `./tool/package_windows.ps1`，使用 Windows 自带的 .NET Framework 编译器生成自解压 EXE 和完整 ZIP，输出到 `build/releases/`。
+
+### 一次运行完整检查
+
+先运行 `flutter pub get`，在 PowerShell 中执行：
+
+```powershell
+# 静态分析 + 全量测试 + 行/分支 100% 门槛 + Android Debug 构建
+./tool/check.ps1 -BuildApk
+# Flutter 不在 PATH 时，可增加 -Flutter 'E:\flutter_windows_3.44.0-stable\flutter\bin\flutter.bat'
+```
+
+报告生成到 `build/coverage/report.txt`、`report.json` 和 `lcov.info`。默认要求行覆盖和分支覆盖均为 **100%**；任何未覆盖行、分支或未统计的可执行 `lib` 文件都会使检查失败，不使用覆盖率排除标记。纯数值常量文件没有可执行记录，在报告中单独列出。
+
+`-RequireFullCoverage` 参数保留兼容，但不再需要显式指定。100% 指 Dart VM 实测的行与分支执行覆盖，不等于全部交互组合、并发排列或 Android 真机行为均已验证；原生平台、真实网络与系统分享仍需设备验证。
 
 ## 项目结构
 

@@ -6,120 +6,236 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'database.dart';
+import 'export_snapshot.dart';
+import 'export_writer.dart';
 
 String _formatBatch(Map<String, dynamic> input) {
   final out = StringBuffer();
   String? chapter = input['chapter'] as String?;
+  int? book = input['book'] as int?;
   for (final row in input['rows'] as List<Map<String, dynamic>>) {
+    if (row['book_position'] != book) {
+      book = row['book_position'] as int;
+      chapter = null;
+      out.write('\n\n## 📖 ${row['title']}\n\n');
+    }
     final ch = row['chapter_title'] as String? ?? '';
     if (ch.isNotEmpty && ch != chapter) {
       chapter = ch;
       out.write('\n**$ch**\n\n');
     }
-    out.write('- ${row['source'] == 'bookmark' ? '📝' : '💭'} ${row['content'] ?? ''}\n');
+    out.write(
+        '- ${row['source'] == 'bookmark' ? '📝' : '💭'} ${row['content'] ?? ''}\n');
   }
-  return jsonEncode({'text': out.toString(), 'chapter': chapter});
+  return jsonEncode({'text': out.toString(), 'chapter': chapter, 'book': book});
 }
 
 class ExportService {
-  static Future<void> clearLocalExports() async {
-    for (final directory in [await getApplicationDocumentsDirectory(), await getTemporaryDirectory()]) {
-      if (!await directory.exists()) continue;
-      await for (final entry in directory.list(followLinks: false)) {
-        final name = p.basename(entry.path);
-        if (entry is Directory && name.startsWith('.weread-export-')) {
-          await entry.delete(recursive: true);
-          continue;
-        }
-        if (entry is File && (RegExp(r'^微信读书笔记_(?:[0-9]+|[0-9]{8}_[0-9]{6}_[a-f0-9]{32})\.md$').hasMatch(name) ||
-            RegExp(r'^weread_card_[0-9]+(?:_[0-9]+)?\.png$').hasMatch(name))) {
-          await entry.delete();
-        }
+  static final _snapshots = <ExportSnapshot>{};
+  static final _writers = <ExportWriter>{};
+  static final _failedCardExports = <String>{};
+
+  /// Keep failed deletions reachable so the next export/logout can retry them.
+  static Future<void> removeCardExports(Iterable<String> paths) async {
+    Object? failure;
+    StackTrace? failureStack;
+    for (final path in paths.toList()) {
+      try {
+        await _deleteIfPresent(File(path));
+        _failedCardExports.remove(path);
+      } catch (error, stack) {
+        _failedCardExports.add(path);
+        failure ??= error;
+        failureStack ??= stack;
       }
     }
+    if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
+  }
+
+  static Future<void> retryFailedCardExports() =>
+      removeCardExports(_failedCardExports.toList());
+
+  static Future<void> _deleteIfPresent(FileSystemEntity entry,
+      {bool recursive = false}) async {
+    try {
+      await entry.delete(recursive: recursive);
+    } on FileSystemException {
+      // Export completion and logout can clean the same task concurrently.
+      if (await FileSystemEntity.type(entry.path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        rethrow;
+      }
+    }
+  }
+
+  static Future<void> clearLocalExports() async {
+    Object? failure;
+    StackTrace? failureStack;
+    Future<void> clean(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stack) {
+        failure ??= error;
+        failureStack ??= stack;
+      }
+    }
+
+    // Release failed captures and readers before deleting files on Windows.
+    await clean(retryFailedCardExports);
+    await clean(ExportSnapshot.releaseAttachments);
+    for (final snapshot in _snapshots.toList()) {
+      await clean(() async {
+        await snapshot.close();
+        _snapshots.remove(snapshot);
+      });
+    }
+    for (final writer in _writers.toList()) {
+      await clean(writer.close);
+    }
+    final visited = <String>{};
+    for (final locate in [
+      getApplicationDocumentsDirectory,
+      getTemporaryDirectory
+    ]) {
+      await clean(() async {
+        final directory = await locate();
+        if (!visited.add(directory.absolute.path) ||
+            !await directory.exists()) {
+          return;
+        }
+        await for (final entry in directory.list(followLinks: false)) {
+          final name = p.basename(entry.path);
+          if (entry is Directory && name.startsWith('.weread-export-')) {
+            await clean(() => _deleteIfPresent(entry, recursive: true));
+            continue;
+          }
+          if (entry is File &&
+              (RegExp(r'^微信读书笔记_(?:[0-9]+|[0-9]{8}_[0-9]{6}_[a-f0-9]{32})\.md$')
+                      .hasMatch(name) ||
+                  RegExp(r'^weread_card_[0-9]+(?:(?:_[a-f0-9]{32})?_[0-9]+)?\.png$')
+                      .hasMatch(name))) {
+            await clean(() => _deleteIfPresent(entry));
+          }
+        }
+      });
+    }
+    if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
   }
 
   static Future<String> exportToMarkdown({String? bookId}) async {
     final db = DatabaseService.instance;
-    final connection = await db.database;
     Directory? staging;
+    Directory? snapshotDirectory;
+    ExportSnapshot? snapshot;
+    File? output;
+    Object? failure;
+    StackTrace? failureStack;
+    void recordFailure(Object error, StackTrace stack) {
+      failure ??= error;
+      failureStack ??= stack;
+    }
+
+    Future<void> clean(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stack) {
+        recordFailure(error, stack);
+      }
+    }
+
     try {
-      // Capture only database data under the lock. Formatting and I/O use this
-      // in-memory snapshot after the transaction has released the connection.
-      final snapshot = await connection.transaction((txn) async {
-        // Preserve book order: newest bookmark first, then note-only books.
-        final books = await txn.rawQuery('''
-      SELECT book_id, MIN(priority) AS priority,
-        COALESCE(MAX(CASE WHEN priority = 0 THEN created_at END), MAX(created_at)) AS newest FROM (
-        SELECT book_id, created_at, 0 AS priority FROM bookmarks
-        UNION ALL SELECT book_id, created_at, 1 AS priority FROM notes)
-      ${bookId == null ? '' : 'WHERE book_id = ?'}
-      GROUP BY book_id ORDER BY priority, newest DESC, book_id DESC
-        ''', [if (bookId != null) bookId]);
-        if (books.isEmpty) throw Exception('暂无数据可导出');
-        final result = <(Object?, List<Map<String, dynamic>>)>[];
-        for (final book in books) {
-          if (!db.isActive) throw StateError('账号会话已结束');
-          final id = book['book_id'];
-          final title = await txn.rawQuery('''
-          SELECT book_title FROM (
-            SELECT book_title, created_at, bookmark_id AS id, 0 AS priority FROM bookmarks WHERE book_id = ?
-            UNION ALL SELECT book_title, created_at, note_id AS id, 1 AS priority FROM notes WHERE book_id = ?)
-          ORDER BY priority, created_at DESC, id DESC LIMIT 1
-            ''', [id, id]);
-          final rows = await txn.rawQuery('''
-            SELECT * FROM (
-              SELECT bookmark_id AS id, mark_text AS content, chapter_title, created_at, 'bookmark' AS source FROM bookmarks WHERE book_id = ?
-              UNION ALL SELECT note_id AS id, content, chapter_title, created_at, 'note' AS source FROM notes WHERE book_id = ?)
-            ORDER BY created_at ASC, source ASC, id DESC
-          ''', [id, id]);
-          result.add((title.first['book_title'], rows));
-        }
-        return result;
-      });
-      if (!db.isActive) throw StateError('账号会话已结束');
+      final temporary = await getTemporaryDirectory();
+      db.requireActive();
+      snapshotDirectory =
+          await temporary.createTemp('.weread-export-snapshot-');
+      snapshot = await ExportSnapshot.capture(
+          db, p.join(snapshotDirectory.path, 'snapshot.db'),
+          bookId: bookId);
+      _snapshots.add(snapshot);
+      db.requireActive();
       final now = DateTime.now();
       String two(int n) => n.toString().padLeft(2, '0');
       final dir = await getApplicationDocumentsDirectory();
-      if (!db.isActive) throw StateError('账号会话已结束');
+      db.requireActive();
       final random = Random.secure();
-      final taskId = List.generate(16, (_) => random.nextInt(256)
-          .toRadixString(16).padLeft(2, '0')).join();
-      final file = File('${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}_'
+      final taskId = List.generate(
+              16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+          .join();
+      final file = output = File(
+          '${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}_'
           '${two(now.hour)}${two(now.minute)}${two(now.second)}_$taskId.md');
       staging = await dir.createTemp('.weread-export-');
+      db.requireActive();
       final pending = File('${staging.path}/notes.md');
-      final sink = pending.openWrite(encoding: utf8);
+      final sink = ExportWriter(pending.openWrite(encoding: utf8));
+      _writers.add(sink);
       try {
-        sink.write('# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
-        for (final (title, items) in snapshot) {
-          sink.write('\n\n## 📖 $title\n\n');
-          String? chapter;
-          for (var offset = 0; offset < items.length; offset += 500) {
-            if (!db.isActive) throw StateError('账号会话已结束');
-            final rows = items.sublist(offset, min(offset + 500, items.length));
-            final formatted = jsonDecode(await compute(_formatBatch, {'rows': rows, 'chapter': chapter})) as Map<String, dynamic>;
-            sink.write(formatted['text']);
-            chapter = formatted['chapter'] as String?;
-            await sink.flush();
-          }
+        sink.write(
+            '# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
+        String? chapter;
+        int? book;
+        var after = 0;
+        while (true) {
+          db.requireActive();
+          final rows = await snapshot.readPage(after: after);
+          db.requireActive();
+          if (rows.isEmpty) break;
+          final formatted = jsonDecode(await compute(_formatBatch, {
+            'rows': rows,
+            'chapter': chapter,
+            'book': book
+          })) as Map<String, dynamic>;
+          db.requireActive();
+          sink.write(formatted['text']);
+          chapter = formatted['chapter'] as String?;
+          book = formatted['book'] as int?;
+          after = rows.last['position'] as int;
+          await sink.flush();
         }
         await sink.flush();
-        if (!db.isActive) throw StateError('账号会话已结束');
+        db.requireActive();
+      } catch (error, stack) {
+        recordFailure(error, stack);
       } finally {
-        await sink.close();
+        await clean(sink.close);
+        _writers.remove(sink);
       }
-      if (!db.isActive) throw StateError('账号会话已结束');
+      if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
+      db.requireActive();
       // Both files are on the same filesystem: publish only the complete file.
       await pending.rename(file.path);
-      return file.path;
-    } finally {
-      if (staging != null && await staging.exists()) await staging.delete(recursive: true);
+      db.requireActive();
+    } catch (error, stack) {
+      recordFailure(error, stack);
     }
+    // Cleanup can fail or yield to logout. Do not publish a success until all
+    // resources are released and the owning session has been checked again.
+    await clean(() async {
+      await snapshot?.close();
+      _snapshots.remove(snapshot);
+    });
+    if (staging != null) {
+      await clean(() => _deleteIfPresent(staging!, recursive: true));
+    }
+    if (snapshotDirectory != null) {
+      await clean(() => _deleteIfPresent(snapshotDirectory!, recursive: true));
+    }
+    if (!db.isActive) {
+      recordFailure(StateError('账号会话已结束'), StackTrace.current);
+    }
+    if (failure != null) {
+      // A rename may have completed before reporting an error. Roll back only
+      // this task's unique output; cleanup failures must not hide its cause.
+      if (output != null) await clean(() => _deleteIfPresent(output!));
+      Error.throwWithStackTrace(failure!, failureStack!);
+    }
+    return output!.path;
   }
 
   static Future<void> exportAndShare({String? bookId}) async {
+    final db = DatabaseService.instance;
     final path = await exportToMarkdown(bookId: bookId);
+    db.requireActive();
     await Share.shareXFiles([XFile(path)], text: '微信读书笔记导出');
   }
 }

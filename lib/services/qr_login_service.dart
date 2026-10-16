@@ -100,17 +100,19 @@ class QrLoginService {
     return QrLoginRequest(uuid);
   }
 
-  Future<void> _delay(Duration duration, CancelToken token) async {
+  Future<void> _delay(Duration duration, CancelToken token,
+      Stream<DioException> cancellation) async {
     if (token.isCancelled) throw token.cancelError!;
     final completer = Completer<void>();
     final timer = Timer(duration, completer.complete);
+    final subscription = cancellation.listen((error) {
+      if (!completer.isCompleted) completer.completeError(error);
+    });
     try {
-      await Future.any<void>([
-        completer.future,
-        token.whenCancel.then<void>((error) => throw error),
-      ]);
+      await completer.future;
     } finally {
       timer.cancel();
+      await subscription.cancel();
     }
   }
 
@@ -121,6 +123,16 @@ class QrLoginService {
   }) async {
     final elapsed = Stopwatch()..start();
     final deadline = pollDeadline;
+    // One connection to the external Future; each request/delay removes its
+    // own stream subscription instead of retaining callbacks until cancellation.
+    final cancellation = cancelToken.whenCancel.asStream().asBroadcastStream();
+    Future<void> pause() async {
+      final remaining = deadline - elapsed.elapsed;
+      if (remaining > Duration.zero) {
+        await _delay(remaining < pollInterval ? remaining : pollInterval,
+            cancelToken, cancellation);
+      }
+    }
     int? last;
     bool scanned = false;
     while (true) {
@@ -135,9 +147,9 @@ class QrLoginService {
       // 独立计时器保证连接和接收阶段合计不超过单次/总时限。
       final requestToken = CancelToken();
       final timer = Timer(timeout, () => requestToken.cancel('poll timeout'));
-      unawaited(cancelToken.whenCancel.then((error) {
+      final subscription = cancellation.listen((error) {
         if (!requestToken.isCancelled) requestToken.cancel(error);
-      }));
+      });
       Map<String, dynamic> result;
       try {
         final response = await _dio.get<dynamic>(
@@ -160,11 +172,13 @@ class QrLoginService {
             e.type == DioExceptionType.connectionTimeout ||
             (e.type == DioExceptionType.cancel &&
                 requestToken.cancelError?.error == 'poll timeout')) {
+          await pause();
           continue;
         }
         rethrow;
       } finally {
         timer.cancel();
+        await subscription.cancel();
       }
       final code = int.tryParse('${result['wx_errcode']}');
       switch (code) {
@@ -190,14 +204,7 @@ class QrLoginService {
           throw const QrLoginException('微信返回了未知登录状态，请重试');
       }
       last = code;
-      final delay = deadline - elapsed.elapsed;
-      if (delay > Duration.zero) {
-        await _delay(
-            delay < pollInterval
-                ? delay
-                : pollInterval,
-            cancelToken);
-      }
+      await pause();
     }
   }
 
