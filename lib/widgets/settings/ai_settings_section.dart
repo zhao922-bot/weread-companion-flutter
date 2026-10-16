@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_config_provider.dart';
 import '../../services/config.dart';
@@ -111,7 +112,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
         decoration: InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: const Color(0xFFF8F8F8),
+          fillColor: ReadAmberColors.surfaceMuted,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           suffixIcon: secret ? IconButton(
             onPressed: enabled ? () => setState(() => _obscure = !_obscure) : null,
@@ -141,11 +142,11 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
     }
     final enabled = !config.isBusy;
     const presets = [
-      ('DeepSeek', 'https://api.deepseek.com', 'deepseek-chat', Color(0xFF4D6BFE)),
-      ('Qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.6-plus', Color(0xFF6C3BF5)),
-      ('MiniMax', 'https://api.minimax.chat/v1', 'MiniMax-M2.7', Color(0xFF00B4D8)),
-      ('Moonshot', 'https://api.moonshot.cn/v1', 'kimi-k2.5', Color(0xFF1A1A2E)),
-      ('SiliconFlow', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', Color(0xFFFF6B35)),
+      ('DeepSeek', 'https://api.deepseek.com', 'deepseek-chat', ReadAmberColors.ink),
+      ('Qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.6-plus', ReadAmberColors.ink),
+      ('MiniMax', 'https://api.minimax.chat/v1', 'MiniMax-M2.7', ReadAmberColors.ink),
+      ('Moonshot', 'https://api.moonshot.cn/v1', 'kimi-k2.5', ReadAmberColors.ink),
+      ('SiliconFlow', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', ReadAmberColors.ink),
     ];
     return SettingsSection(title: 'AI 配置', children: [
       ExpansionTile(

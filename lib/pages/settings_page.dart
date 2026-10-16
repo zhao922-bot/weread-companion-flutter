@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import '../widgets/settings/account_settings_section.dart';
 import '../widgets/settings/ai_settings_section.dart';
 import '../widgets/settings/about_settings_section.dart';
@@ -11,15 +12,15 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('设置'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
       ),
-      body: ListView(
+      body: ReadAmberContent(maxWidth: 840, child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 16),
         children: [
           const AccountSettingsSection(),
@@ -28,7 +29,7 @@ class SettingsPage extends StatelessWidget {
           const SizedBox(height: 24),
           const AboutSettingsSection(),
         ],
-      ),
+      )),
     );
   }
 }

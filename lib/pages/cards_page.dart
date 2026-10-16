@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/bookmark.dart';
@@ -175,13 +176,13 @@ class _CardsPageState extends State<CardsPage> {
     final isWide = screenWidth >= 600;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('书签卡片'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
       ),
       body: AbsorbPointer(
         absorbing: _exporting,
@@ -190,7 +191,7 @@ class _CardsPageState extends State<CardsPage> {
         children: [
           // 搜索栏 + 分页导航（合并为一个白色容器，消除缝隙）
           Container(
-            color: Colors.white,
+            color: ReadAmberColors.surface,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -201,8 +202,8 @@ class _CardsPageState extends State<CardsPage> {
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: '搜索引文或书名...',
-                      hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                      prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+                      hintStyle: TextStyle(color: ReadAmberColors.muted, fontSize: 14),
+                      prefixIcon: Icon(Icons.search, color: ReadAmberColors.muted, size: 20),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 18),
@@ -219,7 +220,7 @@ class _CardsPageState extends State<CardsPage> {
                             )
                           : null,
                       filled: true,
-                      fillColor: const Color(0xFFF0F0F0),
+                      fillColor: ReadAmberColors.surfaceMuted,
                       contentPadding: const EdgeInsets.symmetric(vertical: 0),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -250,7 +251,7 @@ class _CardsPageState extends State<CardsPage> {
                       Flexible(
                         child: Text(
                           '共 $_totalCount 条',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -269,12 +270,12 @@ class _CardsPageState extends State<CardsPage> {
                         iconSize: 22,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                        color: _currentPage > 1 ? const Color(0xFF2196F3) : Colors.grey[300],
+                        color: _currentPage > 1 ? ReadAmberColors.inkSoft : ReadAmberColors.outline,
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2196F3).withValues(alpha: 0.1),
+                          color: ReadAmberColors.inkSoft.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Text(
@@ -282,7 +283,7 @@ class _CardsPageState extends State<CardsPage> {
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF2196F3),
+                            color: ReadAmberColors.inkSoft,
                           ),
                         ),
                       ),
@@ -301,8 +302,8 @@ class _CardsPageState extends State<CardsPage> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                         color: _currentPage < _totalPages
-                            ? const Color(0xFF2196F3)
-                            : Colors.grey[300],
+                            ? ReadAmberColors.inkSoft
+                            : ReadAmberColors.outline,
                       ),
                       const SizedBox(width: 4),
                       GestureDetector(
@@ -310,12 +311,12 @@ class _CardsPageState extends State<CardsPage> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey[300]!),
+                            border: Border.all(color: ReadAmberColors.outline),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             '跳页',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                           ),
                         ),
                       ),
@@ -343,7 +344,7 @@ class _CardsPageState extends State<CardsPage> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('正在加载引文...', style: TextStyle(color: Colors.grey)),
+            Text('正在加载引文...', style: TextStyle(color: ReadAmberColors.muted)),
           ],
         ),
       );
@@ -361,9 +362,9 @@ class _CardsPageState extends State<CardsPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.error_outline, size: 64, color: Colors.red[200]),
+                    Icon(Icons.error_outline, size: 64, color: ReadAmberColors.error),
                     const SizedBox(height: 16),
-                    Text('加载失败', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                    Text('加载失败', style: TextStyle(fontSize: 16, color: ReadAmberColors.muted)),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       onPressed: _loadBookmarks,
@@ -391,17 +392,17 @@ class _CardsPageState extends State<CardsPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.format_quote_rounded, size: 64, color: Colors.grey[300]),
+                    Icon(Icons.format_quote_rounded, size: 64, color: ReadAmberColors.outline),
                     const SizedBox(height: 16),
                     Text(
                       _searchQuery.isEmpty ? '暂无引文，请先同步书架' : '没有匹配的引文',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+                      style: TextStyle(fontSize: 16, color: ReadAmberColors.muted),
                     ),
                     if (_searchQuery.isEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
                         '下拉刷新重新加载',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                        style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                       ),
                     ],
                   ],
@@ -426,7 +427,7 @@ class _CardsPageState extends State<CardsPage> {
           flex: 1,
           child: Container(
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: Colors.grey[200]!, width: 1)),
+              border: Border(right: BorderSide(color: ReadAmberColors.surfaceMuted, width: 1)),
             ),
             child: _buildQuoteList(pagedBookmarks),
           ),
@@ -467,10 +468,10 @@ class _CardsPageState extends State<CardsPage> {
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFE3F2FD) : Colors.white,
+                color: isSelected ? ReadAmberColors.paper : ReadAmberColors.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFF2196F3) : Colors.grey[200]!,
+                  color: isSelected ? ReadAmberColors.inkSoft : ReadAmberColors.surfaceMuted,
                   width: isSelected ? 1.5 : 1,
                 ),
               ),
@@ -491,7 +492,7 @@ class _CardsPageState extends State<CardsPage> {
                       Expanded(
                         child: Text(
                           '${bookmark.bookTitle}${bookmark.chapterTitle.isNotEmpty ? ' · ${bookmark.chapterTitle}' : ''}',
-                          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                          style: TextStyle(fontSize: 11, color: ReadAmberColors.muted),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -504,7 +505,7 @@ class _CardsPageState extends State<CardsPage> {
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.4,
-                      color: isSelected ? const Color(0xFF1565C0) : Colors.grey[800],
+                      color: isSelected ? ReadAmberColors.ink : ReadAmberColors.inkSoft,
                     ),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -531,7 +532,7 @@ class _CardsPageState extends State<CardsPage> {
           builder: (context, scrollController) {
             return Container(
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: ReadAmberColors.surface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
@@ -541,7 +542,7 @@ class _CardsPageState extends State<CardsPage> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey[300],
+                      color: ReadAmberColors.outline,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -606,14 +607,14 @@ class _CardsPageState extends State<CardsPage> {
 
   Color _getAccentColor(int index) {
     const colors = [
-      Color(0xFFFF6B6B),
-      Color(0xFF4ECDC4),
-      Color(0xFF45B7D1),
-      Color(0xFFFFA07A),
-      Color(0xFF98D8C8),
-      Color(0xFFF7DC6F),
-      Color(0xFFBB8FCE),
-      Color(0xFF85C1E9),
+      ReadAmberColors.amberText,
+      ReadAmberColors.inkSoft,
+      ReadAmberColors.success,
+      ReadAmberColors.amberText,
+      ReadAmberColors.inkSoft,
+      ReadAmberColors.amberText,
+      ReadAmberColors.success,
+      ReadAmberColors.inkSoft,
     ];
     return colors[index % colors.length];
   }
@@ -756,7 +757,7 @@ class _CardPreviewState extends State<_CardPreview> {
       }
       if (mounted && failure != null && isCurrent()) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $failure'), backgroundColor: Colors.red),
+          SnackBar(content: Text('导出失败: $failure'), backgroundColor: ReadAmberColors.error),
         );
       }
       onExportChanged(false);
@@ -765,7 +766,7 @@ class _CardPreviewState extends State<_CardPreview> {
 
   @override
   Widget build(BuildContext context) {
-    const accentColor = Color(0xFF4A7CF7);
+    const accentColor = ReadAmberColors.ink;
     final bookmark = _exportBookmark ?? widget.bookmark;
     final fontSize = _exportFontSize ?? _fontSize;
 
@@ -781,13 +782,13 @@ class _CardPreviewState extends State<_CardPreview> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(28),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: ReadAmberColors.surface,
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0x0D4A7CF7), // accentColor 0.05
-                      Color(0x054A7CF7), // accentColor 0.02
+                      ReadAmberColors.paper,
+                      ReadAmberColors.surface,
                     ],
                   ),
                   borderRadius: BorderRadius.circular(16),
@@ -801,7 +802,7 @@ class _CardPreviewState extends State<_CardPreview> {
                     const Icon(
                       Icons.format_quote_rounded,
                       size: 32,
-                      color: Color(0x4D4A7CF7), // accentColor 0.3
+                      color: ReadAmberColors.amber,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -809,19 +810,19 @@ class _CardPreviewState extends State<_CardPreview> {
                       style: TextStyle(
                         fontSize: fontSize,
                         height: 1.8,
-                        color: const Color(0xFF1A1A1A),
+                        color: ReadAmberColors.ink,
                         fontWeight: FontWeight.w500,
                       ),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
-                    Container(width: 40, height: 1, color: Colors.grey[300]),
+                    Container(width: 40, height: 1, color: ReadAmberColors.outline),
                     const SizedBox(height: 12),
                     Text(
                       '—— ${bookmark.bookTitle}',
                       style: TextStyle(
                         fontSize: fontSize * 0.78,
-                        color: Colors.grey[500],
+                        color: ReadAmberColors.muted,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -829,7 +830,7 @@ class _CardPreviewState extends State<_CardPreview> {
                       const SizedBox(height: 4),
                       Text(
                         bookmark.chapterTitle,
-                        style: TextStyle(fontSize: fontSize * 0.67, color: Colors.grey[400]),
+                        style: TextStyle(fontSize: fontSize * 0.67, color: ReadAmberColors.muted),
                       ),
                     ],
                   ],
@@ -841,14 +842,14 @@ class _CardPreviewState extends State<_CardPreview> {
         // 底部控制栏：字号调节 + 导出按钮
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Colors.grey[200]!, width: 0.5)),
+            color: ReadAmberColors.surface,
+            border: Border(top: BorderSide(color: ReadAmberColors.surfaceMuted, width: 0.5)),
           ),
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Row(
             children: [
               // 字号标签
-              Icon(Icons.format_size_rounded, size: 18, color: Colors.grey[500]),
+              Icon(Icons.format_size_rounded, size: 18, color: ReadAmberColors.muted),
               // 字号滑块
               Expanded(
                 child: SliderTheme(
@@ -871,7 +872,7 @@ class _CardPreviewState extends State<_CardPreview> {
               ),
               Text(
                 '${_fontSize.toInt()}',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 12, color: ReadAmberColors.muted, fontWeight: FontWeight.w600),
               ),
               const SizedBox(width: 12),
               // 导出按钮
@@ -880,12 +881,12 @@ class _CardPreviewState extends State<_CardPreview> {
                 child: ElevatedButton.icon(
                   onPressed: _exporting ? null : _exportAsImage,
                   icon: _exporting
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: ReadAmberColors.surface))
                       : const Icon(Icons.ios_share_rounded, size: 16),
                   label: Text(_exporting ? '导出中...' : '导出图片', style: const TextStyle(fontSize: 13)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accentColor,
-                    foregroundColor: Colors.white,
+                    foregroundColor: ReadAmberColors.paper,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

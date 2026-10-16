@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../providers/notes_provider.dart';
 import '../services/export_service.dart';
@@ -150,13 +151,13 @@ class _NotesPageState extends State<NotesPage> {
       if (context.mounted && owner.isActive) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text('笔记已导出并分享'), backgroundColor: Color(0xFF07C160)),
+              content: Text('笔记已导出并分享'), backgroundColor: ReadAmberColors.ink),
         );
       }
     } catch (e) {
       if (context.mounted && owner?.isActive == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('导出失败: $e'), backgroundColor: ReadAmberColors.error),
         );
       }
     } finally {
@@ -171,13 +172,13 @@ class _NotesPageState extends State<NotesPage> {
           database: _referenceDatabase!, child: _buildReferencePage());
     }
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('笔记'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
         actions: [
           // AI 摘要
           IconButton(
@@ -201,7 +202,7 @@ class _NotesPageState extends State<NotesPage> {
           ),
         ],
       ),
-      body: Consumer<NotesProvider>(
+      body: ReadAmberContent(maxWidth: 960, child: Consumer<NotesProvider>(
         builder: (context, provider, _) {
           // 搜索和筛选由数据库执行，列表只展示 provider 已加载的页。
           final filteredNotes = provider.notes;
@@ -211,7 +212,7 @@ class _NotesPageState extends State<NotesPage> {
             children: [
               // 搜索栏 + 筛选按钮 + 计数（合并为一个白色容器，消除缝隙）
               Container(
-                color: Colors.white,
+                color: ReadAmberColors.surface,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -222,9 +223,9 @@ class _NotesPageState extends State<NotesPage> {
                         controller: _searchController,
                         decoration: InputDecoration(
                           hintText: '搜索笔记内容或书名...',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
+                          hintStyle: TextStyle(color: ReadAmberColors.muted),
                           prefixIcon:
-                              Icon(Icons.search, color: Colors.grey[400]),
+                              Icon(Icons.search, color: ReadAmberColors.muted),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 20),
@@ -238,7 +239,7 @@ class _NotesPageState extends State<NotesPage> {
                                 )
                               : null,
                           filled: true,
-                          fillColor: const Color(0xFFF0F0F0),
+                          fillColor: ReadAmberColors.surfaceMuted,
                           contentPadding:
                               const EdgeInsets.symmetric(vertical: 0),
                           border: OutlineInputBorder(
@@ -262,8 +263,8 @@ class _NotesPageState extends State<NotesPage> {
                         children: _filters.map((filter) {
                           final isSelected = provider.filter == filter;
                           final color = filter == ReadingFilter.favorites
-                              ? const Color(0xFFFFB74D)
-                              : const Color(0xFF2196F3);
+                              ? ReadAmberColors.amberText
+                              : ReadAmberColors.inkSoft;
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: GestureDetector(
@@ -276,7 +277,7 @@ class _NotesPageState extends State<NotesPage> {
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? color
-                                      : const Color(0xFFF0F0F0),
+                                      : ReadAmberColors.surfaceMuted,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
@@ -287,8 +288,8 @@ class _NotesPageState extends State<NotesPage> {
                                         ? FontWeight.w600
                                         : FontWeight.normal,
                                     color: isSelected
-                                        ? Colors.white
-                                        : Colors.grey[700],
+                                        ? ReadAmberColors.surface
+                                        : ReadAmberColors.inkSoft,
                                   ),
                                 ),
                               ),
@@ -305,7 +306,7 @@ class _NotesPageState extends State<NotesPage> {
                           Text(
                             '共 ${provider.matchedCount} 条',
                             style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500]),
+                                fontSize: 12, color: ReadAmberColors.muted),
                           ),
                           if (provider.isLoading) ...[
                             const SizedBox(width: 8),
@@ -329,7 +330,7 @@ class _NotesPageState extends State<NotesPage> {
             ],
           );
         },
-      ),
+      )),
     );
   }
 
@@ -420,7 +421,7 @@ class _NotesPageState extends State<NotesPage> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('正在加载笔记...', style: TextStyle(color: Colors.grey)),
+            Text('正在加载笔记...', style: TextStyle(color: ReadAmberColors.muted)),
           ],
         ),
       );
@@ -429,12 +430,12 @@ class _NotesPageState extends State<NotesPage> {
     // 错误状态
     if (provider.error != null && provider.notes.isEmpty) {
       return _buildScrollableState(provider, [
-        Icon(Icons.error_outline, size: 64, color: Colors.red[200]),
+        Icon(Icons.error_outline, size: 64, color: ReadAmberColors.error),
         const SizedBox(height: 16),
-        Text('加载失败', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+        Text('加载失败', style: TextStyle(fontSize: 16, color: ReadAmberColors.muted)),
         const SizedBox(height: 8),
         Text(provider.error!,
-            style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+            style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
         const SizedBox(height: 16),
         ElevatedButton.icon(
           onPressed: () => provider.loadNotes(),
@@ -447,17 +448,17 @@ class _NotesPageState extends State<NotesPage> {
     // 空状态
     if (filteredNotes.isEmpty) {
       return _buildScrollableState(provider, [
-        Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey[300]),
+        Icon(Icons.note_alt_outlined, size: 64, color: ReadAmberColors.outline),
         const SizedBox(height: 16),
         Text(
           provider.totalCount == 0 ? '暂无笔记，请先同步书架' : '没有匹配的笔记',
-          style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+          style: TextStyle(fontSize: 16, color: ReadAmberColors.muted),
         ),
         if (provider.notes.isEmpty) ...[
           const SizedBox(height: 8),
           Text(
             '下拉刷新重新加载',
-            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+            style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
           ),
         ],
       ]);
@@ -541,7 +542,7 @@ class _NoteCardState extends State<_NoteCard> {
     // 使用数据来源区分划线和笔记，与文本长度无关。
     final isHighlight = note.source == NoteSource.bookmark;
     final accentColor =
-        isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
+        isHighlight ? ReadAmberColors.amberText : ReadAmberColors.inkSoft;
     // Inspect only the preview boundary, preserving emoji/combining sequences
     // without scanning the rest of a potentially very long note.
     final preview = note.content.characters.take(81).toList(growable: false);
@@ -559,11 +560,11 @@ class _NoteCardState extends State<_NoteCard> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: ReadAmberColors.surface,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
+              color: ReadAmberColors.ink.withValues(alpha: 0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -612,7 +613,7 @@ class _NoteCardState extends State<_NoteCard> {
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black87,
+                            color: ReadAmberColors.ink,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -626,8 +627,8 @@ class _NoteCardState extends State<_NoteCard> {
                               : Icons.star_border_rounded,
                           size: 22,
                           color: note.isFav
-                              ? const Color(0xFFFFB74D)
-                              : Colors.grey[300],
+                              ? ReadAmberColors.amberText
+                              : ReadAmberColors.outline,
                         ),
                       ),
                     ],
@@ -637,7 +638,7 @@ class _NoteCardState extends State<_NoteCard> {
                   if (note.chapterTitle.isNotEmpty)
                     Text(
                       note.chapterTitle,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                     ),
                   const SizedBox(height: 10),
                   // 内容
@@ -655,14 +656,14 @@ class _NoteCardState extends State<_NoteCard> {
                       child: Text(
                         displayContent,
                         style: TextStyle(
-                            fontSize: 14, height: 1.6, color: Colors.grey[800]),
+                            fontSize: 14, height: 1.6, color: ReadAmberColors.inkSoft),
                       ),
                     )
                   else
                     Text(
                       displayContent,
                       style: TextStyle(
-                          fontSize: 14, height: 1.6, color: Colors.grey[800]),
+                          fontSize: 14, height: 1.6, color: ReadAmberColors.inkSoft),
                     ),
                   // 展开/收起
                   if (hasMore) ...[
@@ -675,12 +676,12 @@ class _NoteCardState extends State<_NoteCard> {
                               ? Icons.keyboard_arrow_up_rounded
                               : Icons.keyboard_arrow_down_rounded,
                           size: 20,
-                          color: Colors.grey[400],
+                          color: ReadAmberColors.muted,
                         ),
                         Text(
                           _isExpanded ? '收起' : '展开全部',
                           style:
-                              TextStyle(fontSize: 12, color: Colors.grey[400]),
+                              TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                         ),
                       ],
                     ),
@@ -690,12 +691,12 @@ class _NoteCardState extends State<_NoteCard> {
                   Row(
                     children: [
                       Icon(Icons.access_time_rounded,
-                          size: 14, color: Colors.grey[400]),
+                          size: 14, color: ReadAmberColors.muted),
                       const SizedBox(width: 4),
                       Flexible(
                           child: Text(
                         _formatTimestamp(note.createdAt),
-                        style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                        style: TextStyle(fontSize: 11, color: ReadAmberColors.muted),
                       )),
                     ],
                   ),

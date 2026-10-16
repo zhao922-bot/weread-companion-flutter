@@ -11,6 +11,7 @@ import 'pages/notes_page.dart';
 import 'pages/cards_page.dart';
 import 'pages/report_page.dart';
 import 'pages/settings_page.dart';
+import 'theme/readamber_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,37 +45,7 @@ class ReadAmberApp extends StatelessWidget {
       child: MaterialApp(
         title: '阅珀 ReadAmber',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-                    colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF4A7CF7),
-            primary: const Color(0xFF4A7CF7),
-            surface: const Color(0xFFF7F8FC),
-            brightness: Brightness.light,
-          ),
-          scaffoldBackgroundColor: const Color(0xFFF7F8FC),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.white,
-            foregroundColor: Color(0xFF1A1A1A),
-            elevation: 0,
-            scrolledUnderElevation: 0.5,
-            centerTitle: true,
-          ),
-          navigationBarTheme: NavigationBarThemeData(
-            backgroundColor: Colors.white,
-            indicatorColor: const Color(0xFF4A7CF7).withValues(alpha: 0.12),
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            height: 64,
-          ),
-        ),
-        darkTheme: ThemeData(
-          useMaterial3: true,
-                    colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF4A7CF7),
-            primary: const Color(0xFF4A7CF7),
-            brightness: Brightness.dark,
-          ),
-        ),
+        theme: ReadAmberTheme.light,
         themeMode: ThemeMode.light,
         home: const MainScreen(),
       ),
@@ -137,7 +108,30 @@ class _MainScreenState extends State<MainScreen> {
                   else if (i == 4 || config.canBrowseLocal)
                     _page(i)
                   else
-                    const Center(child: Text('请先在设置中验证登录')),
+                    const Center(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image(
+                              image: AssetImage('assets/branding/readamber-v1/readamber-icon-128.png'),
+                              width: 80, height: 80, semanticLabel: '阅珀应用图标',
+                            ),
+                            SizedBox(height: 24),
+                            Text('阅珀 ReadAmber', textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600,
+                                color: ReadAmberColors.ink)),
+                            SizedBox(height: 10),
+                            Text('让读过的，留下来。',
+                              style: TextStyle(fontSize: 16, color: ReadAmberColors.amberText)),
+                            SizedBox(height: 32),
+                            Text('请先在设置中验证登录', textAlign: TextAlign.center,
+                              style: TextStyle(color: ReadAmberColors.muted)),
+                          ],
+                        ),
+                      ),
+                    ),
               ],
             ),
           ),
@@ -163,8 +157,8 @@ class _MainScreenState extends State<MainScreen> {
             label: '笔记',
           ),
           NavigationDestination(
-            icon: Icon(Icons.card_giftcard_outlined),
-            selectedIcon: Icon(Icons.card_giftcard),
+            icon: Icon(Icons.style_outlined),
+            selectedIcon: Icon(Icons.style),
             label: '卡片',
           ),
           NavigationDestination(

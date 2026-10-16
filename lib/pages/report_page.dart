@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../services/database.dart';
 import '../services/sync_service.dart';
@@ -104,7 +105,7 @@ class _ReportPageState extends State<ReportPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('阅读报告')),
-      body: RefreshIndicator(
+      body: ReadAmberContent(maxWidth: 1000, child: RefreshIndicator(
         onRefresh: _loadStats,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -120,11 +121,11 @@ class _ReportPageState extends State<ReportPage> {
               children: [
                 _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
                 const SizedBox(width: 8),
-                _StatCard('已读完', '$_readBooks', Icons.check_circle, const Color(0xFF4CAF50)),
+                _StatCard('已读完', '$_readBooks', Icons.check_circle, ReadAmberColors.success),
                 const SizedBox(width: 8),
-                _StatCard('在读中', '$_readingBooks', Icons.menu_book, const Color(0xFFFF9800)),
+                _StatCard('在读中', '$_readingBooks', Icons.menu_book, ReadAmberColors.amberText),
                 const SizedBox(width: 8),
-                _StatCard('划线与笔记', '$_totalNotes', Icons.note, const Color(0xFF9C27B0)),
+                _StatCard('划线与笔记', '$_totalNotes', Icons.note, ReadAmberColors.inkSoft),
               ],
             ),
             const SizedBox(height: 24),
@@ -146,24 +147,24 @@ class _ReportPageState extends State<ReportPage> {
                           sections: [
                             PieChartSectionData(
                               value: _readBooks.toDouble(),
-                              color: const Color(0xFF4CAF50),
+                              color: ReadAmberColors.success,
                               title: '读完\n$_readBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
+                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.surface),
                             ),
                             PieChartSectionData(
                               value: _readingBooks.toDouble(),
-                              color: const Color(0xFFFF9800),
+                              color: ReadAmberColors.amberText,
                               title: '在读\n$_readingBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
+                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.surface),
                             ),
                             PieChartSectionData(
                               value: _unreadBooks.toDouble(),
-                              color: Colors.grey[300],
+                              color: ReadAmberColors.outline,
                               title: '未读\n$_unreadBooks',
                               radius: 60,
-                              titleStyle: const TextStyle(fontSize: 12, color: Colors.black54),
+                              titleStyle: const TextStyle(fontSize: 12, color: ReadAmberColors.ink),
                             ),
                           ],
                           sectionsSpace: 2,
@@ -185,7 +186,7 @@ class _ReportPageState extends State<ReportPage> {
             ],
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -201,7 +202,7 @@ class _ReportPageState extends State<ReportPage> {
           children: [
             const Text('划线与笔记趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
             const SizedBox(height: 20),
             SizedBox(
               height: 220,
@@ -223,11 +224,12 @@ class _ReportPageState extends State<ReportPage> {
                   }).toList(),
                   barTouchData: BarTouchData(
                     touchTooltipData: BarTouchTooltipData(
+                      tooltipBgColor: ReadAmberColors.ink,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
                         final entry = _monthlyActivity[group.x];
                         return BarTooltipItem(
                           '${entry.key.year}年${entry.key.month}月\n${entry.value} 条',
-                          const TextStyle(color: Colors.white, fontSize: 12),
+                          const TextStyle(color: ReadAmberColors.surface, fontSize: 12),
                         );
                       },
                     ),
@@ -257,7 +259,7 @@ class _ReportPageState extends State<ReportPage> {
                         getTitlesWidget: (value, meta) => SideTitleWidget(
                           axisSide: meta.axisSide,
                           space: 6,
-                          child: Text('${value.toInt()}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          child: Text('${value.toInt()}', style: const TextStyle(fontSize: 10, color: ReadAmberColors.muted)),
                         ),
                       ),
                     ),
@@ -285,7 +287,7 @@ class _ReportPageState extends State<ReportPage> {
           children: [
             const Text('划线最多的书 Top5', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
             for (final entry in _topHighlights.asMap().entries) ...[
               const SizedBox(height: 16),
               Row(
@@ -296,7 +298,7 @@ class _ReportPageState extends State<ReportPage> {
                     child: Text(entry.value.key, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                   const SizedBox(width: 12),
-                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -338,7 +340,7 @@ class _StatCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              Text(label, style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
             ],
           ),
         ),

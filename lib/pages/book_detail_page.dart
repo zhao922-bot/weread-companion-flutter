@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'ai_summary_page.dart';
@@ -341,13 +342,13 @@ class _BookDetailPageState extends State<BookDetailPage> {
     return AccountSessionGuard(
         database: _database,
         child: Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
+          backgroundColor: ReadAmberColors.canvas,
           appBar: AppBar(
             title: Text(book.title, style: const TextStyle(fontSize: 16)),
             centerTitle: true,
             elevation: 0,
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black87,
+            backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
             actions: [
               IconButton(
                 icon: const Icon(Icons.auto_awesome_rounded),
@@ -420,11 +421,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ReadAmberColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: ReadAmberColors.ink.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -456,7 +457,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
       child: Container(
         width: 100,
         height: 140,
-        color: Colors.grey[200],
+        color: ReadAmberColors.surfaceMuted,
         child: book.cover.isNotEmpty
             ? Image.network(
                 book.cover,
@@ -465,21 +466,21 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.book, size: 32, color: Colors.grey[400]),
+                      Icon(Icons.book, size: 32, color: ReadAmberColors.muted),
                       const SizedBox(height: 4),
                       Text(
                         book.title,
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                        style: TextStyle(fontSize: 10, color: ReadAmberColors.muted),
                       ),
                     ],
                   ),
                 ),
               )
             : Center(
-                child: Icon(Icons.book, size: 40, color: Colors.grey[400]),
+                child: Icon(Icons.book, size: 40, color: ReadAmberColors.muted),
               ),
       ),
     );
@@ -496,7 +497,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Colors.black87,
+            color: ReadAmberColors.ink,
           ),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -504,7 +505,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
         const SizedBox(height: 6),
         Text(
           book.author,
-          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 14, color: ReadAmberColors.muted),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -513,12 +514,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: const Color(0xFF2196F3).withValues(alpha: 0.1),
+              color: ReadAmberColors.inkSoft.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
               book.category,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF2196F3)),
+              style: const TextStyle(fontSize: 11, color: ReadAmberColors.inkSoft),
             ),
           ),
         ],
@@ -533,7 +534,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: book.isFinished ? Colors.green : const Color(0xFF2196F3),
+                color: book.isFinished ? ReadAmberColors.success : ReadAmberColors.inkSoft,
               ),
             ),
           ],
@@ -546,16 +547,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
     Color color;
     switch (status) {
       case '已读完':
-        color = Colors.green;
+        color = ReadAmberColors.success;
         break;
       case '在读中':
-        color = const Color(0xFF2196F3);
+        color = ReadAmberColors.inkSoft;
         break;
       case '接近读完':
-        color = Colors.orange;
+        color = ReadAmberColors.amberText;
         break;
       default:
-        color = Colors.grey;
+        color = ReadAmberColors.muted;
     }
 
     return Container(
@@ -577,11 +578,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ReadAmberColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: ReadAmberColors.ink.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -609,24 +610,24 @@ class _BookDetailPageState extends State<BookDetailPage> {
   Widget _buildStatItem(IconData icon, String label, String value) {
     return Column(
       children: [
-        Icon(icon, size: 22, color: const Color(0xFF2196F3)),
+        Icon(icon, size: 22, color: ReadAmberColors.inkSoft),
         const SizedBox(height: 6),
         Text(
           value,
           textAlign: TextAlign.center,
           style: const TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
+              fontSize: 15, fontWeight: FontWeight.w600, color: ReadAmberColors.ink),
         ),
         const SizedBox(height: 2),
         Text(label,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+            style: TextStyle(fontSize: 11, color: ReadAmberColors.muted)),
       ],
     );
   }
 
   Widget _buildStatDivider() {
-    return Container(height: 36, width: 1, color: Colors.grey[200]);
+    return Container(height: 36, width: 1, color: ReadAmberColors.surfaceMuted);
   }
 
   Widget _buildProgressSection(BuildContext context) {
@@ -634,11 +635,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ReadAmberColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: ReadAmberColors.ink.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -650,14 +651,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
           Row(
             children: [
               Icon(Icons.trending_up_rounded,
-                  size: 18, color: Colors.grey[600]),
+                  size: 18, color: ReadAmberColors.muted),
               const SizedBox(width: 6),
               Text(
                 '阅读进度',
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.grey[800]),
+                    color: ReadAmberColors.inkSoft),
               ),
             ],
           ),
@@ -666,9 +667,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: progress,
-              backgroundColor: Colors.grey[200],
+              backgroundColor: ReadAmberColors.surfaceMuted,
               valueColor: AlwaysStoppedAnimation<Color>(
-                widget.book.isFinished ? Colors.green : const Color(0xFF2196F3),
+                widget.book.isFinished ? ReadAmberColors.success : ReadAmberColors.inkSoft,
               ),
               minHeight: 8,
             ),
@@ -681,7 +682,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             children: [
               Text(
                 '${widget.book.progress}% 已完成',
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                style: TextStyle(fontSize: 13, color: ReadAmberColors.muted),
               ),
               Text(
                 widget.book.isFinished
@@ -692,7 +693,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 style: TextStyle(
                   fontSize: 13,
                   color:
-                      widget.book.isFinished ? Colors.green : Colors.grey[500],
+                      widget.book.isFinished ? ReadAmberColors.success : ReadAmberColors.muted,
                 ),
               ),
             ],
@@ -705,11 +706,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
   Widget _buildNotesSection(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ReadAmberColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: ReadAmberColors.ink.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -723,7 +724,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             child: Row(
               children: [
                 Icon(Icons.note_alt_outlined,
-                    size: 18, color: Colors.grey[600]),
+                    size: 18, color: ReadAmberColors.muted),
                 const SizedBox(width: 6),
                 Expanded(
                     child: Text(
@@ -731,7 +732,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[800]),
+                      color: ReadAmberColors.inkSoft),
                 )),
                 if (_loading)
                   const SizedBox(
@@ -742,7 +743,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 else
                   Text(
                     '$_totalCount 条',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                   ),
               ],
             ),
@@ -759,7 +760,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final expanded = _expanded.contains(key);
     final isHighlight = bookmark.source == NoteSource.bookmark;
     final accentColor =
-        isHighlight ? const Color(0xFFFF6B6B) : const Color(0xFF4ECDC4);
+        isHighlight ? ReadAmberColors.amberText : ReadAmberColors.inkSoft;
 
     return Padding(
       key: ValueKey(key),
@@ -787,7 +788,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
               Expanded(
                 child: Text(
                   bookmark.chapterTitle.isNotEmpty ? bookmark.chapterTitle : '',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                  style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -796,7 +797,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   child: Text(
                 _formatTimestamp(bookmark.createdAt),
                 textAlign: TextAlign.end,
-                style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                style: TextStyle(fontSize: 11, color: ReadAmberColors.muted),
               )),
             ],
           ),
@@ -814,7 +815,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             child: Text(
               bookmark.content,
               style:
-                  TextStyle(fontSize: 13, height: 1.5, color: Colors.grey[700]),
+                  TextStyle(fontSize: 13, height: 1.5, color: ReadAmberColors.inkSoft),
               maxLines: expanded ? null : 3,
               overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
             ),
@@ -843,13 +844,13 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     bookmark.isFav
                         ? Icons.star_rounded
                         : Icons.star_border_rounded,
-                    color: bookmark.isFav ? Colors.amber : Colors.grey),
+                    color: bookmark.isFav ? ReadAmberColors.amberText : ReadAmberColors.muted),
                 onPressed: _savingFavorites.contains(key)
                     ? null
                     : () => _toggleFavorite(bookmark)),
           ]),
           const SizedBox(height: 12),
-          Divider(height: 1, color: Colors.grey[100]),
+          Divider(height: 1, color: ReadAmberColors.surfaceMuted),
         ],
       ),
     );

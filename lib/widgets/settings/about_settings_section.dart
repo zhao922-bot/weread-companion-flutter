@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'settings_section.dart';
 
@@ -28,7 +29,7 @@ class _AboutSettingsSectionState extends State<AboutSettingsSection> {
   }
 
   Widget _help(IconData icon, String title, String desc) => ListTile(
-    leading: Icon(icon, color: const Color(0xFF4A7CF7)),
+    leading: Icon(icon, color: ReadAmberColors.ink),
     title: Text(title), subtitle: Text(desc),
   );
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
@@ -94,7 +95,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
   void _showMsg(String msg, {bool isError = false}) {
     if (!_isActive) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: isError ? Colors.red : null),
+      SnackBar(content: Text(msg), backgroundColor: isError ? ReadAmberColors.error : null),
     );
   }
 
@@ -118,15 +119,15 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
 
   Widget _buildForm(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('导入 Cookie'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
       ),
-      body: ListView(
+      body: ReadAmberContent(maxWidth: 720, child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           const SizedBox(height: 16),
@@ -134,7 +135,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           const Center(
             child: Column(
               children: [
-                Icon(Icons.cookie_outlined, size: 56, color: Color(0xFF4A7CF7)),
+                Icon(Icons.cookie_outlined, size: 56, color: ReadAmberColors.ink),
                 SizedBox(height: 12),
                 Text(
                   '导入微信读书 Cookie',
@@ -143,7 +144,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
                 SizedBox(height: 6),
                 Text(
                   '支持普通文本和 JSON 格式（Cookie-Editor 导出）',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                  style: TextStyle(fontSize: 14, color: ReadAmberColors.muted),
                 ),
               ],
             ),
@@ -157,10 +158,10 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           // 输入框
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: ReadAmberColors.surface,
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2)),
+                BoxShadow(color: ReadAmberColors.ink.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2)),
               ],
             ),
             padding: const EdgeInsets.all(16),
@@ -178,10 +179,10 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
                   enabled: !_submitting,
                   decoration: InputDecoration(
                     hintText: 'wr_vid=xxx; wr_skey=xxx; ... 或 Cookie-Editor JSON 格式',
-                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
+                    hintStyle: TextStyle(fontSize: 13, color: ReadAmberColors.muted),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     filled: true,
-                    fillColor: const Color(0xFFF8F8F8),
+                    fillColor: ReadAmberColors.surfaceMuted,
                     contentPadding: const EdgeInsets.all(14),
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -213,8 +214,8 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
             child: ElevatedButton(
               onPressed: _submitting || context.watch<AppConfigProvider>().isBusy ? null : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF07C160),
-                foregroundColor: Colors.white,
+                backgroundColor: ReadAmberColors.ink,
+                foregroundColor: ReadAmberColors.paper,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 elevation: 0,
               ),
@@ -240,11 +241,11 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           Center(
             child: Text(
               '导入后请到书架页点击同步按钮获取数据',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              style: TextStyle(fontSize: 12, color: ReadAmberColors.muted),
             ),
           ),
         ],
-      ),
+      )),
     );
   }
 
@@ -252,7 +253,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.blue.shade50,
+        color: ReadAmberColors.paper,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -260,11 +261,11 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
         children: [
           Row(
             children: [
-              Icon(Icons.computer_rounded, size: 18, color: Colors.blue.shade700),
+              Icon(Icons.computer_rounded, size: 18, color: ReadAmberColors.ink),
               const SizedBox(width: 6),
               Text(
                 '电脑端操作步骤',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.blue.shade700),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: ReadAmberColors.ink),
               ),
             ],
           ),
@@ -279,23 +280,25 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
+                color: ReadAmberColors.ink,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text(
                     'copy(document.cookie)',
-                    style: TextStyle(color: Color(0xFF569CD6), fontSize: 14, fontFamily: 'monospace'),
+                    style: TextStyle(color: ReadAmberColors.amber, fontSize: 14, fontFamily: 'monospace'),
                   ),
-                  const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.2),
+                      color: ReadAmberColors.amber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Text('点击复制', style: TextStyle(color: Colors.blue, fontSize: 11)),
+                    child: const Text('点击复制', style: TextStyle(color: ReadAmberColors.amber, fontSize: 11)),
                   ),
                 ],
               ),
@@ -316,20 +319,21 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
         children: [
           Container(
             width: 22, height: 22,
-            decoration: const BoxDecoration(color: Color(0xFF4A7CF7), shape: BoxShape.circle),
+            decoration: const BoxDecoration(color: ReadAmberColors.ink, shape: BoxShape.circle),
             child: Center(
-              child: Text('$num', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              child: Text('$num', style: const TextStyle(color: ReadAmberColors.surface, fontSize: 12, fontWeight: FontWeight.bold)),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: RichText(
               text: TextSpan(
-                style: const TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                style: Theme.of(context).textTheme.bodyMedium!.copyWith(
+                  fontSize: 13, color: ReadAmberColors.ink, height: 1.4),
                 children: [
                   TextSpan(text: title, style: const TextStyle(fontWeight: FontWeight.w600)),
                   const TextSpan(text: '  '),
-                  TextSpan(text: desc, style: TextStyle(color: Colors.grey[600])),
+                  TextSpan(text: desc, style: TextStyle(color: ReadAmberColors.muted)),
                 ],
               ),
             ),

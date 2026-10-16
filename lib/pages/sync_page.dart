@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_config_provider.dart';
 import '../services/config.dart';
@@ -245,19 +246,19 @@ class _SyncPageState extends State<SyncPage> {
 
   Widget _buildContent(double progress, AppConfigProvider appConfig) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('数据同步'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
       ),
       body: Column(
         children: [
           // 进度区域
           Container(
-            color: Colors.white,
+            color: ReadAmberColors.surface,
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
@@ -267,15 +268,15 @@ class _SyncPageState extends State<SyncPage> {
                     borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
                       value: progress,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4A7CF7)),
+                      backgroundColor: ReadAmberColors.surfaceMuted,
+                      valueColor: const AlwaysStoppedAnimation<Color>(ReadAmberColors.ink),
                       minHeight: 8,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '$_syncedBooks / $_totalBooks 本书',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 13, color: ReadAmberColors.muted),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -300,7 +301,7 @@ class _SyncPageState extends State<SyncPage> {
                           icon: const Icon(Icons.stop_rounded),
                           label: const Text('取消同步'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
+                            foregroundColor: ReadAmberColors.error,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -312,7 +313,7 @@ class _SyncPageState extends State<SyncPage> {
                                ? '需要联网 · 验证并同步'
                                : _error != null ? '重新同步' : '开始同步'),
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF4A7CF7),
+                            backgroundColor: ReadAmberColors.ink,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -326,7 +327,7 @@ class _SyncPageState extends State<SyncPage> {
             child: Container(
               margin: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
+                color: ReadAmberColors.ink,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: _logs.isEmpty
@@ -335,7 +336,7 @@ class _SyncPageState extends State<SyncPage> {
                          _error ?? (appConfig.needsOnlineSync
                              ? '本地数据可浏览；请联网后验证并同步'
                              : '点击「开始同步」同步微信读书数据'),
-                        style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                        style: TextStyle(color: ReadAmberColors.paper, fontSize: 14),
                       ),
                     )
                   : ListView.builder(
@@ -345,11 +346,11 @@ class _SyncPageState extends State<SyncPage> {
                       itemBuilder: (context, index) {
                         final log = _logs[index];
                         final failure = _retryLogs[index];
-                        Color color = Colors.grey[300]!;
-                        if (log.startsWith('✅') || log.startsWith('🎉')) color = const Color(0xFF4CAF50);
-                        if (log.startsWith('❌')) color = const Color(0xFFFF5252);
-                        if (log.startsWith('⚠️')) color = const Color(0xFFFFB74D);
-                        if (log.startsWith('🚀')) color = const Color(0xFF42A5F5);
+                        Color color = ReadAmberColors.paper;
+                        if (log.startsWith('✅') || log.startsWith('🎉')) color = ReadAmberColors.logSuccess;
+                        if (log.startsWith('❌')) color = ReadAmberColors.logError;
+                        if (log.startsWith('⚠️')) color = ReadAmberColors.amber;
+                        if (log.startsWith('🚀')) color = ReadAmberColors.paper;
 
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 4),
@@ -382,7 +383,7 @@ class _SyncPageState extends State<SyncPage> {
         Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(height: 4),
         Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+        Text(label, style: TextStyle(fontSize: 12, color: ReadAmberColors.muted)),
       ],
     );
   }

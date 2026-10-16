@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/bookshelf_provider.dart';
@@ -74,10 +75,10 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Color _getProgressColor(int progress) {
-    if (progress >= finishedProgress) return Colors.green;
-    if (progress >= nearlyFinishedProgress) return Colors.orange;
-    if (progress >= readingStartedProgress) return const Color(0xFF2196F3);
-    return Colors.grey;
+    if (progress >= finishedProgress) return ReadAmberColors.success;
+    if (progress >= nearlyFinishedProgress) return ReadAmberColors.amberText;
+    if (progress >= readingStartedProgress) return ReadAmberColors.inkSoft;
+    return ReadAmberColors.muted;
   }
 
   String _getStatusText(Book book) {
@@ -104,7 +105,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           SnackBar(
             content: Text(msg),
             backgroundColor: provider.lastSyncResult?.failureCount == 0
-                ? const Color(0xFF07C160) : Colors.orange,
+                ? ReadAmberColors.ink : ReadAmberColors.amberText,
             duration: const Duration(seconds: 3),
             action: provider.lastSyncResult?.failureCount == 0 ? null : SnackBarAction(
               label: '失败清单',
@@ -118,7 +119,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     } catch (e) {
       if (mounted && isCurrent()) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('同步失败: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
+          SnackBar(content: Text('同步失败: $e'), backgroundColor: ReadAmberColors.error, duration: const Duration(seconds: 3)),
         );
       }
     }
@@ -142,13 +143,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
     const childAspectRatio = 0.5;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: ReadAmberColors.canvas,
       appBar: AppBar(
         title: const Text('书架'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
+        backgroundColor: ReadAmberColors.canvas,
+        foregroundColor: ReadAmberColors.ink,
         actions: [
           PopupMenuButton<int>(
             icon: const Icon(Icons.grid_view_rounded),
@@ -176,7 +177,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           ),
         ],
       ),
-      body: Consumer<BookshelfProvider>(
+      body: ReadAmberContent(maxWidth: 760, child: Consumer<BookshelfProvider>(
         builder: (context, provider, _) {
           final filteredBooks = provider.books;
 
@@ -185,7 +186,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
             children: [
               // 搜索栏 + 筛选按钮（合并为一个白色容器，消除中间缝隙）
               Container(
-                color: Colors.white,
+                color: ReadAmberColors.surface,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -196,8 +197,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
                         controller: _searchController,
                         decoration: InputDecoration(
                           hintText: '搜索书名或作者...',
-                          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                          prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+                          hintStyle: TextStyle(color: ReadAmberColors.muted, fontSize: 14),
+                          prefixIcon: Icon(Icons.search, color: ReadAmberColors.muted, size: 20),
                           suffixIcon: provider.searchQuery.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear, size: 18),
@@ -208,7 +209,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                                 )
                               : null,
                           filled: true,
-                          fillColor: const Color(0xFFF0F0F0),
+                          fillColor: ReadAmberColors.surfaceMuted,
                           contentPadding: const EdgeInsets.symmetric(vertical: 0),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -235,7 +236,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                   decoration: BoxDecoration(
-                                    color: isSelected ? const Color(0xFF2196F3) : const Color(0xFFF0F0F0),
+                                    color: isSelected ? ReadAmberColors.amber : ReadAmberColors.surfaceMuted,
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Text(
@@ -243,7 +244,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                      color: isSelected ? Colors.white : Colors.grey[700],
+                                      color: isSelected ? ReadAmberColors.ink : ReadAmberColors.inkSoft,
                                     ),
                                   ),
                                 ),
@@ -263,7 +264,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
             ],
           );
         },
-      ),
+      )),
     );
   }
 
@@ -282,7 +283,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           children: [
             CircularProgressIndicator(),
             SizedBox(height: 16),
-            Text('正在加载书架...', style: TextStyle(color: Colors.grey)),
+            Text('正在加载书架...', style: TextStyle(color: ReadAmberColors.muted)),
           ],
         ),
       );
@@ -297,16 +298,16 @@ class _BookshelfPageState extends State<BookshelfPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_rounded, size: 72, color: Colors.grey[300]),
+              Icon(Icons.cloud_off_rounded, size: 72, color: ReadAmberColors.outline),
               const SizedBox(height: 20),
               Text(
                 '加载失败',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey[700]),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: ReadAmberColors.inkSoft),
               ),
               const SizedBox(height: 8),
               Text(
                 errorMsg,
-                style: TextStyle(fontSize: 14, color: Colors.grey[500], height: 1.5),
+                style: TextStyle(fontSize: 14, color: ReadAmberColors.muted, height: 1.5),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
@@ -315,8 +316,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
                 icon: const Icon(Icons.sync_rounded, size: 20),
                 label: const Text('同步书架', style: TextStyle(fontSize: 15)),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A7CF7),
-                  foregroundColor: Colors.white,
+                  backgroundColor: ReadAmberColors.ink,
+                  foregroundColor: ReadAmberColors.paper,
                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -339,11 +340,11 @@ class _BookshelfPageState extends State<BookshelfPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.menu_book, size: 64, color: Colors.grey[300]),
+                    Icon(Icons.menu_book, size: 64, color: ReadAmberColors.outline),
                     const SizedBox(height: 16),
                     Text(
                       provider.totalCount == 0 ? '暂无书籍，请先登录同步' : '没有匹配的书籍',
-                      style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+                      style: TextStyle(fontSize: 16, color: ReadAmberColors.muted),
                     ),
                     if (provider.totalCount == 0) ...[
                       const SizedBox(height: 12),
@@ -415,11 +416,11 @@ class _BookCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: ReadAmberColors.surface,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
+              color: ReadAmberColors.ink.withValues(alpha: 0.06),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -433,7 +434,7 @@ class _BookCard extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  color: Colors.grey[200],
+                  color: ReadAmberColors.surfaceMuted,
                 ),
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
@@ -456,7 +457,7 @@ class _BookCard extends StatelessWidget {
                               return Center(
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.grey[300],
+                                  color: ReadAmberColors.outline,
                                 ),
                               );
                             },
@@ -472,13 +473,13 @@ class _BookCard extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.green.withValues(alpha: 0.9),
+                              color: ReadAmberColors.success.withValues(alpha: 0.9),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: const Text(
                               '✓',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: ReadAmberColors.surface,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -500,7 +501,7 @@ class _BookCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+                  color: ReadAmberColors.ink,
                 ),
               ),
             ),
@@ -510,7 +511,7 @@ class _BookCard extends StatelessWidget {
                 book.author,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                style: TextStyle(fontSize: 11, color: ReadAmberColors.muted),
               ),
             ),
             // 进度条
@@ -520,7 +521,7 @@ class _BookCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: (book.progress / finishedProgress).clamp(0.0, 1.0),
-                  backgroundColor: Colors.grey[200],
+                  backgroundColor: ReadAmberColors.surfaceMuted,
                   valueColor: AlwaysStoppedAnimation<Color>(progressColor),
                   minHeight: 4,
                 ),
@@ -530,7 +531,7 @@ class _BookCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
               child: Text(
                 '${book.progress}% · $statusText',
-                style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                style: TextStyle(fontSize: 10, color: ReadAmberColors.muted),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -543,12 +544,16 @@ class _BookCard extends StatelessWidget {
 
   Widget _buildCoverFallback() {
     return Container(
-      color: Colors.grey[200],
+      color: ReadAmberColors.surfaceMuted,
       child: Center(
-        child: Column(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox(
+            width: 88,
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.book, size: 36, color: Colors.grey[400]),
+            Icon(Icons.book, size: 36, color: ReadAmberColors.muted),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -557,10 +562,12 @@ class _BookCard extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                style: TextStyle(fontSize: 11, color: ReadAmberColors.muted),
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );
