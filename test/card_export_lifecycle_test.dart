@@ -215,6 +215,41 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  for (final long in [false, true]) {
+    testWidgets('手机${long ? '长' : '短'}卡片预览随手势展开，滚回顶部后可收起', (tester) async {
+      if (long) {
+        await tester.runAsync(() => db.insertBookmark({
+          'bookmark_id': 'a', 'book_id': 'book', 'book_title': '导出测试',
+          'mark_text': List.filled(50, '待导出的引文').join('\n'), 'created_at': 1,
+        }));
+      }
+      await mount(tester, narrow: true);
+      final viewport = find.descendant(
+          of: find.byType(DraggableScrollableSheet),
+          matching: find.byType(SingleChildScrollView));
+      final initialTop = tester.getTopLeft(viewport).dy;
+      await tester.drag(viewport, const Offset(0, -220));
+      await tester.pumpAndSettle();
+      final expandedTop = tester.getTopLeft(viewport).dy;
+      expect(expandedTop, lessThan(initialTop - 80));
+      final scrollable = tester.state<ScrollableState>(find.descendant(
+          of: viewport, matching: find.byType(Scrollable)));
+      if (long) {
+        await tester.drag(viewport, const Offset(0, -220));
+        await tester.pumpAndSettle();
+        expect(scrollable.position.pixels, greaterThan(0));
+        scrollable.position.jumpTo(0);
+        await tester.pump();
+      }
+      await tester.drag(viewport, const Offset(0, 160));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(viewport).dy, greaterThan(expandedTop + 60));
+      expect(find.text('导出图片'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('没有已挂载的截图边界时安全结束并释放交互锁', (tester) async {
     expect(const CardImageRenderer().findBoundary(GlobalKey()), isNull);
     await mount(tester);

@@ -487,7 +487,15 @@ class WeReadApi {
   /// 书架同步 — GET /web/shelf/sync
   Future<List<Book>> fetchBookshelf({CancelToken? cancelToken}) async {
     try {
-      final reusable = !_cancelled && _database?.isActive == true &&
+      // A cached response bypasses Dio's cancellation interceptor. Reject
+      // retired callers before they consume or clear another client's snapshot.
+      final cancellation = cancelToken?.cancelError;
+      if (cancellation != null) throw cancellation;
+      if (_cancelled) {
+        throw DioException(requestOptions: RequestOptions(path: '/shelf/sync'),
+            type: DioExceptionType.cancel, message: '账号会话已结束');
+      }
+      final reusable = _database?.isActive == true &&
           _database?.accountId == config.credentials?.vid &&
           _credentialKey != null && _credentialKey == _snapshotCredential &&
           _snapshotTime != null && DateTime.now().difference(_snapshotTime!) < const Duration(seconds: 30);

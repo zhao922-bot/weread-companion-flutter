@@ -131,6 +131,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CookieLoginPage), findsOneWidget);
     expect(config.saved, ['cookie']);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(
+        find.descendant(
+            of: find.byType(SnackBar),
+            matching: find.text(config.loginStatusText)),
+        findsOneWidget);
   });
 
   testWidgets('扫码取消保留Cookie输入，再次扫码成功关闭两层登录页', (tester) async {

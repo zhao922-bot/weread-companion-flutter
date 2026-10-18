@@ -663,47 +663,55 @@ class DatabaseService {
   }
 
   // UNION 后统一排序和分页，保证划线/笔记同时间时也不会遗漏或重复。
-  static const _readingItems = '''
+  static const _bookmarkReadingItems = '''
     SELECT bookmark_id AS id, book_id, book_title, mark_text AS content,
       chapter_title, created_at, is_fav, 'bookmark' AS source FROM bookmarks
-    UNION ALL
+  ''';
+  static const _noteReadingItems = '''
     SELECT note_id AS id, book_id, book_title, content,
       chapter_title, created_at, is_fav, 'note' AS source FROM notes
   ''';
+  static const _readingItems = '$_bookmarkReadingItems UNION ALL $_noteReadingItems';
+
+  (String, List<Object?>) _readingSource(String query) {
+    if (query.runes.length < 3) return (_readingItems, []);
+    // Filter inside each UNION arm. An outer correlated filter can force full
+    // scans, especially when COUNT prevents SQLite from flattening the UNION.
+    const candidates = 'SELECT id FROM item_trigrams WHERE term = ? AND source = ';
+    return ("$_bookmarkReadingItems WHERE bookmark_id IN ($candidates'bookmark') "
+      "UNION ALL $_noteReadingItems WHERE note_id IN ($candidates'note')",
+      [_searchTerm(query), _searchTerm(query)]);
+  }
 
   (String, List<Object?>) _readingFilter(String query, ReadingFilter filter, String? bookId) {
     final search = _itemFilter(query, bookId, 'content');
     final clauses = <String>[if (search.$1 != null) search.$1!];
     if (filter == ReadingFilter.notes) clauses.add("source = 'note'");
     if (filter == ReadingFilter.favorites) clauses.add('is_fav = 1');
-    final args = [...search.$2];
-    if (query.runes.length >= 3) {
-      clauses.add('EXISTS (SELECT 1 FROM item_trigrams t WHERE term = ? '
-          'AND t.source = reading_items.source AND t.id = reading_items.id)');
-      args.add(_searchTerm(query));
-    }
-    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', args);
+    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', search.$2);
   }
 
   Future<List<Map<String, dynamic>>> getReadingItems({int offset = 0,
     int limit = 100, String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId,
     NoteItem? after}) async {
     final db = await database;
+    final items = _readingSource(query);
     final where = _readingFilter(query, filter, bookId);
     final cursor = after == null ? '' : '${where.$1.isEmpty ? 'WHERE' : 'AND'} '
         '(created_at < ? OR (created_at = ? AND source < ?) '
         'OR (created_at = ? AND source = ? AND id < ?))';
-    return db.rawQuery('SELECT * FROM ($_readingItems) AS reading_items ${where.$1} $cursor '
+    return db.rawQuery('SELECT * FROM (${items.$1}) AS reading_items ${where.$1} $cursor '
         'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
-        [...where.$2, if (after != null) ...[after.createdAt, after.createdAt,
+        [...items.$2, ...where.$2, if (after != null) ...[after.createdAt, after.createdAt,
           after.source.name, after.createdAt, after.source.name, after.id], limit, offset]);
   }
 
   Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
     final db = await database;
+    final items = _readingSource(query);
     final where = _readingFilter(query, filter, bookId);
     return Sqflite.firstIntValue(await db.rawQuery(
-        'SELECT COUNT(*) FROM ($_readingItems) AS reading_items ${where.$1}', where.$2)) ?? 0;
+        'SELECT COUNT(*) FROM (${items.$1}) AS reading_items ${where.$1}', [...items.$2, ...where.$2])) ?? 0;
   }
 
   static const summaryItemLimit = 30;
@@ -715,12 +723,13 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getSummaryItems({String query = '',
     ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
+    final items = _readingSource(query);
     final where = _readingFilter(query, filter, bookId);
     return (await database).rawQuery(
-      'SELECT * FROM ($_readingItems) AS reading_items ${where.$1} '
+      'SELECT * FROM (${items.$1}) AS reading_items ${where.$1} '
       '${where.$1.isEmpty ? 'WHERE' : 'AND'} trim(content, $_summaryWhitespace) <> ? '
       'ORDER BY created_at DESC, source DESC, id DESC LIMIT ?',
-      [...where.$2, '', summaryItemLimit]);
+      [...items.$2, ...where.$2, '', summaryItemLimit]);
   }
 
   Future<List<Map<String, dynamic>>> getBookmarksByBook(String bookId) async {

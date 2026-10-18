@@ -19,7 +19,9 @@ class ExportWriter {
 
   Future<void> flush() async {
     if (_closing != null) throw StateError('导出文件已关闭');
-    final flushing = _flushing = _sink.flush().then<void>((_) {});
+    // IOSink rejects a second flush while the first one binds its stream.
+    // No additional writes can enter that bound stream; share its completion.
+    final flushing = _flushing ??= _sink.flush().then<void>((_) {});
     try {
       await flushing;
     } finally {

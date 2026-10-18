@@ -30,7 +30,7 @@ class _Sink implements IOSink {
 }
 
 void main() {
-  test('关闭等待最后一次 flush，立即拒绝写入和刷新，重复关闭共享结果', () async {
+  test('并发 flush 共享底层刷新，关闭等待完成并拒绝迟到写入', () async {
     final sink = _Sink();
     final writer = ExportWriter(sink);
     writer.write('完整内容');
@@ -40,12 +40,10 @@ void main() {
     expect(identical(closing, writer.close()), isTrue);
     expect(() => writer.write('迟到写入'), throwsStateError);
     await expectLater(writer.flush(), throwsStateError);
-    sink.flushes.first.complete();
-    await first;
+    expect(sink.flushes, hasLength(1));
     expect(sink.closes, 0);
-    sink.flushes.last.complete();
-    await second;
-    await closing;
+    sink.flushes.single.complete();
+    await Future.wait([first, second, closing]);
     expect(sink.closes, 1);
     expect(sink.writes, ['完整内容']);
     expect(() => writer.write('关闭后写入'), throwsStateError);
@@ -57,9 +55,10 @@ void main() {
     final writer = ExportWriter(sink);
     final failure = FileSystemException('磁盘写满');
     final flushing = expectLater(writer.flush(), throwsA(same(failure)));
+    final joined = expectLater(writer.flush(), throwsA(same(failure)));
     final closing = expectLater(writer.close(), throwsA(same(failure)));
     sink.flushes.single.completeError(failure);
-    await Future.wait([flushing, closing]);
+    await Future.wait([flushing, joined, closing]);
     expect(sink.closes, 1);
   });
 }

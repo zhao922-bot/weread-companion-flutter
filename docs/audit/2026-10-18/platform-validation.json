@@ -1,0 +1,21 @@
+{
+  "artifactHashes": {
+    "apk": "177C1F6429D25C837F05554B8B869E948B3D5A3E71C9EC4076F93B7DB5D33D39",
+    "installer": "5ED5F40D1D72E1533C031B31C966B70E1C902F7081EACFEB858903CEAFFDC098"
+  },
+  "version": "2.10.0+24",
+  "android": {
+    "releaseBuild": true,
+    "backupManifestReferences": true,
+    "deviceTests": false,
+    "signatureVerified": true
+  },
+  "windows": {
+    "nativeWindowResponding": true,
+    "windowTitle": "阅珀 ReadAmber",
+    "stderrBytes": 0,
+    "matchedBundleFiles": 26,
+    "bundledSQLite": true
+  },
+  "published": false
+}

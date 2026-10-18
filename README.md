@@ -11,22 +11,25 @@
 
 项目原名 **微信读书伴侣（WeRead Companion）**，自 **v2.8.0** 起使用 **阅珀 ReadAmber** 作为正式名称。「阅」是阅读，「珀」取自琥珀，寓意留住阅读中值得珍藏的文字与思考。图标将书页与引号融为一体，以墨青、琥珀金和纸白呈现。
 
+v2.10.1 收录全量审查中的 11 项修复与优化：改善登录令牌与缓存的并发处理、卡片弹层和偏好设置的失败恢复，增强 Windows 安装回滚，并优化大库搜索与 Markdown 导出。具体变化见[更新日志](CHANGELOG.md)，验证范围与性能数据见[审查报告](docs/audit/2026-10-18/README.md)。
+
 ## 下载与安装
 
-当前版本：**v2.10.0 · 构建号 24**。全部安装包和校验文件见 [GitHub Releases](https://github.com/zhao922-bot/weread-companion-flutter/releases/tag/v2.10.0)。
+当前版本：**v2.10.1 · 构建号 25**。全部安装包和校验文件见 [GitHub Releases](https://github.com/zhao922-bot/weread-companion-flutter/releases/tag/v2.10.1)。
 
 | 平台 | 下载 | 使用方式 |
 | --- | --- | --- |
-| Android 7.0 及以上 | [通用 APK](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-android.apk) | 下载后安装，支持 ARMv7、ARM64 和 x86_64 |
-| Windows x64 | [EXE 安装包](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-windows-x64-setup.exe) | 双击解压部署，创建「阅珀 ReadAmber」开始菜单快捷方式并启动 |
-| Windows x64 | [便携 ZIP](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/readamber-v2.10.0-windows-x64.zip) | 完整解压后运行 `weread_companion.exe`，保留同目录的 DLL 和 `data` 文件夹 |
-| 文件校验 | [SHA256SUMS.txt](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.0/SHA256SUMS.txt) | 用于核对下载文件的 SHA-256 |
+| Android 7.0 及以上 | [通用 APK](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.1/readamber-v2.10.1-android.apk) | 下载后安装，支持 ARMv7、ARM64 和 x86_64 |
+| Windows x64 | [EXE 安装包](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.1/readamber-v2.10.1-windows-x64-setup.exe) | 双击解压部署，创建「阅珀 ReadAmber」开始菜单快捷方式并启动 |
+| Windows x64 | [便携 ZIP](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.1/readamber-v2.10.1-windows-x64.zip) | 完整解压后运行 `weread_companion.exe`，保留同目录的 DLL 和 `data` 文件夹 |
+| 文件校验 | [SHA256SUMS.txt](https://github.com/zhao922-bot/weread-companion-flutter/releases/download/v2.10.1/SHA256SUMS.txt) | 用于核对下载文件的 SHA-256 |
 
 ### 从旧版升级
 
-- **Android v2.7.0～v2.9.0 → v2.10.0**：沿用 v2.7.0 的发布签名和应用包名，可直接覆盖升级。更早版本使用不同签名；若系统提示签名冲突，应先导出需要保留的笔记，再卸载旧版安装。Markdown 导出不是可还原全部应用状态的备份。
+- **Android v2.7.0～v2.10.0 → v2.10.1**：沿用 v2.7.0 的发布签名和应用包名，可直接覆盖升级。更早版本使用不同签名；若系统提示签名冲突，应先导出需要保留的笔记，再卸载旧版安装。Markdown 导出不是可还原全部应用状态的备份。
 - **Windows**：先关闭正在运行的程序，再运行新版安装包。为兼容已有安装，仍部署到 `%LOCALAPPDATA%\Programs\WeReadCompanion`，并将本安装对应的旧开始菜单快捷方式替换为新名称。
-- **数据兼容**：本次界面更新保留 Android 包名、配置键、数据库文件名和 Windows 存储标识。Windows 数据仍位于 `%APPDATA%\zhao922-bot\WeRead Companion`；程序目录与数据目录分离。便携版也使用该用户数据目录。
+- **数据兼容**：本次更新保留 Android 包名、配置键、数据库文件名和 Windows 存储标识。Windows 数据仍位于 `%APPDATA%\zhao922-bot\WeRead Companion`；程序目录与数据目录分离。便携版也使用该用户数据目录。
+- **Android 备份与换机**：设备绑定的安全存储不参与系统备份或换机传输，恢复到新设备后需重新登录并填写 AI Key；同设备直接覆盖升级保留现有配置。
 
 ## 主题与快速预设
 
@@ -92,6 +95,7 @@ Cookie 导入：在电脑浏览器登录 [微信读书](https://weread.qq.com/)�
 
 - 书架、划线、笔记与摘要保存在本机 SQLite；这些阅读数据未额外加密。
 - Cookie、登录令牌和 AI Key 通过系统安全存储保存，签名密钥和密码不进入仓库或发布包。
+- Android 备份与换机传输排除绑定原设备密钥的凭据文件，恢复后需重新登录并填写 AI Key。
 - 使用同步功能时连接微信读书服务；使用 AI 摘要时，会把相关笔记发送到你配置的 AI 服务，请根据自己的需要选择服务商。
 - 退出登录或切换账号会清理当前账号的本地数据和应用管理的导出文件。需要保留的内容应提前导出并另存。
 - 阅珀是独立第三方工具，与微信读书及腾讯无隶属或官方合作关系。上游接口或登录规则变化可能影响同步；认证失效时需要重新登录。
@@ -142,6 +146,8 @@ Windows 构建后，在 PowerShell 中运行：
 
 脚本使用 Windows 自带的 .NET Framework 编译器，生成自解压 EXE 和完整 ZIP，写入 `build/releases/`。这是按用户部署的安装包，不需要管理员权限；不注册系统卸载项。EXE 和应用程序目前未做 Authenticode 签名。
 
+安装前先完整解包暂存，替换失败时恢复已替换的文件；同一目录不允许同时更新。此保护处理正常文件操作异常，不保证断电或强制终止时自动回滚。
+
 ### 运行完整质量检查
 
 ```powershell
@@ -157,7 +163,11 @@ Windows 构建后，在 PowerShell 中运行：
 
 报告输出到 `build/coverage/report.txt`、`report.json` 和 `lcov.info`。未覆盖的行、分支或遗漏的可执行 `lib` 文件会使检查失败。无可执行记录的纯常量文件单独列出，不使用覆盖率排除标记。
 
+完整检查还会验证 Android 备份配置，并在 Windows 上运行安装器的真实文件锁、回滚、重试和路径校验测试。Windows Release 构建完成后，可用 `./tool/check_windows_runner.ps1` 检查原生窗口初始化和销毁边界；用 `flutter test tool/performance_audit_test.dart` 单独测量大库查询与导出，结果写入 `build/audit-performance.json`。逐行审查记录见 [审查报告](docs/audit/2026-10-18/README.md)。
+
 重新生成示例界面截图：`flutter test test/readamber_ui_test.dart --dart-define=READAMBER_CAPTURE=true`。图片输出到 `build/ui-previews/`；预览使用仓库内的中文字体和临时示例数据库，不会读取真实账号数据。共享主题与语义颜色定义在 [`lib/theme/readamber_theme.dart`](lib/theme/readamber_theme.dart)。
+
+截图字体 Noto Sans SC 的许可随字体存放于 [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)，来源为 [Google Fonts](https://github.com/google/fonts/tree/main/ofl/notosanssc)。该字体只供测试预览使用，未加入应用字体资源。
 
 ### 品牌资源
 

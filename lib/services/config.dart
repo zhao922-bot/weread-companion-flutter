@@ -271,10 +271,20 @@ class AppConfig {
     }
   }
 
-  Future<void> save() async {
+  void _validateAiUrl() {
     if (baseUrl.isNotEmpty && !isHttpsUrl(baseUrl)) {
       throw const FormatException('AI 服务地址必须是有效的 HTTPS 地址');
     }
+  }
+
+  /// AI edits must not enqueue an old login credential behind a token refresh.
+  Future<void> saveAiConfig() async {
+    _validateAiUrl();
+    await _saveAiConfig(await SharedPreferences.getInstance());
+  }
+
+  Future<void> save() async {
+    _validateAiUrl();
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       _saveSecret(_keys['cookie']!, cookie), saveCredentials(),

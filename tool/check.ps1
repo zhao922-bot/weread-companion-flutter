@@ -19,6 +19,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
     & $dartPath run tool/coverage_report.dart --check --require-full
     if ($LASTEXITCODE -ne 0) { throw 'Coverage must be 100% for lines and branches across all executable lib files. See build/coverage/report.txt.' }
+    & (Join-Path $PSScriptRoot 'check_platform.ps1')
     if ($BuildApk) {
         & $flutterPath build apk --debug --no-pub
         if ($LASTEXITCODE -ne 0) { throw 'Android debug build failed.' }

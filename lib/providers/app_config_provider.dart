@@ -430,7 +430,7 @@ class AppConfigProvider extends ChangeNotifier {
         config.baseUrl = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
       }
       if (modelName != null) config.modelName = modelName;
-      await config.save();
+      await config.saveAiConfig();
     } catch (_) {
       config.apiKey = previousApiKey;
       config.baseUrl = previousBaseUrl;

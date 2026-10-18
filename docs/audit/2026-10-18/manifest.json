@@ -1,0 +1,3143 @@
+{
+  "baselineCommit": "4eb2e125548013782c3f37066172297d27081288",
+  "date": "2026-10-18",
+  "scope": "All tracked text sources, tests, build/configuration files and documentation; binary resources are inspected by references and packaging rather than line ranges. New or changed source files must be added or re-reviewed.",
+  "rounds": [
+    {
+      "status": "completed",
+      "id": 1
+    },
+    {
+      "status": "completed",
+      "id": 2
+    },
+    {
+      "status": "completed",
+      "id": 3
+    },
+    {
+      "status": "completed",
+      "id": 4
+    },
+    {
+      "status": "completed",
+      "id": 5
+    },
+    {
+      "status": "completed",
+      "id": 6
+    },
+    {
+      "status": "completed",
+      "id": 7
+    },
+    {
+      "status": "completed",
+      "id": 8
+    }
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "round": 7,
+      "baselineLines": 29,
+      "baselineSha256": "417a18147fac254c8de20aad525cd78a9c58bc7031819e311c1cdf366a9db808",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 29
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 29,
+      "readSha256": "417a18147fac254c8de20aad525cd78a9c58bc7031819e311c1cdf366a9db808"
+    },
+    {
+      "path": ".metadata",
+      "round": 7,
+      "baselineLines": 33,
+      "baselineSha256": "dbea6cc8f44647d9f073efeee7465ec23eb015bb1be93e31ec66754a069068e1",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 33
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 33,
+      "readSha256": "dbea6cc8f44647d9f073efeee7465ec23eb015bb1be93e31ec66754a069068e1"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "round": 7,
+      "baselineLines": 281,
+      "baselineSha256": "1de3d8966a7eff9276281e749cc9db8e843ac7cdb78a7f290fd2891d9cfbe1fa",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 290
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 290,
+      "readSha256": "655c977f55a0b1f347225d27a8b68a64ce45e4d6128c032cf5c4447dfee9b427"
+    },
+    {
+      "path": "README.md",
+      "round": 7,
+      "baselineLines": 189,
+      "baselineSha256": "c015aa9fc645ba0797f92d9bfe9f065ae5a8fb5d65f5d38c2945395c9758b84d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 198
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 198,
+      "readSha256": "bab63e7871502af58b1461432875c0d72f782d58b87b1633c9a33d760461e292"
+    },
+    {
+      "path": "analysis_options.yaml",
+      "round": 7,
+      "baselineLines": 11,
+      "baselineSha256": "ae0a14572b4beb3540f0da8d76ec4720c1ac0611751f04872c6d472a0269c065",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 11
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 11,
+      "readSha256": "ae0a14572b4beb3540f0da8d76ec4720c1ac0611751f04872c6d472a0269c065"
+    },
+    {
+      "path": "android/.gitignore",
+      "round": 7,
+      "baselineLines": 14,
+      "baselineSha256": "c9af75dbc2c8aa867476a09426c80b178c4aeed8b9393ae48503eedfa3273d71",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 14
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 14,
+      "readSha256": "c9af75dbc2c8aa867476a09426c80b178c4aeed8b9393ae48503eedfa3273d71"
+    },
+    {
+      "path": "android/app/build.gradle.kts",
+      "round": 7,
+      "baselineLines": 59,
+      "baselineSha256": "87a6cbe35b54072278fe0c758fcea07597a09756eae47feecdab8459164b2c68",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 59
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 59,
+      "readSha256": "87a6cbe35b54072278fe0c758fcea07597a09756eae47feecdab8459164b2c68"
+    },
+    {
+      "path": "android/app/src/debug/AndroidManifest.xml",
+      "round": 7,
+      "baselineLines": 7,
+      "baselineSha256": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 7
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 7,
+      "readSha256": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "round": 7,
+      "baselineLines": 37,
+      "baselineSha256": "c426010f4917ba49b1c8d24ed57482298fb6cc7094aa77351649d3e6b2e9f99c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 39
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-008"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 39,
+      "readSha256": "8514c077759457bbccee88f74ec83f3fc90cf2f231bd9e9ddfaf9a2e033682ab"
+    },
+    {
+      "path": "android/app/src/main/kotlin/com/example/weread_companion/MainActivity.kt",
+      "round": 7,
+      "baselineLines": 5,
+      "baselineSha256": "292d9ae20307002a081da0a042232463c55fb40292c3f548485e42fa1c2fb769",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 5
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 5,
+      "readSha256": "292d9ae20307002a081da0a042232463c55fb40292c3f548485e42fa1c2fb769"
+    },
+    {
+      "path": "android/app/src/main/res/drawable-v21/launch_background.xml",
+      "round": 7,
+      "baselineLines": 12,
+      "baselineSha256": "dca312ec77de83e43ef70a825c299b51451247286c29167d62f19165750b8793",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 12
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 12,
+      "readSha256": "dca312ec77de83e43ef70a825c299b51451247286c29167d62f19165750b8793"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/launch_background.xml",
+      "round": 7,
+      "baselineLines": 12,
+      "baselineSha256": "2df60e2cfbee873ce2858088cf003e6b93498f2f568476da437610467ea1a9d7",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 12
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 12,
+      "readSha256": "2df60e2cfbee873ce2858088cf003e6b93498f2f568476da437610467ea1a9d7"
+    },
+    {
+      "path": "android/app/src/main/res/values-night/styles.xml",
+      "round": 7,
+      "baselineLines": 18,
+      "baselineSha256": "ea763597dc1a84c8034251caee98d7753e0fbf57340ffc94677427de4b537516",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 18
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 18,
+      "readSha256": "ea763597dc1a84c8034251caee98d7753e0fbf57340ffc94677427de4b537516"
+    },
+    {
+      "path": "android/app/src/main/res/values/styles.xml",
+      "round": 7,
+      "baselineLines": 18,
+      "baselineSha256": "cca15a99b59380a548bf6a890f7ca5380ee509b1f9bbb2f5f9ec3589fa25c2f7",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 18
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 18,
+      "readSha256": "cca15a99b59380a548bf6a890f7ca5380ee509b1f9bbb2f5f9ec3589fa25c2f7"
+    },
+    {
+      "path": "android/app/src/profile/AndroidManifest.xml",
+      "round": 7,
+      "baselineLines": 7,
+      "baselineSha256": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 7
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 7,
+      "readSha256": "b01a4541a8144c15bc617bab7eb267c99fa1476368fbbda5a12cdbf4e316a34c"
+    },
+    {
+      "path": "android/build.gradle.kts",
+      "round": 7,
+      "baselineLines": 23,
+      "baselineSha256": "c6ed08ceeb09055155a47a4c959786c3cba4b96df00ef3f5e1d603b544fca3e3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 23
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 23,
+      "readSha256": "c6ed08ceeb09055155a47a4c959786c3cba4b96df00ef3f5e1d603b544fca3e3"
+    },
+    {
+      "path": "android/gradle.properties",
+      "round": 7,
+      "baselineLines": 7,
+      "baselineSha256": "46208c61dc01e7145160f9942d24ae0d7b90308d0bc36b4aec22ae3786996895",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 7
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 7,
+      "readSha256": "46208c61dc01e7145160f9942d24ae0d7b90308d0bc36b4aec22ae3786996895"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.properties",
+      "round": 7,
+      "baselineLines": 5,
+      "baselineSha256": "b76c1d64432fdb493f8fefbbfb36adb213609481921c2874ada808e0be2c0700",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 5
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 5,
+      "readSha256": "b76c1d64432fdb493f8fefbbfb36adb213609481921c2874ada808e0be2c0700"
+    },
+    {
+      "path": "android/settings.gradle.kts",
+      "round": 7,
+      "baselineLines": 37,
+      "baselineSha256": "ac051ae59c9a7077c902b1afd2bc097735005290a0fd981bf1c30d6cf1ea5338",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 37
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 37,
+      "readSha256": "ac051ae59c9a7077c902b1afd2bc097735005290a0fd981bf1c30d6cf1ea5338"
+    },
+    {
+      "path": "assets/branding/readamber-v1/brand.json",
+      "round": 7,
+      "baselineLines": 47,
+      "baselineSha256": "63ff39be7a658879508397ab50d34ea2dedcf6b88efab26ea9f8a303cc30d8f0",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 47
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 47,
+      "readSha256": "63ff39be7a658879508397ab50d34ea2dedcf6b88efab26ea9f8a303cc30d8f0"
+    },
+    {
+      "path": "assets/branding/readamber-v1/export-icons.ps1",
+      "round": 7,
+      "baselineLines": 67,
+      "baselineSha256": "8c84b0b02549b48ab1807ce566fb136837752d930f6896aa2de866b118500776",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 67
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 67,
+      "readSha256": "8c84b0b02549b48ab1807ce566fb136837752d930f6896aa2de866b118500776"
+    },
+    {
+      "path": "assets/branding/readamber-v1/icon-prompt.txt",
+      "round": 7,
+      "baselineLines": 13,
+      "baselineSha256": "570a1f8987477a85a84f248efa17638d5d008aa3a47ce2d79a363c7510373b93",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 13
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 13,
+      "readSha256": "570a1f8987477a85a84f248efa17638d5d008aa3a47ce2d79a363c7510373b93"
+    },
+    {
+      "path": "assets/branding/readamber-v1/index.html",
+      "round": 7,
+      "baselineLines": 64,
+      "baselineSha256": "b338b9129906ac0d94953f14a351f1773931b09920ffc7a2d0576d4b7b78e187",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 64
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 64,
+      "readSha256": "b338b9129906ac0d94953f14a351f1773931b09920ffc7a2d0576d4b7b78e187"
+    },
+    {
+      "path": "lib/main.dart",
+      "round": 1,
+      "baselineLines": 181,
+      "baselineSha256": "cdbef316eeb5fc34668ff8cf9d42339375f4d42a2d9e84255da9a55ecdb68b37",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 181
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 181,
+      "readSha256": "cdbef316eeb5fc34668ff8cf9d42339375f4d42a2d9e84255da9a55ecdb68b37"
+    },
+    {
+      "path": "lib/models/ai_summary.dart",
+      "round": 1,
+      "baselineLines": 54,
+      "baselineSha256": "f41b6966bb2de9d3d3cd823d2ab58e7304fca41edbcf2b2421922e729a67bf24",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 54
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 54,
+      "readSha256": "f41b6966bb2de9d3d3cd823d2ab58e7304fca41edbcf2b2421922e729a67bf24"
+    },
+    {
+      "path": "lib/models/book.dart",
+      "round": 1,
+      "baselineLines": 59,
+      "baselineSha256": "9d0f337c9561d9d0fb28df9cb3c6cb9afca36e2fbac88a25697c971c58574885",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 59
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 59,
+      "readSha256": "9d0f337c9561d9d0fb28df9cb3c6cb9afca36e2fbac88a25697c971c58574885"
+    },
+    {
+      "path": "lib/models/bookmark.dart",
+      "round": 1,
+      "baselineLines": 50,
+      "baselineSha256": "fbc623f489104550818760b7c542564af613094b8781ec980426fe0b3b6544b6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 50
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 50,
+      "readSha256": "fbc623f489104550818760b7c542564af613094b8781ec980426fe0b3b6544b6"
+    },
+    {
+      "path": "lib/models/bookshelf_filter.dart",
+      "round": 1,
+      "baselineLines": 22,
+      "baselineSha256": "c22d2f15d400350d97876903e27304de36f4c2b39ecfffa4c3b01f14f16f35b3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 22
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 22,
+      "readSha256": "c22d2f15d400350d97876903e27304de36f4c2b39ecfffa4c3b01f14f16f35b3"
+    },
+    {
+      "path": "lib/models/note_item.dart",
+      "round": 1,
+      "baselineLines": 38,
+      "baselineSha256": "a52e95599684ebb6d8646f1cc32dc9663b77762a4549815c75cb905fe513d176",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 38
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 38,
+      "readSha256": "a52e95599684ebb6d8646f1cc32dc9663b77762a4549815c75cb905fe513d176"
+    },
+    {
+      "path": "lib/models/reading_constants.dart",
+      "round": 1,
+      "baselineLines": 4,
+      "baselineSha256": "d924e74ab41a02bf2350a2f893cc626265a0c0521a04b4a4766521299ca7480c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 4
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 4,
+      "readSha256": "d924e74ab41a02bf2350a2f893cc626265a0c0521a04b4a4766521299ca7480c"
+    },
+    {
+      "path": "lib/pages/ai_summary_page.dart",
+      "round": 5,
+      "baselineLines": 200,
+      "baselineSha256": "e892f5c9fa586b73df47a2a776ecc6e860f49709335f3ccb51e5c5f1a4c9e5e2",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 200
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 200,
+      "readSha256": "e892f5c9fa586b73df47a2a776ecc6e860f49709335f3ccb51e5c5f1a4c9e5e2"
+    },
+    {
+      "path": "lib/pages/book_detail_page.dart",
+      "round": 5,
+      "baselineLines": 863,
+      "baselineSha256": "e8a683676603a62a1f8c54fe5326546def82b88fb19ce09280021abed0f83f3a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 863
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 863,
+      "readSha256": "e8a683676603a62a1f8c54fe5326546def82b88fb19ce09280021abed0f83f3a"
+    },
+    {
+      "path": "lib/pages/bookshelf_page.dart",
+      "round": 5,
+      "baselineLines": 575,
+      "baselineSha256": "8cbb876cee594ab5aaa18eab2a6fb4912229109e65fa94ca66380aeb4ef2edd5",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 599
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-006"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 599,
+      "readSha256": "8f311b778112fa5d37c2a1f79cbbb7864282a8a61054b0353455b5853773651e"
+    },
+    {
+      "path": "lib/pages/cards_page.dart",
+      "round": 5,
+      "baselineLines": 902,
+      "baselineSha256": "9afeff354af8abbf2f1a6065a1a04811dca6eb15a159a4d5d46ec1b1f470af5f",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 905
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-004"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 905,
+      "readSha256": "e0bd4af1c3a17a3ab03e6f78485327afc00abb04055e4c9dca936babdb726b0d"
+    },
+    {
+      "path": "lib/pages/cookie_login_page.dart",
+      "round": 5,
+      "baselineLines": 345,
+      "baselineSha256": "f3be6360a4e437c110ccff9483f97d02e9875a12232759a30f7bac5a43f34c76",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 345
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 345,
+      "readSha256": "f3be6360a4e437c110ccff9483f97d02e9875a12232759a30f7bac5a43f34c76"
+    },
+    {
+      "path": "lib/pages/notes_page.dart",
+      "round": 5,
+      "baselineLines": 717,
+      "baselineSha256": "e58f2ad13de6b7ea0d93a6f9107555273bb71e9a05b01ac7f5c405d2fdd7f141",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 717
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 717,
+      "readSha256": "e58f2ad13de6b7ea0d93a6f9107555273bb71e9a05b01ac7f5c405d2fdd7f141"
+    },
+    {
+      "path": "lib/pages/qr_login_page.dart",
+      "round": 5,
+      "baselineLines": 193,
+      "baselineSha256": "8c12defb6489e5e053a12a2a4abb8c820967cad172ea56444a31526d63a519cc",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 193
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 193,
+      "readSha256": "8c12defb6489e5e053a12a2a4abb8c820967cad172ea56444a31526d63a519cc"
+    },
+    {
+      "path": "lib/pages/report_page.dart",
+      "round": 5,
+      "baselineLines": 350,
+      "baselineSha256": "64e61223ec05b2bafb8dae2ced50af0dca9525ea1cdd8d8fe585ce53297742e1",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 350
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 350,
+      "readSha256": "64e61223ec05b2bafb8dae2ced50af0dca9525ea1cdd8d8fe585ce53297742e1"
+    },
+    {
+      "path": "lib/pages/settings_page.dart",
+      "round": 5,
+      "baselineLines": 38,
+      "baselineSha256": "bbcefceb2498ef491a2dc6cf5f158abe2ae77f945a895e5094b282b786ccab50",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 38
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 38,
+      "readSha256": "bbcefceb2498ef491a2dc6cf5f158abe2ae77f945a895e5094b282b786ccab50"
+    },
+    {
+      "path": "lib/pages/sync_page.dart",
+      "round": 5,
+      "baselineLines": 390,
+      "baselineSha256": "66c4ac07ed77c14b4eb0893eb95f2a76559973a7e98b0bbfd30c725dbe68c22f",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 390
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 390,
+      "readSha256": "66c4ac07ed77c14b4eb0893eb95f2a76559973a7e98b0bbfd30c725dbe68c22f"
+    },
+    {
+      "path": "lib/providers/app_config_provider.dart",
+      "round": 1,
+      "baselineLines": 444,
+      "baselineSha256": "47a96c74ca902f2c0918e79265a45298fafea679c5bbddbbd6afe30c37f57ab9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 444
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-001"
+      ],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 444,
+      "readSha256": "a60a39992d14de98d041e408b7bb62d1aa86ad371f1d1ab4661e4bb458047154"
+    },
+    {
+      "path": "lib/providers/bookshelf_provider.dart",
+      "round": 3,
+      "baselineLines": 166,
+      "baselineSha256": "d59aa7c23ad1d20f9733ccba5e53b2c72f89564791145894435cf51699c96fab",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 166
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source reviewed: account open/close/migration, atomic delta/cursor/index updates, keyset paging, stats, stale provider responses. Existing cancellation/recovery regressions passed in 770-test full gate. 1205-row index update: 8 reads, <=999 SQL arguments; backfill <=100 rows. Large-data latency/RSS measurements remain in round 8.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 166,
+      "readSha256": "d59aa7c23ad1d20f9733ccba5e53b2c72f89564791145894435cf51699c96fab"
+    },
+    {
+      "path": "lib/providers/notes_provider.dart",
+      "round": 3,
+      "baselineLines": 365,
+      "baselineSha256": "44ce19b8380617be4f99db20e4068ddbc262a0cbeaaace43f0db6c7399ae4302",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 365
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source reviewed: account open/close/migration, atomic delta/cursor/index updates, keyset paging, stats, stale provider responses. Existing cancellation/recovery regressions passed in 770-test full gate. 1205-row index update: 8 reads, <=999 SQL arguments; backfill <=100 rows. Large-data latency/RSS measurements remain in round 8.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 365,
+      "readSha256": "44ce19b8380617be4f99db20e4068ddbc262a0cbeaaace43f0db6c7399ae4302"
+    },
+    {
+      "path": "lib/providers/theme_controller.dart",
+      "round": 5,
+      "baselineLines": 68,
+      "baselineSha256": "e9dcc51f22e5977b04ec8f04fde497d08406cfb19702e7110e1c4730141d1e49",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 68
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 68,
+      "readSha256": "e9dcc51f22e5977b04ec8f04fde497d08406cfb19702e7110e1c4730141d1e49"
+    },
+    {
+      "path": "lib/services/ai_service.dart",
+      "round": 4,
+      "baselineLines": 192,
+      "baselineSha256": "35e769e1ab764ddde2f60f3f9f54c43f52f19cf098f68a0b90925af7a40e1b07",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 192
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source and callers reviewed; 771-test full gate passed, analyze clean, 5061/5061 lines and 1867/1867 branches. Includes real IOSink regression for AUD-005.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 192,
+      "readSha256": "35e769e1ab764ddde2f60f3f9f54c43f52f19cf098f68a0b90925af7a40e1b07"
+    },
+    {
+      "path": "lib/services/api.dart",
+      "round": 2,
+      "baselineLines": 721,
+      "baselineSha256": "1ac715d7168c0fc66fe43db12f919ddfc5da46e7cf1fd4eb4e18173a49baf517",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 729
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-002",
+        "AUD-003"
+      ],
+      "evidence": [
+        "Network/auth/QR/queue source reviewed; AUD-002/003 red before fix and targeted 70 passed. Full gate: 768 tests, analyze clean, 5060/5060 lines and 1867/1867 branches.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 729,
+      "readSha256": "301da934117c763279dea267c126475c6a48724ee97e6e095c6ea3fe7591be11"
+    },
+    {
+      "path": "lib/services/card_image_renderer.dart",
+      "round": 4,
+      "baselineLines": 28,
+      "baselineSha256": "b7a8e6f1eadc9a87a097fe7a85d9da9eca9a23a1c3f983976438d549afb6be3f",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 28
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source and callers reviewed; 771-test full gate passed, analyze clean, 5061/5061 lines and 1867/1867 branches. Includes real IOSink regression for AUD-005.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 28,
+      "readSha256": "b7a8e6f1eadc9a87a097fe7a85d9da9eca9a23a1c3f983976438d549afb6be3f"
+    },
+    {
+      "path": "lib/services/config.dart",
+      "round": 1,
+      "baselineLines": 358,
+      "baselineSha256": "cc0ac8b2bb3530002b4714818cb92588b97a15f06c11abfb40e635da56c583f9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 368
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-001"
+      ],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 368,
+      "readSha256": "a06f26c2ff8e774cc8978136405a0e265208113d4e1d941c8fd35e1fec303649"
+    },
+    {
+      "path": "lib/services/credentials.dart",
+      "round": 1,
+      "baselineLines": 45,
+      "baselineSha256": "f74b9b37053426614dd07d5ed4d45f3a898440a3ddc522497876c4734c90df70",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 45
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 45,
+      "readSha256": "f74b9b37053426614dd07d5ed4d45f3a898440a3ddc522497876c4734c90df70"
+    },
+    {
+      "path": "lib/services/database.dart",
+      "round": 3,
+      "baselineLines": 865,
+      "baselineSha256": "989fb1568b41b171e66dcac1d111629184805f861b2270262e9d8987cc3b2378",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 874
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-010"
+      ],
+      "evidence": [
+        "Full source reviewed: account open/close/migration, atomic delta/cursor/index updates, keyset paging, stats, stale provider responses. Existing cancellation/recovery regressions passed in 770-test full gate. 1205-row index update: 8 reads, <=999 SQL arguments; backfill <=100 rows. Large-data latency/RSS measurements remain in round 8.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 874,
+      "readSha256": "4ce75fee228e17761bd63d1e468d020db26d3b20ad1db00be221047a3081339b"
+    },
+    {
+      "path": "lib/services/export_service.dart",
+      "round": 4,
+      "baselineLines": 241,
+      "baselineSha256": "99209e3922011f3e82b03210f85618890e4ffa5e2e889b10ddc58a9b5749971b",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 241
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source and callers reviewed; 771-test full gate passed, analyze clean, 5061/5061 lines and 1867/1867 branches. Includes real IOSink regression for AUD-005.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 241,
+      "readSha256": "99209e3922011f3e82b03210f85618890e4ffa5e2e889b10ddc58a9b5749971b"
+    },
+    {
+      "path": "lib/services/export_snapshot.dart",
+      "round": 4,
+      "baselineLines": 160,
+      "baselineSha256": "09d7e9005f931429d6d0806e1e49cb84d463faf0b9b8586d59d7e76ac8fc44d3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 161
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-011"
+      ],
+      "evidence": [
+        "Full source and callers reviewed; 771-test full gate passed, analyze clean, 5061/5061 lines and 1867/1867 branches. Includes real IOSink regression for AUD-005.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 161,
+      "readSha256": "a353b0b343e92c50941997ebfa51ee93a8bcc90c92c4d32af0954dad999814d5"
+    },
+    {
+      "path": "lib/services/export_writer.dart",
+      "round": 4,
+      "baselineLines": 39,
+      "baselineSha256": "7550ff7c6ced379dbd851aacaec06319a8f6de58a6163d9fff6c39b1773df123",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 41
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-005"
+      ],
+      "evidence": [
+        "Full source and callers reviewed; 771-test full gate passed, analyze clean, 5061/5061 lines and 1867/1867 branches. Includes real IOSink regression for AUD-005.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 41,
+      "readSha256": "7fd5ae6d43fc731fbfb0a9eea498775015fd4f26b7f9d700bf2c139aaa3dfa65"
+    },
+    {
+      "path": "lib/services/platform_database.dart",
+      "round": 3,
+      "baselineLines": 14,
+      "baselineSha256": "100dadfe0183e43f16c5f9312593a2f5e9f22b3f57bca51c6712acf6313fc55d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 14
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Full source reviewed: account open/close/migration, atomic delta/cursor/index updates, keyset paging, stats, stale provider responses. Existing cancellation/recovery regressions passed in 770-test full gate. 1205-row index update: 8 reads, <=999 SQL arguments; backfill <=100 rows. Large-data latency/RSS measurements remain in round 8.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 14,
+      "readSha256": "100dadfe0183e43f16c5f9312593a2f5e9f22b3f57bca51c6712acf6313fc55d"
+    },
+    {
+      "path": "lib/services/qr_login_service.dart",
+      "round": 2,
+      "baselineLines": 283,
+      "baselineSha256": "68e7514ff115910856d65dac173e510d63d8f3beca3b801ceec834fffa840255",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 283
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Network/auth/QR/queue source reviewed; AUD-002/003 red before fix and targeted 70 passed. Full gate: 768 tests, analyze clean, 5060/5060 lines and 1867/1867 branches.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 283,
+      "readSha256": "68e7514ff115910856d65dac173e510d63d8f3beca3b801ceec834fffa840255"
+    },
+    {
+      "path": "lib/services/sync_service.dart",
+      "round": 2,
+      "baselineLines": 436,
+      "baselineSha256": "198dc5fd9c9bb18ca54385a527c33886e995f20b755f685c35ca84d56981a4f0",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 436
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Network/auth/QR/queue source reviewed; AUD-002/003 red before fix and targeted 70 passed. Full gate: 768 tests, analyze clean, 5060/5060 lines and 1867/1867 branches.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 436,
+      "readSha256": "198dc5fd9c9bb18ca54385a527c33886e995f20b755f685c35ca84d56981a4f0"
+    },
+    {
+      "path": "lib/theme/readamber_theme.dart",
+      "round": 5,
+      "baselineLines": 249,
+      "baselineSha256": "4a8911abdf286b94e6d41734789b191804fd04880c4cd44aaa5960356d666428",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 249
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 249,
+      "readSha256": "4a8911abdf286b94e6d41734789b191804fd04880c4cd44aaa5960356d666428"
+    },
+    {
+      "path": "lib/widgets/account_session_guard.dart",
+      "round": 1,
+      "baselineLines": 24,
+      "baselineSha256": "ae0bb4ea2666ea3a95e3d01c2cdac77daf81fc4d20f5333d1345d203676bb06e",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 24
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Round 1: initialization, account ownership, credential/AI persistence and model boundaries reviewed. Full suite: 766 passed; analyze clean; 5057/5057 lines and 1865/1865 branches. See README.md.",
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 24,
+      "readSha256": "ae0bb4ea2666ea3a95e3d01c2cdac77daf81fc4d20f5333d1345d203676bb06e"
+    },
+    {
+      "path": "lib/widgets/settings/about_settings_section.dart",
+      "round": 5,
+      "baselineLines": 76,
+      "baselineSha256": "2eeb4a88a40dd6f7fa425e07602c04733ba58998f68a11346ab61dd7b2f91d4f",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 76
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 76,
+      "readSha256": "2eeb4a88a40dd6f7fa425e07602c04733ba58998f68a11346ab61dd7b2f91d4f"
+    },
+    {
+      "path": "lib/widgets/settings/account_settings_section.dart",
+      "round": 5,
+      "baselineLines": 105,
+      "baselineSha256": "bd921374825aa4579a65c2e925b1c38156b34b2cebeb6fc9d00c6229e93d1f53",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 105
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 105,
+      "readSha256": "bd921374825aa4579a65c2e925b1c38156b34b2cebeb6fc9d00c6229e93d1f53"
+    },
+    {
+      "path": "lib/widgets/settings/ai_settings_section.dart",
+      "round": 5,
+      "baselineLines": 204,
+      "baselineSha256": "63c54e976723ae83648cc13d0c24fde082cc1dbd07f3a4d55086a1ded1d74142",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 204
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 204,
+      "readSha256": "63c54e976723ae83648cc13d0c24fde082cc1dbd07f3a4d55086a1ded1d74142"
+    },
+    {
+      "path": "lib/widgets/settings/settings_section.dart",
+      "round": 5,
+      "baselineLines": 42,
+      "baselineSha256": "24f781ae77275c7c92ebb3903d9a557dbb187c39dacb52252c5676116cc6fa76",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 42
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 42,
+      "readSha256": "24f781ae77275c7c92ebb3903d9a557dbb187c39dacb52252c5676116cc6fa76"
+    },
+    {
+      "path": "lib/widgets/settings/theme_settings_section.dart",
+      "round": 5,
+      "baselineLines": 44,
+      "baselineSha256": "5d3720cc8dd28d22b884c2a3c2b8b73091e9f632d8e0a975f709c5748b15f4c1",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 44
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 44,
+      "readSha256": "5d3720cc8dd28d22b884c2a3c2b8b73091e9f632d8e0a975f709c5748b15f4c1"
+    },
+    {
+      "path": "pubspec.lock",
+      "round": 7,
+      "baselineLines": 746,
+      "baselineSha256": "19c126816851b9342938c073aa28a0802787873469622d4ea3d955ec54496a07",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 746
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 746,
+      "readSha256": "19c126816851b9342938c073aa28a0802787873469622d4ea3d955ec54496a07"
+    },
+    {
+      "path": "pubspec.yaml",
+      "round": 7,
+      "baselineLines": 42,
+      "baselineSha256": "0a66cfb9d2dd61da4a2afbca093c8c45c839dc9ef7cc6e7a0a013d7b6e9618f0",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 42
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 42,
+      "readSha256": "0a66cfb9d2dd61da4a2afbca093c8c45c839dc9ef7cc6e7a0a013d7b6e9618f0"
+    },
+    {
+      "path": "test/account_session_test.dart",
+      "round": 6,
+      "baselineLines": 76,
+      "baselineSha256": "8c7dd837994524aded90c967c5dd1500883e7cb7f47c46b7fedf01f53474da0a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 76
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 76,
+      "readSha256": "8c7dd837994524aded90c967c5dd1500883e7cb7f47c46b7fedf01f53474da0a"
+    },
+    {
+      "path": "test/ai_service_test.dart",
+      "round": 6,
+      "baselineLines": 87,
+      "baselineSha256": "67d123a28ca9e743eadae1fa46bd1f740259a369dd59fc97a7244ed03da32e27",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 87
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 87,
+      "readSha256": "67d123a28ca9e743eadae1fa46bd1f740259a369dd59fc97a7244ed03da32e27"
+    },
+    {
+      "path": "test/app_config_settings_test.dart",
+      "round": 6,
+      "baselineLines": 100,
+      "baselineSha256": "bcb835064be3721ea4657a6de2ad1995d307c18799b6a7ed81735a90c974f802",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 100
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 100,
+      "readSha256": "05a4bd75e291ed6b8a67bed8fae51e9e1b5fd64aff18330366b582bb71dee9e4"
+    },
+    {
+      "path": "test/card_export_lifecycle_test.dart",
+      "round": 6,
+      "baselineLines": 894,
+      "baselineSha256": "bab2aed28e31e32c756d4ea5a2f3f543f46ad8d5fb4597454e8bbabefdb9a27d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 929
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-004"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 929,
+      "readSha256": "a2145801c6cc5ac1166a06a7e990b5a60b01ec399a626e2c50fbdc064b49a200"
+    },
+    {
+      "path": "test/config_cleanup_regression_test.dart",
+      "round": 6,
+      "baselineLines": 140,
+      "baselineSha256": "9fb9610d52b76e89ad34d7fdd98f226e8064415bc942b05c12b876ca6a71e4dc",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 140
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 140,
+      "readSha256": "9fb9610d52b76e89ad34d7fdd98f226e8064415bc942b05c12b876ca6a71e4dc"
+    },
+    {
+      "path": "test/cookie_login_page_test.dart",
+      "round": 6,
+      "baselineLines": 384,
+      "baselineSha256": "05cb23666077434089068c7698b15e0fa04bce2ef62527a77bb9b9bc06fb1579",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 391
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 391,
+      "readSha256": "9bf67f811eebfdca2c661924161dfae19d187f507ceb2f54b8ff6c12a4248de5"
+    },
+    {
+      "path": "test/coverage_services_test.dart",
+      "round": 6,
+      "baselineLines": 1097,
+      "baselineSha256": "eba0f38dfe72312f6d9f0812eb676b459f2e2e528a38b39c41b195b5d7dfe0cc",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 1097
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 1097,
+      "readSha256": "eba0f38dfe72312f6d9f0812eb676b459f2e2e528a38b39c41b195b5d7dfe0cc"
+    },
+    {
+      "path": "test/coverage_ui_test.dart",
+      "round": 6,
+      "baselineLines": 1342,
+      "baselineSha256": "09bee02f76b13e381d5bf9b27b013099c6959b2f0db6ee2034db189362c2b242",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 1342
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 1342,
+      "readSha256": "09bee02f76b13e381d5bf9b27b013099c6959b2f0db6ee2034db189362c2b242"
+    },
+    {
+      "path": "test/credential_security_test.dart",
+      "round": 6,
+      "baselineLines": 288,
+      "baselineSha256": "64ed660a74818b9c3371d80710f346261ffee40104eef9cf11ed7cd2b8667098",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 288
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 288,
+      "readSha256": "64ed660a74818b9c3371d80710f346261ffee40104eef9cf11ed7cd2b8667098"
+    },
+    {
+      "path": "test/database_cancellation_test.dart",
+      "round": 6,
+      "baselineLines": 380,
+      "baselineSha256": "c0c018f51c961d1862ce697339d95f8578d9dfcd54fcb2320e5fff4b7c18ee33",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 380
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 380,
+      "readSha256": "c0c018f51c961d1862ce697339d95f8578d9dfcd54fcb2320e5fff4b7c18ee33"
+    },
+    {
+      "path": "test/display_boundaries_test.dart",
+      "round": 6,
+      "baselineLines": 153,
+      "baselineSha256": "0892f5f94e3fe09d975fcc24408f3b004091168a2cd3b3b6c9093207fafea1fb",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 153
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 153,
+      "readSha256": "0892f5f94e3fe09d975fcc24408f3b004091168a2cd3b3b6c9093207fafea1fb"
+    },
+    {
+      "path": "test/export_publication_test.dart",
+      "round": 6,
+      "baselineLines": 462,
+      "baselineSha256": "54d396df105af6f0810ac9c6395ef9d73d77ef63f9e0b4d69978d9c5290d23a6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 462
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 462,
+      "readSha256": "54d396df105af6f0810ac9c6395ef9d73d77ef63f9e0b4d69978d9c5290d23a6"
+    },
+    {
+      "path": "test/export_writer_test.dart",
+      "round": 6,
+      "baselineLines": 65,
+      "baselineSha256": "a46fff5f97b325809d48d712f098531ebb7bb9f3295e85339e85fc32581673e0",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 64
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-005"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 64,
+      "readSha256": "ebb8f440b5826c43304d32dc887a20135128356808b550407575bc00579857f4"
+    },
+    {
+      "path": "test/lazy_tabs_test.dart",
+      "round": 6,
+      "baselineLines": 222,
+      "baselineSha256": "7cc9fa70c0644e4b483d0a6db9a64aa44435becce6e799a61cf808a762cdc8dc",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 222
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 222,
+      "readSha256": "7cc9fa70c0644e4b483d0a6db9a64aa44435becce6e799a61cf808a762cdc8dc"
+    },
+    {
+      "path": "test/memory_bounds_test.dart",
+      "round": 6,
+      "baselineLines": 275,
+      "baselineSha256": "cfd827fe96841974ceca4253f551a36b2bfabf4198bec63d8dfdb9a6c67722c9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 275
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 275,
+      "readSha256": "cfd827fe96841974ceca4253f551a36b2bfabf4198bec63d8dfdb9a6c67722c9"
+    },
+    {
+      "path": "test/mobile_auth_test.dart",
+      "round": 6,
+      "baselineLines": 258,
+      "baselineSha256": "1051acad139eb9d6e4192614583aaf59211fbc3d32deac8616dbd07d60c25b75",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 258
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 258,
+      "readSha256": "1051acad139eb9d6e4192614583aaf59211fbc3d32deac8616dbd07d60c25b75"
+    },
+    {
+      "path": "test/offline_access_test.dart",
+      "round": 6,
+      "baselineLines": 437,
+      "baselineSha256": "781005d917cd724a3fbe18d826eb9338c4c2388a259611e349be919f8f07c6ff",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 437
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 437,
+      "readSha256": "781005d917cd724a3fbe18d826eb9338c4c2388a259611e349be919f8f07c6ff"
+    },
+    {
+      "path": "test/overall_review_test.dart",
+      "round": 6,
+      "baselineLines": 587,
+      "baselineSha256": "d31faa2f9d1234abedbc3705bba45756fa9a921297a463061bdef5f29c227adf",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 587
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 587,
+      "readSha256": "d31faa2f9d1234abedbc3705bba45756fa9a921297a463061bdef5f29c227adf"
+    },
+    {
+      "path": "test/page_fixes_test.dart",
+      "round": 6,
+      "baselineLines": 250,
+      "baselineSha256": "6b3d7b65995697777cb09c39ac7b7558b30201fa45380a75ccd8e2e366362c69",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 250
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 250,
+      "readSha256": "6b3d7b65995697777cb09c39ac7b7558b30201fa45380a75ccd8e2e366362c69"
+    },
+    {
+      "path": "test/page_lifecycle_concurrency_test.dart",
+      "round": 6,
+      "baselineLines": 500,
+      "baselineSha256": "13f744153c33716a5b7dc0f7837ccd00c075869c120771babb493c720c509dab",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 500
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 500,
+      "readSha256": "13f744153c33716a5b7dc0f7837ccd00c075869c120771babb493c720c509dab"
+    },
+    {
+      "path": "test/page_state_regression_test.dart",
+      "round": 6,
+      "baselineLines": 216,
+      "baselineSha256": "f7a00ca8b34933a4a969bf90641bf7fe6a23a92b4710f96e7227e6cf1fecb6de",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 216
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 216,
+      "readSha256": "f7a00ca8b34933a4a969bf90641bf7fe6a23a92b4710f96e7227e6cf1fecb6de"
+    },
+    {
+      "path": "test/pagination_stats_regression_test.dart",
+      "round": 6,
+      "baselineLines": 255,
+      "baselineSha256": "7bf4272b06a4febc63c4452f944adfeedea2807f7854914780561b8e7c3484ac",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 255
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 255,
+      "readSha256": "7bf4272b06a4febc63c4452f944adfeedea2807f7854914780561b8e7c3484ac"
+    },
+    {
+      "path": "test/platform_database_test.dart",
+      "round": 6,
+      "baselineLines": 62,
+      "baselineSha256": "670145732578ccd8704b6c86d74ce3f3da5e37471546baf9c3da72512dea9224",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 62
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 62,
+      "readSha256": "670145732578ccd8704b6c86d74ce3f3da5e37471546baf9c3da72512dea9224"
+    },
+    {
+      "path": "test/provider_lifecycle_test.dart",
+      "round": 6,
+      "baselineLines": 35,
+      "baselineSha256": "3735eac264e12a8fa56e171042b199ce3da43996da1cb45d6dba095d7b5591bd",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 35
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 35,
+      "readSha256": "3735eac264e12a8fa56e171042b199ce3da43996da1cb45d6dba095d7b5591bd"
+    },
+    {
+      "path": "test/qr_login_flow_test.dart",
+      "round": 6,
+      "baselineLines": 172,
+      "baselineSha256": "d0cfbbd50de1748ec8b2869fbfbfad37c6bfe84ad0328ea23cd4ba1fec91ab4a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 172
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 172,
+      "readSha256": "d0cfbbd50de1748ec8b2869fbfbfad37c6bfe84ad0328ea23cd4ba1fec91ab4a"
+    },
+    {
+      "path": "test/qr_login_page_test.dart",
+      "round": 6,
+      "baselineLines": 344,
+      "baselineSha256": "9a3c0fdc17a8714c33f1800559c1ce8f33aceffe1f330cd15f18033e0cd34222",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 344
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 344,
+      "readSha256": "9a3c0fdc17a8714c33f1800559c1ce8f33aceffe1f330cd15f18033e0cd34222"
+    },
+    {
+      "path": "test/qr_poll_test.dart",
+      "round": 6,
+      "baselineLines": 158,
+      "baselineSha256": "dbb335d823f3e6f0209cdf1a05c77a2cdf95ab461740e4469df11e020b5dc79a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 158
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 158,
+      "readSha256": "dbb335d823f3e6f0209cdf1a05c77a2cdf95ab461740e4469df11e020b5dc79a"
+    },
+    {
+      "path": "test/query_export_test.dart",
+      "round": 6,
+      "baselineLines": 749,
+      "baselineSha256": "534cbee17b7f269e2110d8cf386e35aac821d090f977f7d37d24de146c310f9f",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 749
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 749,
+      "readSha256": "534cbee17b7f269e2110d8cf386e35aac821d090f977f7d37d24de146c310f9f"
+    },
+    {
+      "path": "test/readamber_ui_test.dart",
+      "round": 6,
+      "baselineLines": 274,
+      "baselineSha256": "27368e9cf83bef797b1f74a3982da3b739150ba83e8c16872677ab46c04abdd9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 274
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 274,
+      "readSha256": "27368e9cf83bef797b1f74a3982da3b739150ba83e8c16872677ab46c04abdd9"
+    },
+    {
+      "path": "test/refresh_cancellation_test.dart",
+      "round": 6,
+      "baselineLines": 332,
+      "baselineSha256": "882399f4bc47fc92b3b963c72242775065bf6af42f60d8e0f744be52b842c4dd",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 332
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 332,
+      "readSha256": "882399f4bc47fc92b3b963c72242775065bf6af42f60d8e0f744be52b842c4dd"
+    },
+    {
+      "path": "test/remaining_branches_test.dart",
+      "round": 6,
+      "baselineLines": 584,
+      "baselineSha256": "8353a8ae80c1b74511f6de957c726172c854e754e301e55fd6a45a02585f981a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 596
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 596,
+      "readSha256": "ce3bf15944551ed0ca69f00f70037e79e1efa859d8956248c1a69876dac794e4"
+    },
+    {
+      "path": "test/restart_refresh_retry_test.dart",
+      "round": 6,
+      "baselineLines": 704,
+      "baselineSha256": "68d54c93f434c6cb2ce3d34526e59ce4dae4fd563bb9b520db66e72ad21ed0ec",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 704
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 704,
+      "readSha256": "68d54c93f434c6cb2ce3d34526e59ce4dae4fd563bb9b520db66e72ad21ed0ec"
+    },
+    {
+      "path": "test/review_regression_test.dart",
+      "round": 6,
+      "baselineLines": 447,
+      "baselineSha256": "cd691b988c466a9280790ab60dc81d47eff1de8236418d31808c30d2f3fce3b9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 447
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 447,
+      "readSha256": "cd691b988c466a9280790ab60dc81d47eff1de8236418d31808c30d2f3fce3b9"
+    },
+    {
+      "path": "test/session_retry_cleanup_test.dart",
+      "round": 6,
+      "baselineLines": 535,
+      "baselineSha256": "9d99165635c8f15c75d11353d529b9022123f17a5bc447f9c3668360e43b5be6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 535
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 535,
+      "readSha256": "9d99165635c8f15c75d11353d529b9022123f17a5bc447f9c3668360e43b5be6"
+    },
+    {
+      "path": "test/settings_page_test.dart",
+      "round": 6,
+      "baselineLines": 210,
+      "baselineSha256": "2bbff73c9a021efd8aaf2ce08469da66e4f54745814a79d0a49db8aba2932830",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 210
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 210,
+      "readSha256": "2bbff73c9a021efd8aaf2ce08469da66e4f54745814a79d0a49db8aba2932830"
+    },
+    {
+      "path": "test/shared_auth_lifecycle_test.dart",
+      "round": 6,
+      "baselineLines": 643,
+      "baselineSha256": "0ae5929331b1cb0b785ec6994f4bc0d2f281600573bf3cfb3c6a459529bfbd16",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 643
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 643,
+      "readSha256": "0ae5929331b1cb0b785ec6994f4bc0d2f281600573bf3cfb3c6a459529bfbd16"
+    },
+    {
+      "path": "test/support/observed_database.dart",
+      "round": 6,
+      "baselineLines": 183,
+      "baselineSha256": "5a3669acb83217313971a6ca47d1f5610ef2aa0e31dae1fa567159f6bff279af",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 183
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 183,
+      "readSha256": "5a3669acb83217313971a6ca47d1f5610ef2aa0e31dae1fa567159f6bff279af"
+    },
+    {
+      "path": "test/support/wait_until.dart",
+      "round": 6,
+      "baselineLines": 26,
+      "baselineSha256": "d384fa1f4d89b6e6ad93125810105fba0fb41552f72faee96fd2f7e076c80c60",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 26
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 26,
+      "readSha256": "d384fa1f4d89b6e6ad93125810105fba0fb41552f72faee96fd2f7e076c80c60"
+    },
+    {
+      "path": "test/sync_batch_cards_regression_test.dart",
+      "round": 6,
+      "baselineLines": 299,
+      "baselineSha256": "6203c810a0c0c80ba52cc968a36ec8003c5cf0bbeb291b2c7a21cd8e1377d3c7",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 299
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 299,
+      "readSha256": "6203c810a0c0c80ba52cc968a36ec8003c5cf0bbeb291b2c7a21cd8e1377d3c7"
+    },
+    {
+      "path": "test/sync_cancellation_windows_test.dart",
+      "round": 6,
+      "baselineLines": 435,
+      "baselineSha256": "657b098390a9e33ed44273e34da8f6fd77d1af6a1ee12b27dec33db4c8d73370",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 435
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 435,
+      "readSha256": "657b098390a9e33ed44273e34da8f6fd77d1af6a1ee12b27dec33db4c8d73370"
+    },
+    {
+      "path": "test/sync_database_regression_test.dart",
+      "round": 6,
+      "baselineLines": 387,
+      "baselineSha256": "66264c17c6da41f3aff5322ecdce0e7a1a0d82a49d53dd39c62f58dd6fa77cb9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 387
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 387,
+      "readSha256": "66264c17c6da41f3aff5322ecdce0e7a1a0d82a49d53dd39c62f58dd6fa77cb9"
+    },
+    {
+      "path": "test/sync_exception_paths_test.dart",
+      "round": 6,
+      "baselineLines": 501,
+      "baselineSha256": "34659587c338c83ceec42009ae31f689e06f925997b25d9301ba3a3dc9e328cf",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 501
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 501,
+      "readSha256": "34659587c338c83ceec42009ae31f689e06f925997b25d9301ba3a3dc9e328cf"
+    },
+    {
+      "path": "test/sync_retry_paths_test.dart",
+      "round": 6,
+      "baselineLines": 118,
+      "baselineSha256": "321932c3afda1c74a8b5a15210b903d4dfbd8bcc63ebf58b16f5d32342a57b5a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 118
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 118,
+      "readSha256": "321932c3afda1c74a8b5a15210b903d4dfbd8bcc63ebf58b16f5d32342a57b5a"
+    },
+    {
+      "path": "test/sync_service_test.dart",
+      "round": 6,
+      "baselineLines": 240,
+      "baselineSha256": "aa9a9048a68c06a12b1916d258bb765f0f5852014e5506514f7af03a8da66f8c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 240
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 240,
+      "readSha256": "aa9a9048a68c06a12b1916d258bb765f0f5852014e5506514f7af03a8da66f8c"
+    },
+    {
+      "path": "test/technical_debt_test.dart",
+      "round": 6,
+      "baselineLines": 387,
+      "baselineSha256": "a539c8e8fbffe6e4a8a832b73b58dad168908e4655f9248845fd7238fe0a28e3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 387
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 387,
+      "readSha256": "a539c8e8fbffe6e4a8a832b73b58dad168908e4655f9248845fd7238fe0a28e3"
+    },
+    {
+      "path": "test/theme_controller_test.dart",
+      "round": 6,
+      "baselineLines": 246,
+      "baselineSha256": "1c3d4e31f846db6737fc64da34e6c6c42b050723cd2ed802ef8b08cf42684e49",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 246
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 246,
+      "readSha256": "1c3d4e31f846db6737fc64da34e6c6c42b050723cd2ed802ef8b08cf42684e49"
+    },
+    {
+      "path": "test/uncovered_pages_test.dart",
+      "round": 6,
+      "baselineLines": 239,
+      "baselineSha256": "f7ed21259882bede983d2d33b9491ece3ac2d246a45bf35e9eb81b50d339f466",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 239
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 239,
+      "readSha256": "f7ed21259882bede983d2d33b9491ece3ac2d246a45bf35e9eb81b50d339f466"
+    },
+    {
+      "path": "test/verification_recovery_test.dart",
+      "round": 6,
+      "baselineLines": 513,
+      "baselineSha256": "b1fb6f55169f2a24feebd3cbc6c1b190f3f00b28f3c069b466dabcbe94109b23",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 513
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 513,
+      "readSha256": "b1fb6f55169f2a24feebd3cbc6c1b190f3f00b28f3c069b466dabcbe94109b23"
+    },
+    {
+      "path": "test/widget_test.dart",
+      "round": 6,
+      "baselineLines": 59,
+      "baselineSha256": "608cc96da6f7e0f25b585ef6875e6eb09335d66b335946ee928d0944d186a6b8",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 59
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 59,
+      "readSha256": "608cc96da6f7e0f25b585ef6875e6eb09335d66b335946ee928d0944d186a6b8"
+    },
+    {
+      "path": "tool/check.ps1",
+      "round": 6,
+      "baselineLines": 28,
+      "baselineSha256": "25884607a6bc54d6c9a9368a6d0a5f8ab69ea52b159e1a2cebd4f6312cbfe3f3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 29
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 29,
+      "readSha256": "981a159d7ca7d3874941ab97ecd16957a9005d58e7e27111309aa7e2a435a2b6"
+    },
+    {
+      "path": "tool/coverage_audit.json",
+      "round": 6,
+      "baselineLines": 6,
+      "baselineSha256": "ee6b0ad6f63df4520c3ab53aee7197c405ca607333b2d2dfcc8b258745805e70",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 6
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 6,
+      "readSha256": "ee6b0ad6f63df4520c3ab53aee7197c405ca607333b2d2dfcc8b258745805e70"
+    },
+    {
+      "path": "tool/coverage_report.dart",
+      "round": 6,
+      "baselineLines": 175,
+      "baselineSha256": "d7a436cdcec333678a78df3dbdf8409790d738b02a695d234d88da65d2572591",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 175
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 175,
+      "readSha256": "d7a436cdcec333678a78df3dbdf8409790d738b02a695d234d88da65d2572591"
+    },
+    {
+      "path": "tool/package_windows.ps1",
+      "round": 7,
+      "baselineLines": 33,
+      "baselineSha256": "1cf8cbf0976d1c0abc55cedabc53b9a09bdb9e9713961a555196f36b91de7f33",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 33
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 33,
+      "readSha256": "1cf8cbf0976d1c0abc55cedabc53b9a09bdb9e9713961a555196f36b91de7f33"
+    },
+    {
+      "path": "tool/sqlite_dll_path.dart",
+      "round": 7,
+      "baselineLines": 21,
+      "baselineSha256": "e3f96ab0abb99ff970c65bcca167be1d6abb563f4c1d378b1166e94fd4b4acf3",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 21
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 21,
+      "readSha256": "e3f96ab0abb99ff970c65bcca167be1d6abb563f4c1d378b1166e94fd4b4acf3"
+    },
+    {
+      "path": "tool/windows_bootstrap.cs",
+      "round": 7,
+      "baselineLines": 77,
+      "baselineSha256": "09d438cfb2a5b54d7bd019da135062a7b545266c9a220e269921324f98ee808d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 163
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-007"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 163,
+      "readSha256": "2b19b19d139a3c1c31125abfc1338333fc529a9066bcd107608972b3160a92d1"
+    },
+    {
+      "path": "web/index.html",
+      "round": 7,
+      "baselineLines": 39,
+      "baselineSha256": "4fec9784cd09193843a0efcf1a283d736d026111ca092dbe52841b38904c3494",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 39
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 39,
+      "readSha256": "4fec9784cd09193843a0efcf1a283d736d026111ca092dbe52841b38904c3494"
+    },
+    {
+      "path": "web/manifest.json",
+      "round": 7,
+      "baselineLines": 35,
+      "baselineSha256": "146682bb9cd359c795758a92f96128fe7b9444c59965841160380f9d4e405558",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 35
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 35,
+      "readSha256": "146682bb9cd359c795758a92f96128fe7b9444c59965841160380f9d4e405558"
+    },
+    {
+      "path": "windows/.gitignore",
+      "round": 7,
+      "baselineLines": 17,
+      "baselineSha256": "955e3110cb16494ee76e1cd5df47e2c212309eb94a49a123fe87f718de413cb8",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 17
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 17,
+      "readSha256": "955e3110cb16494ee76e1cd5df47e2c212309eb94a49a123fe87f718de413cb8"
+    },
+    {
+      "path": "windows/CMakeLists.txt",
+      "round": 7,
+      "baselineLines": 132,
+      "baselineSha256": "e29079cd47e23373b812b71157db15866ee4bd371d8957e7dbda757a19f3e5fb",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 132
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 132,
+      "readSha256": "e29079cd47e23373b812b71157db15866ee4bd371d8957e7dbda757a19f3e5fb"
+    },
+    {
+      "path": "windows/flutter/CMakeLists.txt",
+      "round": 7,
+      "baselineLines": 109,
+      "baselineSha256": "bd05e3268b2f246bcbafdb778165fe67a7bafdba04eb73599502563a67b8ae7e",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 109
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 109,
+      "readSha256": "bd05e3268b2f246bcbafdb778165fe67a7bafdba04eb73599502563a67b8ae7e"
+    },
+    {
+      "path": "windows/flutter/generated_plugin_registrant.cc",
+      "round": 7,
+      "baselineLines": 20,
+      "baselineSha256": "bdbb71b4c4229cb36ec832e5d3fc17644a01568f15eb1151649dc925c4d169bb",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 20
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 20,
+      "readSha256": "bdbb71b4c4229cb36ec832e5d3fc17644a01568f15eb1151649dc925c4d169bb"
+    },
+    {
+      "path": "windows/flutter/generated_plugin_registrant.h",
+      "round": 7,
+      "baselineLines": 15,
+      "baselineSha256": "dbc11635d7b1ba1887adf40df5b83d634e9c3ab0bee34510c71528bb4d73602a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 15
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 15,
+      "readSha256": "dbc11635d7b1ba1887adf40df5b83d634e9c3ab0bee34510c71528bb4d73602a"
+    },
+    {
+      "path": "windows/flutter/generated_plugins.cmake",
+      "round": 7,
+      "baselineLines": 26,
+      "baselineSha256": "e016174ed985c7ab1a46eb669cfdcc4713861d82f3af932e4f2a0ae82f57207c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 26
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 26,
+      "readSha256": "e016174ed985c7ab1a46eb669cfdcc4713861d82f3af932e4f2a0ae82f57207c"
+    },
+    {
+      "path": "windows/runner/CMakeLists.txt",
+      "round": 7,
+      "baselineLines": 40,
+      "baselineSha256": "d765fdd05f63ad099e585a2cced0cbff13ec3229b7de68c8681b2107db850089",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 40
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 40,
+      "readSha256": "d765fdd05f63ad099e585a2cced0cbff13ec3229b7de68c8681b2107db850089"
+    },
+    {
+      "path": "windows/runner/Runner.rc",
+      "round": 7,
+      "baselineLines": 123,
+      "baselineSha256": "2dadd198ac4c217202fef4f153bcd1399b78eacaa399a3c572e3abdfe700fa94",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 123
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 123,
+      "readSha256": "2dadd198ac4c217202fef4f153bcd1399b78eacaa399a3c572e3abdfe700fa94"
+    },
+    {
+      "path": "windows/runner/flutter_window.cpp",
+      "round": 7,
+      "baselineLines": 71,
+      "baselineSha256": "d615eedc06ae37321e59c2c00c7687d1887dcd97904eb7225fafd8dcb5b83da6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 73
+        }
+      ],
+      "status": "reviewed",
+      "findings": [
+        "AUD-009"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 73,
+      "readSha256": "18fe26b6ed032738aa6cfed90814bfd2a5ad879a9ec664f080743c8e05fb6b21"
+    },
+    {
+      "path": "windows/runner/flutter_window.h",
+      "round": 7,
+      "baselineLines": 33,
+      "baselineSha256": "0252b804f5da380c7709cbe1daff2b8d18daf6c49d7e6dd43e5af3c99c19f56c",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 33
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 33,
+      "readSha256": "0252b804f5da380c7709cbe1daff2b8d18daf6c49d7e6dd43e5af3c99c19f56c"
+    },
+    {
+      "path": "windows/runner/main.cpp",
+      "round": 7,
+      "baselineLines": 43,
+      "baselineSha256": "050c5b64f7bd55f7a94187b8ebfda19b6b43107866d286af04eeddbca20f328d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 43
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 43,
+      "readSha256": "050c5b64f7bd55f7a94187b8ebfda19b6b43107866d286af04eeddbca20f328d"
+    },
+    {
+      "path": "windows/runner/resource.h",
+      "round": 7,
+      "baselineLines": 16,
+      "baselineSha256": "d0e8bf7835468b4b6b1f8f0747f2e8f25c19841f2df2ac60aaa584ddae3aa7c6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 16
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 16,
+      "readSha256": "d0e8bf7835468b4b6b1f8f0747f2e8f25c19841f2df2ac60aaa584ddae3aa7c6"
+    },
+    {
+      "path": "windows/runner/runner.exe.manifest",
+      "round": 7,
+      "baselineLines": 14,
+      "baselineSha256": "639a56233fcd8cbcb8bbefcd93e4680ec2664f32d9acfb3d2ec1d8726a96e090",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 14
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 14,
+      "readSha256": "639a56233fcd8cbcb8bbefcd93e4680ec2664f32d9acfb3d2ec1d8726a96e090"
+    },
+    {
+      "path": "windows/runner/utils.cpp",
+      "round": 7,
+      "baselineLines": 69,
+      "baselineSha256": "a128b67b9f3c2579e2ecef5b0dde2c33f222a097cdfe5da2a3067c73d1485b39",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 69
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 69,
+      "readSha256": "a128b67b9f3c2579e2ecef5b0dde2c33f222a097cdfe5da2a3067c73d1485b39"
+    },
+    {
+      "path": "windows/runner/utils.h",
+      "round": 7,
+      "baselineLines": 19,
+      "baselineSha256": "832e246b6758253f89016fb0374b30791242e97ad950d27fc678b3d9feacfdc4",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 19
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 19,
+      "readSha256": "832e246b6758253f89016fb0374b30791242e97ad950d27fc678b3d9feacfdc4"
+    },
+    {
+      "path": "windows/runner/win32_window.cpp",
+      "round": 7,
+      "baselineLines": 288,
+      "baselineSha256": "4e4f4dcf8e86ea6e097562cb3476039e693449bd8045367538afee579c017511",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 288
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 288,
+      "readSha256": "4e4f4dcf8e86ea6e097562cb3476039e693449bd8045367538afee579c017511"
+    },
+    {
+      "path": "windows/runner/win32_window.h",
+      "round": 7,
+      "baselineLines": 102,
+      "baselineSha256": "d154cf89ba85f820631a9b5bedacbe64fc5815e428fe6bc5da579ce649f69841",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 102
+        }
+      ],
+      "status": "reviewed",
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 102,
+      "readSha256": "d154cf89ba85f820631a9b5bedacbe64fc5815e428fe6bc5da579ce649f69841"
+    },
+    {
+      "path": "test/audit_config_integrity_test.dart",
+      "round": 6,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "status": "reviewed",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 116
+        }
+      ],
+      "findings": [
+        "AUD-001"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 116,
+      "readSha256": "7b82cac98c887a27096eb384a5f4ecab41a8d30201a39a538dfef0b85d64033c"
+    },
+    {
+      "path": "test/audit_cached_cancellation_test.dart",
+      "round": 6,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "status": "reviewed",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 73
+        }
+      ],
+      "findings": [
+        "AUD-002",
+        "AUD-003"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 73,
+      "readSha256": "1416259e0dd7efd18254da50160befbbffd14b5c3c7bf5f40d8950c64e1812a8"
+    },
+    {
+      "path": "test/audit_export_sink_test.dart",
+      "round": 6,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-005"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "status": "reviewed",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 23
+        }
+      ],
+      "currentLines": 23,
+      "readSha256": "fbe7d74c965dddf07bea64555d9d098ad85a728bfd5786c5152711d74ddab779"
+    },
+    {
+      "path": "test/audit_bookshelf_state_test.dart",
+      "round": 6,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-006"
+      ],
+      "evidence": [
+        "Final source/diff and test fidelity reviewed; analyze clean; 783 tests pass; 5071/5071 executable lines, 1881/1881 branches."
+      ],
+      "currentLines": 205,
+      "readSha256": "e695f319435c3a3d87e5fe95225c7119c961d3c19fa27267d56f02c6a592dba1",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 205
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "test/audit_search_plan_test.dart",
+      "round": 8,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-010"
+      ],
+      "evidence": [
+        "Cross-module regression and query-plan checks pass; before/after host performance evidence retained; final 783-test gate passes."
+      ],
+      "currentLines": 71,
+      "readSha256": "c46ff4b69b2abd7abf8585e3a6b16819cc1c1d2a8bb5687b75333fe37faffc2d",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 71
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "test/native/windows_bootstrap_test.cs",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-007"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 132,
+      "readSha256": "77af726ed28580089f877cf432a357915901d1c9628f60bac2ca84f2f0e87017",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 132
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "test/native/flutter_window_test.cpp",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-009"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 23,
+      "readSha256": "85fa3279b3e131702c3a3516f693541113588ebf851209a8856f2b43c84bea16",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 23
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "tool/check_platform.ps1",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-007",
+        "AUD-008"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 41,
+      "readSha256": "aa3a8d3633d62d6837fc2aec3496d3ae96d254bea28a021c3504ffd57fb7daf6",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 41
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "tool/check_windows_runner.ps1",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-009"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 35,
+      "readSha256": "51e5a652c98a86967159c8747feb992c0f7c7f677bb93c6b8efc23f16e643453",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 35
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "tool/performance_audit_test.dart",
+      "round": 8,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [],
+      "evidence": [
+        "Cross-module regression and query-plan checks pass; before/after host performance evidence retained; final 783-test gate passes."
+      ],
+      "currentLines": 172,
+      "readSha256": "69c466583d553bfec21c317c3f3e6e0551bc46cc1d5ea09325089fa75df40e66",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 172
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "android/app/src/main/res/xml/backup_rules.xml",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-008"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 6,
+      "readSha256": "9914cd98a7c252ebb8efe7c541852793237c267a60dff143b2b6d9d3f42dbb11",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 6
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "android/app/src/main/res/xml/data_extraction_rules.xml",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-008"
+      ],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 11,
+      "readSha256": "77d308f233ffabc077aee4512f385c3a669c4734db1b7cbd525d8f828968d305",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 11
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "assets/fonts/OFL.txt",
+      "round": 7,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [],
+      "evidence": [
+        "Native/build/docs reviewed; Android and Windows release builds pass; backup configuration, C# deployment and C++ font-message checks pass. Runtime/device limits documented."
+      ],
+      "currentLines": 93,
+      "readSha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 93
+        }
+      ],
+      "status": "reviewed"
+    },
+    {
+      "path": "test/audit_export_title_test.dart",
+      "round": 8,
+      "baselineLines": 0,
+      "baselineSha256": null,
+      "findings": [
+        "AUD-011"
+      ],
+      "evidence": [
+        "Cross-module regression and query-plan checks pass; before/after host performance evidence retained; final 783-test gate passes."
+      ],
+      "currentLines": 120,
+      "readSha256": "7289af8aa5d25b3f2eb692aa4125a8c573d402dda27ba4ee4c1573cb57df3a0a",
+      "readRanges": [
+        {
+          "start": 1,
+          "end": 120
+        }
+      ],
+      "status": "reviewed"
+    }
+  ],
+  "finalValidation": {
+    "tests": 783,
+    "executableLines": {
+      "hit": 5071,
+      "total": 5071
+    },
+    "branches": {
+      "hit": 1881,
+      "total": 1881
+    },
+    "analyze": "passed",
+    "platforms": "Android and Windows release builds; native regressions; Windows startup; no Android device or live account/API checks",
+    "textFiles": 153,
+    "currentPhysicalLines": 32174,
+    "baselinePhysicalLines": 30834
+  },
+  "artifacts": [
+    {
+      "path": "docs/audit/2026-10-18/README.md",
+      "sha256": "30cb6f783aa6e204530cb4634abc23808abc61155abc2ad9787fa59f5f4bd0ab",
+      "auditCheckpointSha256": "370ce287e9b4c2640d1bc6d667268266947f86a40526141844801053327fdf79"
+    },
+    {
+      "path": "docs/audit/2026-10-18/performance-before.json",
+      "sha256": "3b1db4768c1bed68b31937f904ae99de41282a1986ddce7feb3064d0acb7378d"
+    },
+    {
+      "path": "docs/audit/2026-10-18/performance-after.json",
+      "sha256": "af1587f2e06c7c39536a46d58553afe9fdd5de232e4b5e93e0d1b250cf2b6554"
+    },
+    {
+      "path": "docs/audit/2026-10-18/dependencies.json",
+      "sha256": "adc2fac8148fd651b05835731fd20ccc6ae756b55c3d9d7109858fa7809f148a"
+    },
+    {
+      "path": "docs/audit/2026-10-18/platform-validation.json",
+      "sha256": "c9a7ac5257ffbf2cee296981fd816c14e4eea8878e4275f2fb1e346eca6f0ea8"
+    }
+  ],
+  "auditArtifactNote": "This generated manifest is not self-hashed; audit reports/evidence are listed separately from the project text-source inventory. User attachments and ignored build/SDK files are outside scope.",
+  "releasePreparation": {
+    "date": "2026-10-18",
+    "reviewedFiles": [
+      {
+        "path": "pubspec.yaml",
+        "sha256": "6b0df3d7f1662f84e68bfa252663ce3e2b61bc538efecb84950dba5ffbc081c1",
+        "changes": "Release version, download links, release notes or historical audit wording only"
+      },
+      {
+        "path": "README.md",
+        "sha256": "c6a86edbf97cce989ccc5b482a149f6d02adf43ee9ac3f7d75e0e03e84b5b1f8",
+        "changes": "Release version, download links, release notes or historical audit wording only"
+      },
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "a9bdd6cd1f4e2cdfa540eb973af6b4238d99c3eba6b9f2a1f328710d2f014945",
+        "changes": "Release version, download links, release notes or historical audit wording only"
+      },
+      {
+        "path": "docs/audit/2026-10-18/README.md",
+        "sha256": "30cb6f783aa6e204530cb4634abc23808abc61155abc2ad9787fa59f5f4bd0ab",
+        "changes": "Release version, download links, release notes or historical audit wording only"
+      }
+    ],
+    "version": "2.10.1+25",
+    "note": "The files and finalValidation entries above preserve the pre-version-bump audit checkpoint. Only the version and release documentation changed afterward; release packages are rebuilt and their public checksums are supplied in GitHub Release v2.10.1.",
+    "validation": {
+      "nativeRegressions": "Android backup configuration, C# installer rollback/retry and C++ font messages passed",
+      "branches": {
+        "hit": 1881,
+        "total": 1881
+      },
+      "androidSigningMatchesPublishedV2100": true,
+      "windowsVersionResource": "2.10.1.25",
+      "analyze": "passed",
+      "tests": 783,
+      "archives": [
+        {
+          "name": "readamber-v2.10.1-android.apk",
+          "sha256": "eabbf33f665238f97f2496b073b078a47875c2a6137f579aabbe9091d87147f7",
+          "bytes": 56286496
+        },
+        {
+          "name": "readamber-v2.10.1-windows-x64-setup.exe",
+          "sha256": "b60dd3cb22aef17e344ec41a82e609be576ba85a5013f0802de1f8ea90293eb9",
+          "bytes": 15799808
+        },
+        {
+          "name": "readamber-v2.10.1-windows-x64.zip",
+          "sha256": "1d2d5b72d732b16aaa3285c560b02deafc5db7d0af8d458ed6505783d5dd7969",
+          "bytes": 15719105
+        }
+      ],
+      "platform": {
+        "windows": {
+          "matchedBundleFiles": 26,
+          "stderrBytes": 0,
+          "bundledSQLite": true,
+          "nativeWindowResponding": true,
+          "windowTitle": "阅珀 ReadAmber"
+        },
+        "version": "2.10.1+25",
+        "artifactHashes": {
+          "apk": "EABBF33F665238F97F2496B073B078A47875C2A6137F579AABBE9091D87147F7",
+          "installer": "B60DD3CB22AEF17E344EC41A82E609BE576BA85A5013F0802DE1F8EA90293EB9"
+        },
+        "android": {
+          "deviceTests": false,
+          "releaseBuild": true,
+          "backupManifestReferences": true,
+          "signatureVerified": true
+        }
+      },
+      "executableLines": {
+        "hit": 5071,
+        "total": 5071
+      }
+    }
+  }
+}

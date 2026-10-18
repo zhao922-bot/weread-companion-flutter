@@ -1,0 +1,215 @@
+{
+  "platform": "windows",
+  "runtime": "3.12.0 (stable) (Fri May 8 01:51:14 2026 -0700) on \"windows_x64\"",
+  "mode": "Flutter test JIT; SQLite FFI isolate; synthetic Chinese notes; warm process",
+  "memory": "20ms sampled process RSS, includes Flutter test/VM and all isolates, not Dart heap or exact peak",
+  "samples": [
+    {
+      "rows": 2000,
+      "operation": "seed-increment",
+      "ms": 1654
+    },
+    {
+      "rows": 2000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 1.204,
+      "maxMs": 2.358,
+      "rssStartBytes": 208060416,
+      "sampledPeakRssBytes": 208060416
+    },
+    {
+      "rows": 2000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 3.116,
+      "maxMs": 3.168,
+      "rssStartBytes": 208338944,
+      "sampledPeakRssBytes": 208338944
+    },
+    {
+      "rows": 2000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 1.598,
+      "maxMs": 4.178,
+      "rssStartBytes": 207896576,
+      "sampledPeakRssBytes": 207896576
+    },
+    {
+      "rows": 2000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 16.982,
+      "maxMs": 18.068,
+      "rssStartBytes": 208261120,
+      "sampledPeakRssBytes": 208269312
+    },
+    {
+      "rows": 2000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 2.65,
+      "maxMs": 6.939,
+      "rssStartBytes": 208269312,
+      "sampledPeakRssBytes": 208269312
+    },
+    {
+      "rows": 2000,
+      "operation": "export-only",
+      "ms": 141
+    },
+    {
+      "rows": 2000,
+      "operation": "export-size",
+      "bytes": 2005138
+    },
+    {
+      "rows": 2000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 181.269,
+      "maxMs": 181.269,
+      "rssStartBytes": 208379904,
+      "sampledPeakRssBytes": 219398144
+    },
+    {
+      "rows": 20000,
+      "operation": "seed-increment",
+      "ms": 19261
+    },
+    {
+      "rows": 20000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 1.253,
+      "maxMs": 2.166,
+      "rssStartBytes": 225587200,
+      "sampledPeakRssBytes": 225587200
+    },
+    {
+      "rows": 20000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 1.537,
+      "maxMs": 2.579,
+      "rssStartBytes": 225796096,
+      "sampledPeakRssBytes": 225796096
+    },
+    {
+      "rows": 20000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 1.527,
+      "maxMs": 3.34,
+      "rssStartBytes": 226304000,
+      "sampledPeakRssBytes": 226304000
+    },
+    {
+      "rows": 20000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 310.277,
+      "maxMs": 317.486,
+      "rssStartBytes": 226488320,
+      "sampledPeakRssBytes": 226906112
+    },
+    {
+      "rows": 20000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 14.712,
+      "maxMs": 21.07,
+      "rssStartBytes": 226906112,
+      "sampledPeakRssBytes": 227950592
+    },
+    {
+      "rows": 20000,
+      "operation": "export-only",
+      "ms": 875
+    },
+    {
+      "rows": 20000,
+      "operation": "export-size",
+      "bytes": 19997138
+    },
+    {
+      "rows": 20000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 1051.413,
+      "maxMs": 1051.413,
+      "rssStartBytes": 227266560,
+      "sampledPeakRssBytes": 251740160
+    },
+    {
+      "rows": 50000,
+      "operation": "seed-increment",
+      "ms": 47535
+    },
+    {
+      "rows": 50000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 1.516,
+      "maxMs": 2.918,
+      "rssStartBytes": 241885184,
+      "sampledPeakRssBytes": 241885184
+    },
+    {
+      "rows": 50000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 1.81,
+      "maxMs": 2.558,
+      "rssStartBytes": 242057216,
+      "sampledPeakRssBytes": 242057216
+    },
+    {
+      "rows": 50000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 1.95,
+      "maxMs": 6.727,
+      "rssStartBytes": 241958912,
+      "sampledPeakRssBytes": 241958912
+    },
+    {
+      "rows": 50000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 795.658,
+      "maxMs": 878.443,
+      "rssStartBytes": 242147328,
+      "sampledPeakRssBytes": 242204672
+    },
+    {
+      "rows": 50000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 48.291,
+      "maxMs": 49.004,
+      "rssStartBytes": 242155520,
+      "sampledPeakRssBytes": 244469760
+    },
+    {
+      "rows": 50000,
+      "operation": "export-only",
+      "ms": 2369
+    },
+    {
+      "rows": 50000,
+      "operation": "export-size",
+      "bytes": 49997138
+    },
+    {
+      "rows": 50000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 2752.768,
+      "maxMs": 2752.768,
+      "rssStartBytes": 242831360,
+      "sampledPeakRssBytes": 269225984
+    }
+  ]
+}

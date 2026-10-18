@@ -28,7 +28,7 @@ class SettingsTestConfig extends AppConfig {
   }
 
   @override
-  Future<void> save() async {
+  Future<void> saveAiConfig() async {
     saves++;
     await saveGate?.future;
     if (failSave) throw StateError('write failed');

@@ -190,24 +190,36 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('笔记摘要准备期间换号，旧查询失败不显示过期错误', (tester) async {
-    await notesPage(tester);
-    final entered = Completer<void>();
-    final release = Completer<void>();
-    probe.afterRead = (sql) async {
-      if (sql.contains('trim(content,')) {
-        entered.complete();
-        await release.future;
-      }
-    };
-    await tester.tap(find.byTooltip('AI 摘要'));
-    await tester.runAsync(() => entered.future);
-    await tester.runAsync(() => DatabaseService.selectAccount('456'));
-    release.complete();
-    await tester.pumpAndSettle();
-    expect(find.byType(SnackBar), findsNothing);
-    await tester.pumpWidget(const SizedBox());
-  });
+  for (final failure in [false, true]) {
+    testWidgets('笔记摘要准备期间换号，旧查询${failure ? "失败" : "成功"}不显示过期结果',
+        (tester) async {
+      await notesPage(tester);
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      probe.afterRead = (sql) async {
+        if (sql.contains('trim(content,')) {
+          entered.complete();
+          await release.future;
+          if (failure) throw StateError('stale summary read failure');
+        }
+      };
+      await tester.tap(find.byTooltip('AI 摘要'));
+      await tester.runAsync(() => entered.future);
+      await tester.runAsync(() => DatabaseService.selectAccount('456'));
+      release.complete();
+      await pumpUntil(
+          tester,
+          () =>
+              tester
+                  .widget<IconButton>(find.byWidgetPredicate(
+                      (w) => w is IconButton && w.tooltip == 'AI 摘要'))
+                  .onPressed !=
+              null);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SnackBar), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 
   testWidgets('详情收藏局部刷新失败后重试，重新加载已有条目和收藏计数', (tester) async {
     await tester.pumpWidget(MaterialApp(

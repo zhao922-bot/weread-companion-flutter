@@ -87,12 +87,13 @@ class ExportSnapshot {
               .execute('CREATE INDEX $schema.export_book_id ON books(book_id)');
           await txn.execute('ALTER TABLE $schema.books ADD COLUMN title TEXT');
           await txn.execute('''
-            UPDATE $schema.books SET title = (
-              SELECT book_title FROM (
-                SELECT book_id, book_title, created_at, bookmark_id AS id, 0 AS priority FROM main.bookmarks
-                UNION ALL SELECT book_id, book_title, created_at, note_id AS id, 1 AS priority FROM main.notes)
-              WHERE book_id = books.book_id
-              ORDER BY priority, created_at DESC, id DESC LIMIT 1)
+            UPDATE $schema.books SET title = CASE
+              WHEN EXISTS (SELECT 1 FROM main.bookmarks WHERE book_id = books.book_id)
+              THEN (SELECT book_title FROM main.bookmarks WHERE book_id = books.book_id
+                ORDER BY created_at DESC, bookmark_id DESC LIMIT 1)
+              ELSE (SELECT book_title FROM main.notes WHERE book_id = books.book_id
+                ORDER BY created_at DESC, note_id DESC LIMIT 1)
+              END
           ''');
           await txn.execute('''
             CREATE TABLE $schema.entries AS

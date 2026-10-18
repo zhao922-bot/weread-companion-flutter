@@ -549,6 +549,7 @@ class _CardsPageState extends State<CardsPage> {
                   Expanded(
                     child: _CardPreview(key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
                       bookmark: bookmark, scope: _exportScope,
+                      scrollController: scrollController,
                       renderer: widget.renderer, onExportChanged: _onExportChanged),
                   ),
                 ],
@@ -626,9 +627,10 @@ class _CardPreview extends StatefulWidget {
   final _CardExportScope scope;
   final CardImageRenderer renderer;
   final ValueChanged<bool> onExportChanged;
+  final ScrollController? scrollController;
 
   const _CardPreview({super.key, required this.bookmark, required this.scope,
-    required this.renderer, required this.onExportChanged});
+    required this.renderer, required this.onExportChanged, this.scrollController});
 
   @override
   State<_CardPreview> createState() => _CardPreviewState();
@@ -775,6 +777,7 @@ class _CardPreviewState extends State<_CardPreview> {
         // 卡片内容（RepaintBoundary 包裹，用于截图）
         Expanded(
           child: SingleChildScrollView(
+            controller: widget.scrollController,
             padding: const EdgeInsets.all(24),
             child: CardRepaintBoundary(
               key: _cardKey,

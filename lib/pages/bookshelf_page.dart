@@ -23,6 +23,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   static const _densityKey = 'bookshelf_columns';
   int _crossAxisCount = 3;
   bool _densityLoaded = false;
+  bool _savingDensity = false;
   final TextEditingController _searchController = TextEditingController();
   BookshelfProvider? _provider;
 
@@ -52,19 +53,42 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   Future<void> _loadDensity() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    final columns = prefs.getInt(_densityKey);
-    setState(() {
-      _crossAxisCount = columns == 4 ? 4 : 3;
-      _densityLoaded = true;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Failed writes can leave the shared cache ahead of persisted values.
+      await prefs.reload();
+      if (!mounted) return;
+      _crossAxisCount = prefs.get(_densityKey) == 4 ? 4 : 3;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('显示密度读取失败，已使用默认布局，可重新选择'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _densityLoaded = true);
+    }
   }
 
   Future<void> _setDensity(int columns) async {
-    setState(() => _crossAxisCount = columns);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_densityKey, columns);
+    if (!mounted || _savingDensity || !_densityLoaded) return;
+    setState(() => _savingDensity = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      if (!await prefs.setInt(_densityKey, columns)) {
+        throw StateError('Density preference write failed');
+      }
+      if (mounted) setState(() => _crossAxisCount = columns);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('显示密度保存失败，请重试'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _savingDensity = false);
+    }
   }
 
   @override
@@ -154,7 +178,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           PopupMenuButton<int>(
             icon: const Icon(Icons.grid_view_rounded),
             tooltip: '显示密度：当前 $_crossAxisCount 列',
-            enabled: _densityLoaded,
+            enabled: _densityLoaded && !_savingDensity,
             initialValue: _crossAxisCount,
             onSelected: _setDensity,
             itemBuilder: (context) => [

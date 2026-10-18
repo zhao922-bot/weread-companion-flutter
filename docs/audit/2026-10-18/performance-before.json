@@ -1,0 +1,200 @@
+{
+  "platform": "windows",
+  "runtime": "3.12.0 (stable) (Fri May 8 01:51:14 2026 -0700) on \"windows_x64\"",
+  "mode": "Flutter test JIT; SQLite FFI isolate; synthetic Chinese notes; warm process",
+  "memory": "20ms sampled process RSS, includes Flutter test/VM and all isolates, not Dart heap or exact peak",
+  "samples": [
+    {
+      "rows": 2000,
+      "operation": "seed-increment",
+      "ms": 2120
+    },
+    {
+      "rows": 2000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 1.595,
+      "maxMs": 3.219,
+      "rssStartBytes": 210288640,
+      "sampledPeakRssBytes": 210288640
+    },
+    {
+      "rows": 2000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 2.004,
+      "maxMs": 4.88,
+      "rssStartBytes": 210612224,
+      "sampledPeakRssBytes": 210612224
+    },
+    {
+      "rows": 2000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 19.167,
+      "maxMs": 21.337,
+      "rssStartBytes": 210702336,
+      "sampledPeakRssBytes": 210780160
+    },
+    {
+      "rows": 2000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 21.412,
+      "maxMs": 27.55,
+      "rssStartBytes": 210780160,
+      "sampledPeakRssBytes": 210812928
+    },
+    {
+      "rows": 2000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 3.167,
+      "maxMs": 7.506,
+      "rssStartBytes": 210812928,
+      "sampledPeakRssBytes": 210812928
+    },
+    {
+      "rows": 2000,
+      "operation": "export-size",
+      "bytes": 2005138
+    },
+    {
+      "rows": 2000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 3335.146,
+      "maxMs": 3335.146,
+      "rssStartBytes": 209829888,
+      "sampledPeakRssBytes": 221495296
+    },
+    {
+      "rows": 20000,
+      "operation": "seed-increment",
+      "ms": 21129
+    },
+    {
+      "rows": 20000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 2.691,
+      "maxMs": 3.191,
+      "rssStartBytes": 229429248,
+      "sampledPeakRssBytes": 229429248
+    },
+    {
+      "rows": 20000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 2.962,
+      "maxMs": 3.67,
+      "rssStartBytes": 229597184,
+      "sampledPeakRssBytes": 229597184
+    },
+    {
+      "rows": 20000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 379.639,
+      "maxMs": 394.286,
+      "rssStartBytes": 229867520,
+      "sampledPeakRssBytes": 229937152
+    },
+    {
+      "rows": 20000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 318.244,
+      "maxMs": 345.082,
+      "rssStartBytes": 229937152,
+      "sampledPeakRssBytes": 230408192
+    },
+    {
+      "rows": 20000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 17.089,
+      "maxMs": 21.67,
+      "rssStartBytes": 230408192,
+      "sampledPeakRssBytes": 232026112
+    },
+    {
+      "rows": 20000,
+      "operation": "export-size",
+      "bytes": 19997138
+    },
+    {
+      "rows": 20000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 25590.911,
+      "maxMs": 25590.911,
+      "rssStartBytes": 231329792,
+      "sampledPeakRssBytes": 258420736
+    },
+    {
+      "rows": 50000,
+      "operation": "seed-increment",
+      "ms": 45375
+    },
+    {
+      "rows": 50000,
+      "operation": "first-100",
+      "samples": 5,
+      "medianMs": 1.311,
+      "maxMs": 2.358,
+      "rssStartBytes": 231690240,
+      "sampledPeakRssBytes": 231690240
+    },
+    {
+      "rows": 50000,
+      "operation": "last-100-keyset",
+      "samples": 5,
+      "medianMs": 1.676,
+      "maxMs": 3.398,
+      "rssStartBytes": 231870464,
+      "sampledPeakRssBytes": 231870464
+    },
+    {
+      "rows": 50000,
+      "operation": "search-琥珀记忆",
+      "samples": 5,
+      "medianMs": 744.524,
+      "maxMs": 876.543,
+      "rssStartBytes": 231870464,
+      "sampledPeakRssBytes": 231948288
+    },
+    {
+      "rows": 50000,
+      "operation": "search-琥珀",
+      "samples": 5,
+      "medianMs": 772.55,
+      "maxMs": 783.16,
+      "rssStartBytes": 231940096,
+      "sampledPeakRssBytes": 232579072
+    },
+    {
+      "rows": 50000,
+      "operation": "report",
+      "samples": 5,
+      "medianMs": 43.927,
+      "maxMs": 48.285,
+      "rssStartBytes": 232579072,
+      "sampledPeakRssBytes": 234897408
+    },
+    {
+      "rows": 50000,
+      "operation": "export-size",
+      "bytes": 49997138
+    },
+    {
+      "rows": 50000,
+      "operation": "markdown-export",
+      "samples": 1,
+      "medianMs": 67048.098,
+      "maxMs": 67048.098,
+      "rssStartBytes": 233267200,
+      "sampledPeakRssBytes": 268070912
+    }
+  ]
+}
