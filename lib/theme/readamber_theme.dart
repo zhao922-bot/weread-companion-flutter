@@ -106,10 +106,24 @@ class ReadAmberPalette {
 }
 
 abstract final class ReadAmberTheme {
+  /// 系统默认模式下的中文回退字体栈，修复 Windows 默认回退宋体/字形不统一问题。
+  static const List<String> defaultFontFallback = [
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Noto Sans CJK SC',
+    'Source Han Sans SC',
+  ];
+
   static ThemeData get light => _build(Brightness.light);
   static ThemeData get dark => _build(Brightness.dark);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData lightFor({String? fontFamily}) =>
+      _build(Brightness.light, fontFamily: fontFamily);
+  static ThemeData darkFor({String? fontFamily}) =>
+      _build(Brightness.dark, fontFamily: fontFamily);
+
+  static ThemeData _build(Brightness brightness, {String? fontFamily}) {
     final colors = ReadAmberPalette.forBrightness(brightness);
     const rounded = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(16)),
@@ -136,6 +150,8 @@ abstract final class ReadAmberTheme {
     );
     return ThemeData(
       useMaterial3: true,
+      fontFamily: fontFamily,
+      fontFamilyFallback: defaultFontFallback,
       colorScheme: scheme,
       scaffoldBackgroundColor: colors.canvas,
       dividerColor: colors.outline,

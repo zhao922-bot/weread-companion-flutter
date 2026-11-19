@@ -47,8 +47,8 @@ class ReadAmberApp extends StatelessWidget {
       child: Consumer<ThemeController>(builder: (_, appearance, __) => MaterialApp(
         title: '阅珀 ReadAmber',
         debugShowCheckedModeBanner: false,
-        theme: ReadAmberTheme.light,
-        darkTheme: ReadAmberTheme.dark,
+        theme: ReadAmberTheme.lightFor(fontFamily: appearance.fontFamily),
+        darkTheme: ReadAmberTheme.darkFor(fontFamily: appearance.fontFamily),
         themeMode: appearance.mode,
         home: const MainScreen(),
       )),

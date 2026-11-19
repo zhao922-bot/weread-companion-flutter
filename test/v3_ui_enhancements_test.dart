@@ -177,7 +177,7 @@ void main() {
     expect(find.text('前往登录'), findsOneWidget);
     await tester.tap(find.text('前往登录'));
     await tester.pumpAndSettle();
-    expect(find.text('数据与备份'), findsOneWidget);
+    expect(find.text('应用主题'), findsOneWidget);
 
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1000, 700);
