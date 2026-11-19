@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
+import '../utils/date_format.dart';
 import 'database.dart';
 import 'export_snapshot.dart';
 import 'export_writer.dart';
@@ -122,7 +123,10 @@ class ExportService {
     if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
   }
 
-  static Future<String> exportToMarkdown({String? bookId}) async {
+  static Future<String> exportToMarkdown({
+    String? bookId,
+    bool obsidianFrontmatter = false,
+  }) async {
     final db = DatabaseService.instance;
     Directory? staging;
     Directory? snapshotDirectory;
@@ -146,6 +150,11 @@ class ExportService {
     try {
       final temporary = await getTemporaryDirectory();
       db.requireActive();
+      Map<String, dynamic>? bookMeta;
+      if (obsidianFrontmatter && bookId != null) {
+        bookMeta = await db.getBook(bookId);
+        db.requireActive();
+      }
       snapshotDirectory =
           await temporary.createTemp('.weread-export-snapshot-');
       snapshot = await ExportSnapshot.capture(
@@ -154,7 +163,6 @@ class ExportService {
       _snapshots.add(snapshot);
       db.requireActive();
       final now = DateTime.now();
-      String two(int n) => n.toString().padLeft(2, '0');
       final dir = await getApplicationDocumentsDirectory();
       db.requireActive();
       final random = Random.secure();
@@ -162,16 +170,26 @@ class ExportService {
               16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
           .join();
       final file = output = File(
-          '${dir.path}/微信读书笔记_${now.year}${two(now.month)}${two(now.day)}_'
-          '${two(now.hour)}${two(now.minute)}${two(now.second)}_$taskId.md');
+          '${dir.path}/微信读书笔记_${ReadAmberDateFormat.formatFileStamp(now)}_$taskId.md');
       staging = await dir.createTemp('.weread-export-');
       db.requireActive();
       final pending = File('${staging.path}/notes.md');
       final sink = ExportWriter(pending.openWrite(encoding: utf8));
       _writers.add(sink);
       try {
-        sink.write(
-            '# 📚 微信读书笔记\n\n导出时间: ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}\n');
+        final formattedTime = ReadAmberDateFormat.formatDateTime(now);
+        if (obsidianFrontmatter) {
+          sink.write('---\n');
+          sink.write('source: ReadAmber\n');
+          sink.write('exported_at: "$formattedTime"\n');
+          if (bookMeta != null) {
+            sink.write('title: "${(bookMeta['title'] as String).replaceAll('"', '\\"')}"\n');
+            sink.write('author: "${(bookMeta['author'] as String).replaceAll('"', '\\"')}"\n');
+            sink.write('progress: ${bookMeta['progress']}%\n');
+          }
+          sink.write('tags:\n  - weread\n  - reading-notes\n---\n\n');
+        }
+        sink.write('# 📚 微信读书笔记\n\n导出时间: $formattedTime\n');
         String? chapter;
         int? book;
         var after = 0;
@@ -232,9 +250,15 @@ class ExportService {
     return output!.path;
   }
 
-  static Future<void> exportAndShare({String? bookId}) async {
+  static Future<void> exportAndShare({
+    String? bookId,
+    bool obsidianFrontmatter = false,
+  }) async {
     final db = DatabaseService.instance;
-    final path = await exportToMarkdown(bookId: bookId);
+    final path = await exportToMarkdown(
+      bookId: bookId,
+      obsidianFrontmatter: obsidianFrontmatter,
+    );
     db.requireActive();
     await Share.shareXFiles([XFile(path)], text: '微信读书笔记导出');
   }

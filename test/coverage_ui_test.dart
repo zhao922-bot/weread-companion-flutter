@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,6 +43,8 @@ class _Paths extends PathProviderPlatform {
   Future<String?> getTemporaryPath() async => path;
   @override
   Future<String?> getApplicationDocumentsPath() async => path;
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
 }
 
 class _Config extends AppConfigProvider {
@@ -103,7 +107,13 @@ class _SummaryService extends AIService {
   bool get isConfigured => true;
   @override
   Future<AISummary> summarizeBook(
-          String title, String author, List<NoteItem> notes) async =>
+    String title,
+    String author,
+    List<NoteItem> notes, {
+    SummaryStyle style = SummaryStyle.standard,
+    void Function(String delta)? onDelta,
+    CancelToken? cancelToken,
+  }) async =>
       summary;
 }
 
@@ -375,15 +385,18 @@ void main() {
     ];
     shelf.notifyListeners();
     await tester.pump();
-    final cover = tester.widget<Image>(find.byType(Image));
+    final cover = tester
+        .widget<CachedNetworkImage>(find.byType(CachedNetworkImage));
     await tester.pumpWidget(MaterialApp(
         home: Builder(
-            builder: (context) => cover.loadingBuilder!(
-                context,
-                const SizedBox(),
-                const ImageChunkEvent(
-                    cumulativeBytesLoaded: 1, expectedTotalBytes: 10)))));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+            builder: (context) =>
+                cover.placeholder!(context, 'https://example.invalid/a.png'))));
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+    await tester.pumpWidget(MaterialApp(
+        home: Builder(
+            builder: (context) => cover.errorWidget!(
+                context, 'https://example.invalid/a.png', StateError('err')))));
+    expect(find.text('网络封面'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -748,29 +761,25 @@ void main() {
         BookDetailPage(book: Book(bookId: 'b', title: '测试书'), database: db)));
     await pumpUntil(
         tester, () => find.textContaining('引文200').evaluate().isNotEmpty);
-    final listFinder = find.descendant(
-        of: find.byType(BookDetailPage), matching: find.byType(ListView));
-    final list = tester.widget<ListView>(listFinder);
-    final footer = (list.childrenDelegate as SliverChildBuilderDelegate)
-        .builder(tester.element(listFinder), 107) as TextButton;
+    int loadedCount() {
+      final sliver = tester.widget<SliverList>(find.descendant(
+          of: find.byType(BookDetailPage), matching: find.byType(SliverList)));
+      return (sliver.delegate as SliverChildBuilderDelegate).childCount!;
+    }
+    expect(loadedCount(), 100);
+    final customScroll = tester.widget<CustomScrollView>(find.descendant(
+        of: find.byType(BookDetailPage),
+        matching: find.byType(CustomScrollView)));
+    final footerPadding = customScroll.slivers.last as SliverPadding;
+    final footer = (footerPadding.child as SliverToBoxAdapter).child as TextButton;
     expect((footer.child as Text).data, '加载更多');
     footer.onPressed!();
-    await pumpUntil(
-        tester,
-        () =>
-            (tester.widget<ListView>(listFinder).childrenDelegate
-                    as SliverChildBuilderDelegate)
-                .childCount ==
-            208);
+    await pumpUntil(tester, () => loadedCount() == 200);
     final before = probe.reads.length;
     SyncService.changes.publish(db, favoritesOnly: true);
     await pumpUntil(
         tester, () => probe.reads.skip(before).any((read) => read.rows == 200));
-    expect(
-        (tester.widget<ListView>(listFinder).childrenDelegate
-                as SliverChildBuilderDelegate)
-            .childCount,
-        208);
+    expect(loadedCount(), 200);
     final reads = probe.reads.where((read) => read.sql != 'books').length;
     SyncService.changes.publish(db, bookIds: {'unrelated'});
     await tester.pumpAndSettle();

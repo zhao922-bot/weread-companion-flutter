@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/ai_service.dart';
+import '../services/config.dart';
 import '../services/database.dart';
 import '../services/sync_service.dart';
 
-
 class ReportPage extends StatefulWidget {
   final bool isActive;
-  const ReportPage({super.key, this.isActive = true});
+  final AIService Function(AppConfig)? aiServiceFactory;
+  const ReportPage({super.key, this.isActive = true, this.aiServiceFactory});
 
   @override
   State<ReportPage> createState() => _ReportPageState();
@@ -26,6 +28,8 @@ class _ReportPageState extends State<ReportPage> {
   bool _loading = true;
   String? _error;
   bool _refreshPending = false;
+  bool _analyzing = false;
+  String? _aiInsight;
 
   @override
   void didUpdateWidget(covariant ReportPage oldWidget) {
@@ -63,10 +67,16 @@ class _ReportPageState extends State<ReportPage> {
 
   Future<void> _loadStats() async {
     if (!mounted) return;
-    if (!widget.isActive) { _refreshPending = true; return; }
+    if (!widget.isActive) {
+      _refreshPending = true;
+      return;
+    }
     _refreshPending = false;
     final request = ++_loadRequest;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final db = DatabaseService.instance;
       bool isCurrent() => mounted && request == _loadRequest && db.isActive;
@@ -86,9 +96,11 @@ class _ReportPageState extends State<ReportPage> {
         _readBooks = stats['finishedBooks'] as int;
         _readingBooks = stats['readingBooks'] as int;
         _unreadBooks = _totalBooks - _readBooks - _readingBooks;
-        _totalNotes = (stats['totalBookmarks'] as int) + (stats['totalNotes'] as int);
+        _totalNotes =
+            (stats['totalBookmarks'] as int) + (stats['totalNotes'] as int);
         _topHighlights = (stats['top'] as List<Map<String, dynamic>>)
-            .map((r) => MapEntry(r['title'] as String, r['total'] as int)).toList();
+            .map((r) => MapEntry(r['title'] as String, r['total'] as int))
+            .toList();
         _monthlyActivity = months.entries.toList();
       });
     } catch (e) {
@@ -99,99 +111,245 @@ class _ReportPageState extends State<ReportPage> {
     }
   }
 
+  Future<void> _generateAiInsight() async {
+    setState(() => _analyzing = true);
+    try {
+      final db = DatabaseService.instance;
+      final config = AppConfig();
+      await config.load();
+      final service =
+          widget.aiServiceFactory?.call(config) ?? AIService(config: config);
+      if (!service.isConfigured) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('请先在设置中配置 AI API')));
+        }
+        return;
+      }
+      final books = await db.getAllBooks();
+      final titles = books
+          .map((b) => (b['title'] as String? ?? '').trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+      if (titles.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('暂无书籍可供分析')));
+        }
+        return;
+      }
+      final insight = await service.analyzeReading(titles, _totalNotes);
+      if (mounted && db.isActive) setState(() => _aiInsight = insight);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('阅读洞察生成失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _analyzing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final palette = ReadAmberPalette.of(context);
+    final statItems = [
+      _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
+      _StatCard('已读完', '$_readBooks', Icons.check_circle, palette.success),
+      _StatCard('在读中', '$_readingBooks', Icons.menu_book, palette.amberText),
+      _StatCard('划线与笔记', '$_totalNotes', Icons.note, palette.inkSoft),
+    ];
 
     return Scaffold(
       appBar: AppBar(title: const Text('阅读报告')),
-      body: ReadAmberContent(maxWidth: 1000, child: RefreshIndicator(
-        onRefresh: _loadStats,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (_loading) const LinearProgressIndicator(),
-            if (_error != null) ...[
-              Text('报告加载失败: $_error'),
-              TextButton(onPressed: _loadStats, child: const Text('重试')),
-            ],
-            // 统计卡片
-            Row(
-              children: [
-                _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
-                const SizedBox(width: 8),
-                _StatCard('已读完', '$_readBooks', Icons.check_circle, ReadAmberPalette.of(context).success),
-                const SizedBox(width: 8),
-                _StatCard('在读中', '$_readingBooks', Icons.menu_book, ReadAmberPalette.of(context).amberText),
-                const SizedBox(width: 8),
-                _StatCard('划线与笔记', '$_totalNotes', Icons.note, ReadAmberPalette.of(context).inkSoft),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // 阅读进度饼图
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('阅读进度', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      body: ReadAmberContent(
+        maxWidth: 1000,
+        child: RefreshIndicator(
+          onRefresh: _loadStats,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 520;
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                children: [
+                  if (_loading) const LinearProgressIndicator(),
+                  if (_error != null) ...[
+                    Text('报告加载失败: $_error'),
+                    TextButton(onPressed: _loadStats, child: const Text('重试')),
+                  ],
+                  // 响应式统计卡片：窄屏 2x2，宽屏 4 列
+                  if (narrow) ...[
+                    Row(children: [
+                      statItems[0],
+                      const SizedBox(width: 8),
+                      statItems[1],
+                    ]),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      statItems[2],
+                      const SizedBox(width: 8),
+                      statItems[3],
+                    ]),
+                  ] else
+                    Row(
+                      children: [
+                        statItems[0],
+                        const SizedBox(width: 8),
+                        statItems[1],
+                        const SizedBox(width: 8),
+                        statItems[2],
+                        const SizedBox(width: 8),
+                        statItems[3],
+                      ],
+                    ),
+                  const SizedBox(height: 20),
+                  _buildProgressPieCard(context),
+                  if (_monthlyActivity.any((entry) => entry.value > 0)) ...[
                     const SizedBox(height: 16),
-                    SizedBox(
-                      height: 200,
-                      child: PieChart(
-                        PieChartData(
-                          sections: [
+                    _buildMonthlyActivity(cs.primary),
+                  ],
+                  if (_topHighlights.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _buildTopHighlights(cs.primary),
+                  ],
+                  const SizedBox(height: 16),
+                  _buildAiInsightCard(context),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProgressPieCard(BuildContext context) {
+    final palette = ReadAmberPalette.of(context);
+    final slices = <(String, int, Color, Color)>[
+      ('读完', _readBooks, palette.success, palette.surface),
+      ('在读', _readingBooks, palette.amberText, palette.surface),
+      ('未读', _unreadBooks, palette.outline, palette.ink),
+    ];
+    final nonZero = slices.where((s) => s.$2 > 0).toList();
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('阅读进度',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child: nonZero.isEmpty
+                  ? Center(
+                      child: Text('暂无书籍进度数据',
+                          style: TextStyle(color: palette.muted)),
+                    )
+                  : PieChart(
+                      PieChartData(
+                        sections: [
+                          for (final s in nonZero)
                             PieChartSectionData(
-                              value: _readBooks.toDouble(),
-                              color: ReadAmberPalette.of(context).success,
-                              title: '读完\n$_readBooks',
+                              value: s.$2.toDouble(),
+                              color: s.$3,
+                              title: '${s.$1}\n${s.$2}',
                               radius: 60,
-                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).surface),
+                              titleStyle: TextStyle(fontSize: 12, color: s.$4),
                             ),
-                            PieChartSectionData(
-                              value: _readingBooks.toDouble(),
-                              color: ReadAmberPalette.of(context).amberText,
-                              title: '在读\n$_readingBooks',
-                              radius: 60,
-                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).surface),
-                            ),
-                            PieChartSectionData(
-                              value: _unreadBooks.toDouble(),
-                              color: ReadAmberPalette.of(context).outline,
-                              title: '未读\n$_unreadBooks',
-                              radius: 60,
-                              titleStyle: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).ink),
-                            ),
-                          ],
-                          sectionsSpace: 2,
-                          centerSpaceRadius: 40,
-                        ),
+                        ],
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 40,
                       ),
                     ),
-                  ],
-                ),
-              ),
             ),
-            if (_monthlyActivity.any((entry) => entry.value > 0)) ...[
-              const SizedBox(height: 16),
-              _buildMonthlyActivity(cs.primary),
-            ],
-            if (_topHighlights.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              _buildTopHighlights(cs.primary),
-            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final s in slices)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: s.$3,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${s.$1} ${s.$2}',
+                        style: TextStyle(fontSize: 12, color: palette.muted),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ],
         ),
-      )),
+      ),
+    );
+  }
+
+  Widget _buildAiInsightCard(BuildContext context) {
+    final palette = ReadAmberPalette.of(context);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome_rounded,
+                    size: 20, color: palette.amberText),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('AI 阅读习惯洞察',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+                TextButton.icon(
+                  onPressed: _analyzing ? null : _generateAiInsight,
+                  icon: _analyzing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.psychology_outlined, size: 18),
+                  label: Text(_aiInsight == null ? '生成洞察' : '重新分析'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _aiInsight ?? '结合你的书架与划线量，分析阅读偏好、知识结构与下一步阅读方向。',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                color: _aiInsight == null ? palette.muted : palette.inkSoft,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildMonthlyActivity(Color color) {
-    final maxCount = _monthlyActivity.fold<int>(0, (max, entry) => entry.value > max ? entry.value : max);
+    final maxCount = _monthlyActivity.fold<int>(
+        0, (max, entry) => entry.value > max ? entry.value : max);
     final interval = (maxCount / 4).ceilToDouble().clamp(1.0, double.infinity);
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -200,9 +358,12 @@ class _ReportPageState extends State<ReportPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('划线与笔记趋势', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('划线与笔记趋势',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('近 6 个月 · 按本地记录的创建时间统计', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
+            Text('近 6 个月 · 按本地记录的创建时间统计',
+                style: TextStyle(
+                    fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             const SizedBox(height: 20),
             SizedBox(
               height: 220,
@@ -229,7 +390,9 @@ class _ReportPageState extends State<ReportPage> {
                         final entry = _monthlyActivity[group.x];
                         return BarTooltipItem(
                           '${entry.key.year}年${entry.key.month}月\n${entry.value} 条',
-                          TextStyle(color: ReadAmberPalette.of(context).surface, fontSize: 12),
+                          TextStyle(
+                              color: ReadAmberPalette.of(context).surface,
+                              fontSize: 12),
                         );
                       },
                     ),
@@ -241,12 +404,15 @@ class _ReportPageState extends State<ReportPage> {
                         reservedSize: 32,
                         getTitlesWidget: (value, meta) {
                           final index = value.toInt();
-                          if (index < 0 || index >= _monthlyActivity.length) return const SizedBox();
+                          if (index < 0 || index >= _monthlyActivity.length) {
+                            return const SizedBox();
+                          }
                           final month = _monthlyActivity[index].key;
                           return SideTitleWidget(
                             axisSide: meta.axisSide,
                             space: 8,
-                            child: Text('${month.year % 100}/${month.month}', style: const TextStyle(fontSize: 11)),
+                            child: Text('${month.year % 100}/${month.month}',
+                                style: const TextStyle(fontSize: 11)),
                           );
                         },
                       ),
@@ -259,15 +425,21 @@ class _ReportPageState extends State<ReportPage> {
                         getTitlesWidget: (value, meta) => SideTitleWidget(
                           axisSide: meta.axisSide,
                           space: 6,
-                          child: Text('${value.toInt()}', style: TextStyle(fontSize: 10, color: ReadAmberPalette.of(context).muted)),
+                          child: Text('${value.toInt()}',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: ReadAmberPalette.of(context).muted)),
                         ),
                       ),
                     ),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
                   ),
                   borderData: FlBorderData(show: false),
-                  gridData: FlGridData(drawVerticalLine: false, horizontalInterval: interval),
+                  gridData: FlGridData(
+                      drawVerticalLine: false, horizontalInterval: interval),
                 ),
               ),
             ),
@@ -285,20 +457,29 @@ class _ReportPageState extends State<ReportPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('划线最多的书 Top5', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('划线最多的书 Top5',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('按本地已同步划线数量排序', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
+            Text('按本地已同步划线数量排序',
+                style: TextStyle(
+                    fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             for (final entry in _topHighlights.asMap().entries) ...[
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('${entry.key + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+                  Text('${entry.key + 1}',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, color: color)),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(entry.value.key, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    child: Text(entry.value.key,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                   const SizedBox(width: 12),
-                  Text('${entry.value.value} 条', style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
+                  Text('${entry.value.value} 条',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: ReadAmberPalette.of(context).muted)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -338,9 +519,13 @@ class _StatCard extends StatelessWidget {
             children: [
               Icon(icon, color: color, size: 24),
               const SizedBox(height: 8),
-              Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+              Text(value,
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(fontSize: 12, color: ReadAmberPalette.of(context).muted)),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             ],
           ),
         ),

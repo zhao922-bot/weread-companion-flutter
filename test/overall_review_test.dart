@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,7 +58,13 @@ class _RecordingAI extends AIService {
   final Future<AISummary>? result;
   @override
   Future<AISummary> summarizeBook(
-      String title, String author, List<NoteItem> notes) async {
+    String title,
+    String author,
+    List<NoteItem> notes, {
+    SummaryStyle style = SummaryStyle.standard,
+    void Function(String delta)? onDelta,
+    CancelToken? cancelToken,
+  }) async {
     onCall();
     if (result != null) return result!;
     return AISummary(createdAt: 1, title: title, text: '迟到摘要', references: []);

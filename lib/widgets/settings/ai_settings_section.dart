@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_config_provider.dart';
+import '../../services/ai_service.dart';
 import '../../services/config.dart';
 import 'settings_section.dart';
 
 class AiSettingsSection extends StatefulWidget {
   final bool isActive;
-  const AiSettingsSection({super.key, this.isActive = true});
+  final AIService Function(AppConfig)? aiServiceFactory;
+  const AiSettingsSection({
+    super.key,
+    this.isActive = true,
+    this.aiServiceFactory,
+  });
 
   @override
   State<AiSettingsSection> createState() => _AiSettingsSectionState();
@@ -20,6 +26,7 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
   AppConfigProvider? _provider;
   bool _applied = false;
   bool _obscure = true;
+  bool _testing = false;
   int? _revision;
 
   @override
@@ -84,6 +91,29 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
     } catch (_) {
       if (!mounted) return;
       _feedback('AI 配置保存失败，请重试');
+    }
+  }
+
+  Future<void> _testConnection() async {
+    final url = _baseUrl.text.trim();
+    if (_apiKey.text.trim().isEmpty || !AppConfig.isHttpsUrl(url)) {
+      _feedback('请先填写 API Key 和有效的 HTTPS 服务地址');
+      return;
+    }
+    setState(() => _testing = true);
+    try {
+      final probeConfig = AppConfig()
+        ..apiKey = _apiKey.text.trim()
+        ..baseUrl = url
+        ..modelName = _model.text.trim();
+      final service = widget.aiServiceFactory?.call(probeConfig) ??
+          AIService(config: probeConfig);
+      await service.testConnection();
+      if (mounted) _feedback('AI 服务连接成功');
+    } catch (e) {
+      if (mounted) _feedback('连接测试失败: $e');
+    } finally {
+      if (mounted) setState(() => _testing = false);
     }
   }
 
@@ -190,12 +220,35 @@ class _AiSettingsSectionState extends State<AiSettingsSection> {
           _field('模型名称', _model, enabled),
           Padding(
             padding: const EdgeInsets.all(16),
-            child: SizedBox(width: double.infinity, child: ElevatedButton(
-              onPressed: enabled ? _save : null,
-              child: config.isBusy
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('保存配置'),
-            )),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: enabled && !_testing ? _testConnection : null,
+                    child: _testing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('测试连接'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: enabled ? _save : null,
+                    child: config.isBusy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('保存配置'),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

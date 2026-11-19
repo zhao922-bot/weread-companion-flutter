@@ -246,7 +246,7 @@ void main() {
     await tester.tap(find.text('重试'));
     await pumpUntil(tester,
         () => find.byType(CircularProgressIndicator).evaluate().isEmpty);
-    tester.widget<ListView>(find.byType(ListView)).controller!.jumpTo(0);
+    tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!.jumpTo(0);
     await tester.pumpAndSettle();
     expect(find.text('0条'), findsNothing);
     expect(find.text('1条'), findsNWidgets(2));
@@ -586,7 +586,7 @@ void main() {
             .isNotEmpty);
     release.complete();
     await tester.pumpAndSettle();
-    tester.widget<ListView>(find.byType(ListView)).controller!.jumpTo(1000);
+    tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!.jumpTo(1000);
     await tester.pumpAndSettle();
     expect(find.textContaining('stale favorite failure'), findsNothing);
     expect(find.text('重试'), findsNothing);

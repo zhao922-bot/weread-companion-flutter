@@ -35,4 +35,19 @@ class NoteItem {
     required this.isFav,
     required this.source,
   });
+
+  factory NoteItem.fromRow(Map<String, dynamic> row,
+      {String fallbackBookTitle = ''}) {
+    final rawTitle = row['book_title'] as String? ?? '';
+    return NoteItem(
+      id: row['id'] as String? ?? '',
+      bookId: row['book_id'] as String? ?? '',
+      bookTitle: rawTitle.isNotEmpty ? rawTitle : fallbackBookTitle,
+      content: row['content'] as String? ?? '',
+      chapterTitle: row['chapter_title'] as String? ?? '',
+      createdAt: row['created_at'] as int? ?? 0,
+      isFav: (row['is_fav'] ?? 0) == 1,
+      source: NoteSource.values.byName(row['source'] as String),
+    );
+  }
 }

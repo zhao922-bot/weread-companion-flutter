@@ -46,6 +46,7 @@ class BookshelfProvider extends ChangeNotifier {
   List<Book> _filtered = [];
   String _searchQuery = '';
   BookshelfFilter _filter = BookshelfFilter.all;
+  BookshelfSort _sort = BookshelfSort.recent;
   bool _loading = false;
   String? _error;
   int _sessionRevision = -1;
@@ -59,6 +60,7 @@ class BookshelfProvider extends ChangeNotifier {
     _filtered = [];
     _searchQuery = '';
     _filter = BookshelfFilter.all;
+    _sort = BookshelfSort.recent;
     _loading = false;
     _error = null;
     lastSyncResult = null;
@@ -69,6 +71,7 @@ class BookshelfProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get error => _error;
   BookshelfFilter get filter => _filter;
+  BookshelfSort get sort => _sort;
   String get searchQuery => _searchQuery;
   int get totalCount => _books.length;
 
@@ -143,6 +146,12 @@ class BookshelfProvider extends ChangeNotifier {
     _applyFilter();
   }
 
+  void setSort(BookshelfSort sort) {
+    if (_sort == sort) return;
+    _sort = sort;
+    _applyFilter();
+  }
+
   void _applyFilter() {
     var list = List<Book>.from(_books);
 
@@ -155,6 +164,9 @@ class BookshelfProvider extends ChangeNotifier {
     }
 
     list = list.where(_filter.matches).toList();
+    if (_sort != BookshelfSort.recent) {
+      list.sort(_sort.compare);
+    }
 
     _filtered = list;
     notifyListeners();

@@ -868,7 +868,7 @@ void main() {
       gate = _Gate();
       paths.beforeTemporary = () async {
         await gate.wait();
-        throw FileSystemException('迟到目录故障');
+        throw const FileSystemException('迟到目录故障');
       };
       pending = IOOverrides.runWithIOOverrides(action, faults);
       await gate.entered.future;

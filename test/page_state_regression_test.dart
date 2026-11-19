@@ -49,11 +49,13 @@ void main() {
             'created_at': i,
           }));
 
-  int loadedItems(WidgetTester tester) =>
-      (tester.widget<ListView>(find.byType(ListView)).childrenDelegate
-              as SliverChildBuilderDelegate)
-          .childCount! -
-      8;
+  int loadedItems(WidgetTester tester) {
+    final finder = find.byType(SliverList);
+    if (finder.evaluate().isEmpty) return 0;
+    return (tester.widget<SliverList>(finder).delegate
+            as SliverChildBuilderDelegate)
+        .childCount!;
+  }
 
   testWidgets('详情刷新失败后的重试重载首屏，不遗漏新增的最新笔记', (tester) async {
     await tester.runAsync(() => seedNotes(2));
@@ -86,7 +88,7 @@ void main() {
     await pumpUntil(tester,
         () => find.byType(CircularProgressIndicator).evaluate().isEmpty);
     expect(loadedItems(tester), 3);
-    tester.widget<ListView>(find.byType(ListView)).controller!.jumpTo(0);
+    tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!.jumpTo(0);
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.byKey(const ValueKey('note:new')), 200,
         scrollable: find.byType(Scrollable).first);
@@ -102,7 +104,7 @@ void main() {
         home: BookDetailPage(book: Book(bookId: 'b', title: '测试书'))));
     await pumpUntil(tester, () => loadedItems(tester) == 100);
     for (var i = 0; i < 12 && loadedItems(tester) < 205; i++) {
-      final scroll = tester.widget<ListView>(find.byType(ListView)).controller!;
+      final scroll = tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller!;
       scroll.jumpTo(scroll.position.maxScrollExtent);
       await tester.pump();
       await pumpUntil(tester,

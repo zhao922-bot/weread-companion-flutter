@@ -8,6 +8,8 @@ import '../models/book.dart';
 import '../models/bookshelf_filter.dart';
 import '../models/reading_constants.dart';
 import '../services/database.dart';
+import '../widgets/book_cover.dart';
+import '../widgets/readamber_chip.dart';
 import 'book_detail_page.dart';
 import 'sync_page.dart';
 
@@ -175,6 +177,22 @@ class _BookshelfPageState extends State<BookshelfPage> {
         backgroundColor: ReadAmberPalette.of(context).canvas,
         foregroundColor: ReadAmberPalette.of(context).ink,
         actions: [
+          Consumer<BookshelfProvider>(
+            builder: (context, provider, _) => PopupMenuButton<BookshelfSort>(
+              icon: const Icon(Icons.sort_rounded),
+              tooltip: '排序方式：${provider.sort.label}',
+              initialValue: provider.sort,
+              onSelected: provider.setSort,
+              itemBuilder: (context) => [
+                for (final sort in BookshelfSort.values)
+                  CheckedPopupMenuItem(
+                    value: sort,
+                    checked: provider.sort == sort,
+                    child: Text(sort.label),
+                  ),
+              ],
+            ),
+          ),
           PopupMenuButton<int>(
             icon: const Icon(Icons.grid_view_rounded),
             tooltip: '显示密度：当前 $_crossAxisCount 列',
@@ -255,23 +273,10 @@ class _BookshelfPageState extends State<BookshelfPage> {
                             final isSelected = provider.filter == filter;
                             return Padding(
                               padding: const EdgeInsets.only(right: 8),
-                              child: GestureDetector(
+                              child: ReadAmberChip(
+                                label: filter.label,
+                                selected: isSelected,
                                 onTap: () => provider.setFilter(filter),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? ReadAmberPalette.of(context).amber : ReadAmberPalette.of(context).surfaceMuted,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    filter.label,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                      color: isSelected ? ReadAmberColors.ink : ReadAmberPalette.of(context).inkSoft,
-                                    ),
-                                  ),
-                                ),
                               ),
                             );
                           }).toList(),
@@ -305,8 +310,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
             Text('正在加载书架...', style: TextStyle(color: ReadAmberPalette.of(context).muted)),
           ],
         ),
@@ -436,161 +441,105 @@ class _BookCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: ReadAmberPalette.of(context).surface,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: ReadAmberColors.ink.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 封面
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  color: ReadAmberPalette.of(context).surfaceMuted,
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (book.cover.isNotEmpty)
-                        LayoutBuilder(builder: (context, constraints) {
-                          final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-                          return Image.network(
-                            book.cover,
-                            fit: BoxFit.cover,
-                            cacheWidth: (constraints.maxWidth * pixelRatio).ceil(),
-                            cacheHeight: (constraints.maxHeight * pixelRatio).ceil(),
-                            errorBuilder: (context, error, stackTrace) {
-                              return _buildCoverFallback(context);
-                            },
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: ReadAmberPalette.of(context).outline,
-                                ),
-                              );
-                            },
-                          );
-                        })
-                      else
-                        _buildCoverFallback(context),
-                      // 已读完标记
-                       if (book.isFinished)
-                        Positioned(
-                          top: 6,
-                          right: 6,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: ReadAmberPalette.of(context).success.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '✓',
-                              style: TextStyle(
-                                color: ReadAmberPalette.of(context).surface,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
+    final palette = ReadAmberPalette.of(context);
+    return Material(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: palette.outline, width: 0.6),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 封面
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    BookCover(
+                      bookId: book.bookId,
+                      title: book.title,
+                      coverUrl: book.cover,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
+                    ),
+                    // 已读完标记
+                    if (book.isFinished)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: palette.success.withValues(alpha: 0.9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '✓',
+                            style: TextStyle(
+                              color: palette.surface,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                    ],
+                      ),
+                  ],
+                ),
+              ),
+              // 信息
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+                child: Text(
+                  book.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: palette.ink,
                   ),
                 ),
               ),
-            ),
-            // 信息
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-              child: Text(
-                book.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: ReadAmberPalette.of(context).ink,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  book.author,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: palette.muted),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                book.author,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: ReadAmberPalette.of(context).muted),
-              ),
-            ),
-            // 进度条
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: (book.progress / finishedProgress).clamp(0.0, 1.0),
-                  backgroundColor: ReadAmberPalette.of(context).surfaceMuted,
-                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-                  minHeight: 4,
+              // 进度条
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: (book.progress / finishedProgress).clamp(0.0, 1.0),
+                    backgroundColor: palette.surfaceMuted,
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                    minHeight: 4,
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              child: Text(
-                '${book.progress}% · $statusText',
-                style: TextStyle(fontSize: 10, color: ReadAmberPalette.of(context).muted),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: Text(
+                  '${book.progress}% · $statusText',
+                  style: TextStyle(fontSize: 10, color: palette.muted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCoverFallback(BuildContext context) {
-    return Container(
-      color: ReadAmberPalette.of(context).surfaceMuted,
-      child: Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: SizedBox(
-            width: 88,
-            child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.book, size: 36, color: ReadAmberPalette.of(context).muted),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                book.title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: ReadAmberPalette.of(context).muted),
-              ),
-            ),
-          ],
-            ),
+            ],
           ),
         ),
       ),

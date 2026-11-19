@@ -53,7 +53,7 @@ void main() {
   test('flush 失败仍关闭底层流，保留原始异常且不产生未处理错误', () async {
     final sink = _Sink();
     final writer = ExportWriter(sink);
-    final failure = FileSystemException('磁盘写满');
+    const failure = FileSystemException('磁盘写满');
     final flushing = expectLater(writer.flush(), throwsA(same(failure)));
     final joined = expectLater(writer.flush(), throwsA(same(failure)));
     final closing = expectLater(writer.close(), throwsA(same(failure)));

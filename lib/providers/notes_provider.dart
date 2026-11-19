@@ -158,6 +158,7 @@ class NotesProvider extends ChangeNotifier {
   static const pageSize = 100;
   String _searchQuery = '';
   ReadingFilter _filter = ReadingFilter.all;
+  String? _selectedBookId;
   bool _loading = false;
   String? _error;
   int _sessionRevision = -1;
@@ -176,6 +177,7 @@ class NotesProvider extends ChangeNotifier {
     _stats = {};
     _searchQuery = '';
     _filter = ReadingFilter.all;
+    _selectedBookId = null;
     _dataVersion = SyncService.changes.dataVersion;
     _loading = false;
     _error = null;
@@ -186,20 +188,12 @@ class NotesProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get error => _error;
   ReadingFilter get filter => _filter;
+  String? get selectedBookId => _selectedBookId;
   int get totalCount => bookmarkCount + noteCount;
   int get matchedCount => _matchedCount;
   bool get hasMore => _notes.length < _matchedCount;
 
-  NoteItem _fromRow(Map<String, dynamic> m) => NoteItem(
-    id: m['id'] ?? '',
-    bookId: m['book_id'] ?? '',
-    bookTitle: m['book_title'] ?? '',
-    content: m['content'] ?? '',
-    chapterTitle: m['chapter_title'] ?? '',
-    createdAt: m['created_at'] ?? 0,
-    isFav: (m['is_fav'] ?? 0) == 1,
-    source: m['source'] == 'bookmark' ? NoteSource.bookmark : NoteSource.note,
-  );
+  NoteItem _fromRow(Map<String, dynamic> m) => NoteItem.fromRow(m);
 
   /// 批量操作读取全部匹配项，不受列表已加载页数影响。
   Future<List<NoteItem>> getAllMatchingNotes() async {
@@ -207,10 +201,11 @@ class NotesProvider extends ChangeNotifier {
     final revision = _sessionRevision;
     final query = _searchQuery;
     final filter = _filter;
+    final bookId = _selectedBookId;
     final items = <NoteItem>[];
     while (true) {
       final rows = await db.getReadingItems(after: items.isEmpty ? null : items.last,
-          limit: pageSize, query: query, filter: filter);
+          limit: pageSize, query: query, filter: filter, bookId: bookId);
       if (!db.isActive || revision != _sessionRevision || _disposed) {
         throw StateError('账号会话已结束');
       }
@@ -223,7 +218,8 @@ class NotesProvider extends ChangeNotifier {
   Future<List<NoteItem>> getSummaryNotes() async {
     final db = DatabaseService.instance;
     final revision = _sessionRevision;
-    final rows = await db.getSummaryItems(query: _searchQuery, filter: _filter);
+    final rows = await db.getSummaryItems(
+        query: _searchQuery, filter: _filter, bookId: _selectedBookId);
     if (!db.isActive || revision != _sessionRevision || _disposed) {
       throw StateError('账号会话已结束');
     }
@@ -260,9 +256,10 @@ class NotesProvider extends ChangeNotifier {
       final db = DatabaseService.instance;
       final query = _searchQuery;
       final filter = _filter;
+      final bookId = _selectedBookId;
       // Data/filter changes reset the list. Continuations can reuse its count.
       final count = reset
-          ? await db.countReadingItems(query: query, filter: filter)
+          ? await db.countReadingItems(query: query, filter: filter, bookId: bookId)
           : _matchedCount;
       if (request != _request || !db.isActive) return;
       // Deactivation invalidates _request and marks the refresh pending.
@@ -270,7 +267,7 @@ class NotesProvider extends ChangeNotifier {
       final stats = _statsDirty ? await db.getReadingStats() : _stats;
       if (request != _request || !db.isActive) return;
       final raw = await db.getReadingItems(after: after,
-          limit: limit, query: query, filter: filter);
+          limit: limit, query: query, filter: filter, bookId: bookId);
       if (request != _request || !db.isActive) return;
       if (favoriteRevision != _favoriteRevision) {
         await _loadPage(reset: reset, preserve: true, limit: limit);
@@ -306,6 +303,13 @@ class NotesProvider extends ChangeNotifier {
   void setFilter(ReadingFilter filter) {
     if (filter == _filter) return;
     _filter = filter;
+    _searchTimer?.cancel();
+    _loadPage(reset: true);
+  }
+
+  void setBookFilter(String? bookId) {
+    if (bookId == _selectedBookId) return;
+    _selectedBookId = bookId;
     _searchTimer?.cancel();
     _loadPage(reset: true);
   }

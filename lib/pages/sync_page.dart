@@ -336,7 +336,7 @@ class _SyncPageState extends State<SyncPage> {
                          _error ?? (appConfig.needsOnlineSync
                              ? '本地数据可浏览；请联网后验证并同步'
                              : '点击「开始同步」同步微信读书数据'),
-                        style: TextStyle(color: ReadAmberColors.paper, fontSize: 14),
+                        style: const TextStyle(color: ReadAmberColors.paper, fontSize: 14),
                       ),
                     )
                   : ListView.builder(

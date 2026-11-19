@@ -714,6 +714,49 @@ class DatabaseService {
         'SELECT COUNT(*) FROM (${items.$1}) AS reading_items ${where.$1}', [...items.$2, ...where.$2])) ?? 0;
   }
 
+  Future<({int total, int favorites})> getBookItemCounts(String bookId,
+      {String query = ''}) async {
+    final db = await database;
+    final items = _readingSource(query);
+    final where = _readingFilter(query, ReadingFilter.all, bookId);
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS total, COALESCE(SUM(is_fav), 0) AS favorites '
+      'FROM (${items.$1}) AS reading_items ${where.$1}',
+      [...items.$2, ...where.$2],
+    );
+    return (
+      total: rows.first['total'] as int,
+      favorites: rows.first['favorites'] as int,
+    );
+  }
+
+  /// 随机抽取本地划线或笔记用于每日回顾。
+  Future<List<Map<String, dynamic>>> getRandomReadingItems({int limit = 5}) async {
+    final db = await database;
+    return db.rawQuery(
+      'SELECT * FROM ($_readingItems) '
+      'WHERE trim(content, $_summaryWhitespace) <> ? '
+      'ORDER BY RANDOM() LIMIT ?',
+      ['', limit],
+    );
+  }
+
+  /// 返回至少包含一条划线或笔记的书籍列表，用于按书筛选。
+  Future<List<({String bookId, String title})>> getBooksWithItems() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT r.book_id,
+        COALESCE(NULLIF(b.title, ''), NULLIF(MAX(r.book_title), ''), '未知书籍') AS title
+      FROM ($_readingItems) r
+      LEFT JOIN books b ON b.book_id = r.book_id
+      GROUP BY r.book_id
+      ORDER BY MAX(r.created_at) DESC, r.book_id ASC
+    ''');
+    return rows
+        .map((r) => (bookId: r['book_id'] as String, title: r['title'] as String))
+        .toList();
+  }
+
   static const summaryItemLimit = 30;
 
   /// Match Dart String.trim whitespace, before applying the bounded selection.

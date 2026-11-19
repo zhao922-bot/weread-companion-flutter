@@ -1,20 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../providers/notes_provider.dart';
+import '../services/ai_service.dart';
+import '../services/config.dart';
 import '../services/export_service.dart';
 import '../services/database.dart';
 import '../services/sync_service.dart';
 import '../models/ai_summary.dart';
+import '../models/book.dart';
+import '../utils/date_format.dart';
 import '../widgets/account_session_guard.dart';
+import '../widgets/readamber_chip.dart';
 import 'ai_summary_page.dart';
+import 'book_detail_page.dart';
 
 class NotesPage extends StatefulWidget {
   final SummaryReference? reference;
   final DatabaseService? database;
   final bool isActive;
-  const NotesPage(
-      {super.key, this.reference, this.database, this.isActive = true});
+  final AIService Function(AppConfig)? aiServiceFactory;
+  const NotesPage({
+    super.key,
+    this.reference,
+    this.database,
+    this.isActive = true,
+    this.aiServiceFactory,
+  });
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -28,6 +41,7 @@ class _NotesPageState extends State<NotesPage> {
   final _filters = ReadingFilter.values;
   bool _preparingSummary = false;
   bool _exporting = false;
+  String? _selectedBookTitle;
   Future<Map<String, dynamic>?>? _target;
   NotesProvider? _provider;
   DatabaseService? _referenceDatabase;
@@ -140,6 +154,130 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
+  /// 每日回顾：随机抽取本地划线/笔记
+  Future<void> _openDailyReview() async {
+    final db = DatabaseService.instance;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => _DailyReviewSheet(database: db),
+    );
+  }
+
+  /// 按书籍筛选
+  Future<void> _pickBookFilter(NotesProvider provider) async {
+    final db = DatabaseService.instance;
+    final books = await db.getBooksWithItems();
+    if (mounted) {
+      final picked =
+          await showModalBottomSheet<({String? bookId, String? title})>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text('按书籍筛选',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.all_inbox_outlined),
+                title: const Text('全部书籍'),
+                selected: provider.selectedBookId == null,
+                onTap: () =>
+                    Navigator.pop(sheetContext, (bookId: null, title: null)),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: books.length,
+                  itemBuilder: (_, i) {
+                    final item = books[i];
+                    return ListTile(
+                      leading: const Icon(Icons.menu_book_outlined),
+                      title: Text(item.title,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      selected: provider.selectedBookId == item.bookId,
+                      onTap: () => Navigator.pop(sheetContext,
+                          (bookId: item.bookId, title: item.title)),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (picked != null && mounted) {
+        setState(() => _selectedBookTitle = picked.title);
+        provider.setBookFilter(picked.bookId);
+      }
+    }
+  }
+
+  Future<void> _copyNote(NoteItem note) async {
+    await Clipboard.setData(ClipboardData(text: note.content));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
+      );
+    }
+  }
+
+  Future<void> _interpretNote(NoteItem note) async {
+    final config = AppConfig();
+    await config.load();
+    final service =
+        widget.aiServiceFactory?.call(config) ?? AIService(config: config);
+    if (!service.isConfigured) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('请先在设置中配置 AI API')));
+      }
+      return;
+    }
+    try {
+      final result = await service.interpretQuote(note.content, note.bookTitle);
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('AI 金句解读'),
+            content: SingleChildScrollView(child: Text(result)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('AI 解读失败: $e')));
+      }
+    }
+  }
+
+  Future<void> _openBookDetail(NoteItem note) async {
+    final db = DatabaseService.instance;
+    final row = await db.getBook(note.bookId);
+    if (mounted) {
+      final book = row != null
+          ? Book.fromJson(row)
+          : Book(bookId: note.bookId, title: note.bookTitle);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => BookDetailPage(book: book, database: db),
+        ),
+      );
+    }
+  }
+
   /// 导出笔记
   Future<void> _exportNotes(BuildContext context) async {
     if (!mounted || _exporting) return;
@@ -151,7 +289,7 @@ class _NotesPageState extends State<NotesPage> {
       if (context.mounted && owner.isActive) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('笔记已导出并分享'), backgroundColor: ReadAmberPalette.of(context).action),
+              content: const Text('笔记已导出并分享'), backgroundColor: ReadAmberPalette.of(context).action),
         );
       }
     } catch (e) {
@@ -180,6 +318,11 @@ class _NotesPageState extends State<NotesPage> {
         backgroundColor: ReadAmberPalette.of(context).canvas,
         foregroundColor: ReadAmberPalette.of(context).ink,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.auto_stories_outlined),
+            tooltip: '每日回顾',
+            onPressed: _openDailyReview,
+          ),
           // AI 摘要
           IconButton(
             icon: const Icon(Icons.auto_awesome_rounded),
@@ -259,43 +402,32 @@ class _NotesPageState extends State<NotesPage> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Wrap(
+                        spacing: 8,
                         runSpacing: 8,
-                        children: _filters.map((filter) {
-                          final isSelected = provider.filter == filter;
-                          final color = filter == ReadingFilter.favorites
-                              ? ReadAmberPalette.of(context).amberText
-                              : ReadAmberPalette.of(context).inkSoft;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: GestureDetector(
-                              onTap: () {
-                                provider.setFilter(filter);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? color
-                                      : ReadAmberPalette.of(context).surfaceMuted,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  filter.label,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                    color: isSelected
-                                        ? ReadAmberPalette.of(context).surface
-                                        : ReadAmberPalette.of(context).inkSoft,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                        children: [
+                          ..._filters.map((filter) {
+                            final isSelected = provider.filter == filter;
+                            final color = filter == ReadingFilter.favorites
+                                ? ReadAmberPalette.of(context).amberText
+                                : ReadAmberPalette.of(context).inkSoft;
+                            return ReadAmberChip(
+                              label: filter.label,
+                              selected: isSelected,
+                              selectedColor: color,
+                              selectedTextColor:
+                                  ReadAmberPalette.of(context).surface,
+                              onTap: () => provider.setFilter(filter),
+                            );
+                          }),
+                          ReadAmberChip(
+                            label: provider.selectedBookId == null
+                                ? '按书筛选'
+                                : (_selectedBookTitle ?? '已选书籍'),
+                            icon: Icons.menu_book_outlined,
+                            selected: provider.selectedBookId != null,
+                            onTap: () => _pickBookFilter(provider),
+                          ),
+                        ],
                       ),
                     ),
                     // 计数
@@ -354,15 +486,7 @@ class _NotesPageState extends State<NotesPage> {
               if (row == null) {
                 return const Center(child: Text('原笔记已不存在；可在摘要历史中核对引用 ID'));
               }
-              final note = NoteItem(
-                  id: row['id'],
-                  bookId: row['book_id'],
-                  bookTitle: row['book_title'],
-                  content: row['content'],
-                  chapterTitle: row['chapter_title'],
-                  createdAt: row['created_at'],
-                  isFav: row['is_fav'] == 1,
-                  source: NoteSource.values.byName(row['source']));
+              final note = NoteItem.fromRow(row);
               return ListView(padding: const EdgeInsets.all(16), children: [
                 Text('笔记 ID：${note.id}'),
                 _NoteCard(
@@ -419,8 +543,8 @@ class _NotesPageState extends State<NotesPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
             Text('正在加载笔记...', style: TextStyle(color: ReadAmberPalette.of(context).muted)),
           ],
         ),
@@ -494,6 +618,9 @@ class _NotesPageState extends State<NotesPage> {
             key: ValueKey('${note.source.name}:${note.id}'),
             note: note,
             onFavoriteToggle: () => provider.toggleFavorite(note),
+            onCopy: () => _copyNote(note),
+            onInterpret: () => _interpretNote(note),
+            onOpenBook: () => _openBookDetail(note),
           );
         },
       ),
@@ -505,12 +632,18 @@ class _NoteCard extends StatefulWidget {
   final bool initiallyExpanded;
   final NoteItem note;
   final Future<void> Function() onFavoriteToggle;
+  final VoidCallback? onCopy;
+  final VoidCallback? onInterpret;
+  final VoidCallback? onOpenBook;
 
   const _NoteCard({
     super.key,
     this.initiallyExpanded = false,
     required this.note,
     required this.onFavoriteToggle,
+    this.onCopy,
+    this.onInterpret,
+    this.onOpenBook,
   });
 
   @override
@@ -687,17 +820,47 @@ class _NoteCardState extends State<_NoteCard> {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  // 时间
+                  // 时间与快捷操作
                   Row(
                     children: [
                       Icon(Icons.access_time_rounded,
                           size: 14, color: ReadAmberPalette.of(context).muted),
                       const SizedBox(width: 4),
-                      Flexible(
-                          child: Text(
-                        _formatTimestamp(note.createdAt),
-                        style: TextStyle(fontSize: 11, color: ReadAmberPalette.of(context).muted),
-                      )),
+                      Expanded(
+                        child: Text(
+                          ReadAmberDateFormat.formatTimestamp(note.createdAt),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: ReadAmberPalette.of(context).muted),
+                        ),
+                      ),
+                      if (widget.onCopy != null)
+                        IconButton(
+                          tooltip: '复制原文',
+                          icon: Icon(Icons.copy_rounded,
+                              size: 16,
+                              color: ReadAmberPalette.of(context).muted),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onCopy,
+                        ),
+                      if (widget.onInterpret != null)
+                        IconButton(
+                          tooltip: 'AI 解读',
+                          icon: Icon(Icons.auto_awesome_outlined,
+                              size: 16,
+                              color: ReadAmberPalette.of(context).amberText),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onInterpret,
+                        ),
+                      if (widget.onOpenBook != null)
+                        IconButton(
+                          tooltip: '查看本书',
+                          icon: Icon(Icons.menu_book_outlined,
+                              size: 16,
+                              color: ReadAmberPalette.of(context).inkSoft),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onOpenBook,
+                        ),
                     ],
                   ),
                 ],
@@ -708,10 +871,117 @@ class _NoteCardState extends State<_NoteCard> {
       ),
     );
   }
+}
 
-  String _formatTimestamp(int timestamp) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
-        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+class _DailyReviewSheet extends StatefulWidget {
+  final DatabaseService database;
+  const _DailyReviewSheet({required this.database});
+
+  @override
+  State<_DailyReviewSheet> createState() => _DailyReviewSheetState();
+}
+
+class _DailyReviewSheetState extends State<_DailyReviewSheet> {
+  List<NoteItem> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _shuffle();
+  }
+
+  Future<void> _shuffle() async {
+    setState(() => _loading = true);
+    final rows = await widget.database.getRandomReadingItems(limit: 5);
+    if (mounted) {
+      setState(() {
+        _items = rows.map(NoteItem.fromRow).toList();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ReadAmberPalette.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_stories_outlined, color: palette.amberText),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('每日回顾',
+                      style:
+                          TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                ),
+                TextButton.icon(
+                  onPressed: _loading ? null : _shuffle,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('换一批'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Text('暂无可回顾的划线与笔记',
+                      style: TextStyle(color: palette.muted)),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, index) {
+                    final item = _items[index];
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: palette.canvas,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: palette.outline, width: 0.7),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.content,
+                            style: TextStyle(
+                                fontSize: 14,
+                                height: 1.6,
+                                color: palette.ink),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '—— 《${item.bookTitle}》',
+                            style:
+                                TextStyle(fontSize: 12, color: palette.muted),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

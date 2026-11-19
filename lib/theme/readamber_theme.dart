@@ -170,13 +170,23 @@ abstract final class ReadAmberTheme {
               color: colors.ink, fontSize: 12, fontWeight: FontWeight.w500),
         ),
       ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor: colors.surface,
+        indicatorColor: colors.amber,
+        selectedIconTheme: const IconThemeData(color: ReadAmberColors.ink, size: 23),
+        unselectedIconTheme: IconThemeData(color: colors.ink, size: 23),
+        selectedLabelTextStyle: TextStyle(
+            color: colors.ink, fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelTextStyle: TextStyle(
+            color: colors.muted, fontSize: 12, fontWeight: FontWeight.w500),
+      ),
       cardTheme: CardThemeData(
         color: colors.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
+          borderRadius: const BorderRadius.all(Radius.circular(16)),
           side: BorderSide(color: colors.outline, width: 0.7),
         ),
       ),
@@ -207,14 +217,14 @@ abstract final class ReadAmberTheme {
         filled: true,
         fillColor: colors.surfaceMuted,
         hintStyle: TextStyle(color: colors.muted),
-        border: OutlineInputBorder(
+        border: const OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12))),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
           borderSide: BorderSide(color: colors.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
           borderSide: BorderSide(color: colors.inkSoft, width: 1.5),
         ),
       ),
@@ -227,7 +237,7 @@ abstract final class ReadAmberTheme {
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
+        shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),

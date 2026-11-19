@@ -136,12 +136,12 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
             child: Column(
               children: [
                 Icon(Icons.cookie_outlined, size: 56, color: ReadAmberPalette.of(context).ink),
-                SizedBox(height: 12),
-                Text(
+                const SizedBox(height: 12),
+                const Text(
                   '导入微信读书 Cookie',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 6),
+                const SizedBox(height: 6),
                 Text(
                   '支持普通文本和 JSON 格式（Cookie-Editor 导出）',
                   style: TextStyle(fontSize: 14, color: ReadAmberPalette.of(context).muted),

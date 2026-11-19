@@ -3,6 +3,7 @@ import 'package:weread_companion/theme/readamber_theme.dart';
 import '../widgets/settings/account_settings_section.dart';
 import '../widgets/settings/ai_settings_section.dart';
 import '../widgets/settings/about_settings_section.dart';
+import '../widgets/settings/backup_settings_section.dart';
 import '../widgets/settings/theme_settings_section.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -29,6 +30,8 @@ class SettingsPage extends StatelessWidget {
           const ThemeSettingsSection(),
           const SizedBox(height: 24),
           AiSettingsSection(isActive: isActive),
+          const SizedBox(height: 24),
+          const BackupSettingsSection(),
           const SizedBox(height: 24),
           const AboutSettingsSection(),
         ],

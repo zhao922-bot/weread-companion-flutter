@@ -7,10 +7,25 @@ import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/bookmark.dart';
+import '../services/ai_service.dart';
+import '../services/config.dart';
 import '../services/database.dart';
 import '../services/export_service.dart';
 import '../services/card_image_renderer.dart';
 import '../services/sync_service.dart';
+
+/// 金句卡片配色模板。
+enum CardTemplate {
+  paper,
+  ink,
+  minimal;
+
+  String get label => switch (this) {
+    paper => '纸白',
+    ink => '墨青',
+    minimal => '极简',
+  };
+}
 
 // A bottom sheet can outlive the page that opened it. Share the owner's
 // lifetime, and invalidate an in-flight export even when the user returns.
@@ -27,8 +42,13 @@ class _CardExportScope {
 class CardsPage extends StatefulWidget {
   final bool isActive;
   final CardImageRenderer renderer;
-  const CardsPage({super.key, this.isActive = true,
-    this.renderer = const CardImageRenderer()});
+  final AIService Function(AppConfig)? aiServiceFactory;
+  const CardsPage({
+    super.key,
+    this.isActive = true,
+    this.renderer = const CardImageRenderer(),
+    this.aiServiceFactory,
+  });
 
   @override
   State<CardsPage> createState() => _CardsPageState();
@@ -342,8 +362,8 @@ class _CardsPageState extends State<CardsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
             Text('正在加载引文...', style: TextStyle(color: ReadAmberPalette.of(context).muted)),
           ],
         ),
@@ -434,9 +454,13 @@ class _CardsPageState extends State<CardsPage> {
         ),
         Expanded(
           flex: 1,
-          child: _CardPreview(key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
-                  bookmark: selectedBookmark, scope: _exportScope,
-                  renderer: widget.renderer, onExportChanged: _onExportChanged),
+          child: _CardPreview(
+              key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
+              bookmark: selectedBookmark,
+              scope: _exportScope,
+              renderer: widget.renderer,
+              aiServiceFactory: widget.aiServiceFactory,
+              onExportChanged: _onExportChanged),
         ),
       ],
     );
@@ -533,7 +557,7 @@ class _CardsPageState extends State<CardsPage> {
             return Container(
               decoration: BoxDecoration(
                 color: ReadAmberPalette.of(context).surface,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
                 children: [
@@ -547,10 +571,14 @@ class _CardsPageState extends State<CardsPage> {
                     ),
                   ),
                   Expanded(
-                    child: _CardPreview(key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
-                      bookmark: bookmark, scope: _exportScope,
-                      scrollController: scrollController,
-                      renderer: widget.renderer, onExportChanged: _onExportChanged),
+                    child: _CardPreview(
+                        key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
+                        bookmark: bookmark,
+                        scope: _exportScope,
+                        scrollController: scrollController,
+                        renderer: widget.renderer,
+                        aiServiceFactory: widget.aiServiceFactory,
+                        onExportChanged: _onExportChanged),
                   ),
                 ],
               ),
@@ -628,9 +656,17 @@ class _CardPreview extends StatefulWidget {
   final CardImageRenderer renderer;
   final ValueChanged<bool> onExportChanged;
   final ScrollController? scrollController;
+  final AIService Function(AppConfig)? aiServiceFactory;
 
-  const _CardPreview({super.key, required this.bookmark, required this.scope,
-    required this.renderer, required this.onExportChanged, this.scrollController});
+  const _CardPreview({
+    super.key,
+    required this.bookmark,
+    required this.scope,
+    required this.renderer,
+    required this.onExportChanged,
+    this.scrollController,
+    this.aiServiceFactory,
+  });
 
   @override
   State<_CardPreview> createState() => _CardPreviewState();
@@ -639,11 +675,59 @@ class _CardPreview extends StatefulWidget {
 class _CardPreviewState extends State<_CardPreview> {
   final GlobalKey _cardKey = GlobalKey();
   double _fontSize = 18.0;
+  CardTemplate _template = CardTemplate.paper;
+  bool _centerAlign = true;
+  bool _showChapter = true;
+  bool _showWatermark = true;
   bool _exporting = false;
+  bool _interpreting = false;
   Bookmark? _exportBookmark;
   double? _exportFontSize;
   bool _routeCurrent = true;
   int _routeRevision = 0;
+
+  Future<void> _interpretQuote() async {
+    setState(() => _interpreting = true);
+    try {
+      final config = AppConfig();
+      await config.load();
+      final service = widget.aiServiceFactory?.call(config) ??
+          AIService(config: config);
+      if (!service.isConfigured) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('请先在设置中配置 AI API')));
+        }
+        return;
+      }
+      final result = await service.interpretQuote(
+        widget.bookmark.markText,
+        widget.bookmark.bookTitle,
+      );
+      if (mounted) {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('AI 金句解读'),
+            content: SingleChildScrollView(child: Text(result)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('AI 解读失败: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _interpreting = false);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -768,9 +852,46 @@ class _CardPreviewState extends State<_CardPreview> {
 
   @override
   Widget build(BuildContext context) {
-    const accentColor = ReadAmberColors.ink;
     final bookmark = _exportBookmark ?? widget.bookmark;
     final fontSize = _exportFontSize ?? _fontSize;
+    final palette = ReadAmberPalette.of(context);
+    final isInk = _template == CardTemplate.ink;
+    final isMinimal = _template == CardTemplate.minimal;
+    final textColor = isInk ? ReadAmberColors.paper : ReadAmberColors.ink;
+    final subColor = isInk ? ReadAmberColors.outline : ReadAmberColors.muted;
+    final cardDecoration = switch (_template) {
+      CardTemplate.paper => BoxDecoration(
+          color: ReadAmberColors.surface,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [ReadAmberColors.paper, ReadAmberColors.surface],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: ReadAmberColors.ink.withValues(alpha: 0.15),
+            width: 1,
+          ),
+        ),
+      CardTemplate.ink => BoxDecoration(
+          color: ReadAmberColors.ink,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [ReadAmberColors.ink, ReadAmberColors.inkSoft],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: ReadAmberColors.amber.withValues(alpha: 0.35),
+            width: 1,
+          ),
+        ),
+      CardTemplate.minimal => BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ReadAmberColors.outline, width: 1),
+        ),
+    };
 
     return Column(
       children: [
@@ -784,28 +905,18 @@ class _CardPreviewState extends State<_CardPreview> {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: ReadAmberColors.surface,
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      ReadAmberColors.paper,
-                      ReadAmberColors.surface,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: accentColor.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
-                ),
+                decoration: cardDecoration,
                 child: Column(
+                  crossAxisAlignment: _centerAlign
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.start,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.format_quote_rounded,
                       size: 32,
-                      color: ReadAmberColors.amber,
+                      color: isMinimal
+                          ? ReadAmberColors.inkSoft
+                          : ReadAmberColors.amber,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -813,27 +924,46 @@ class _CardPreviewState extends State<_CardPreview> {
                       style: TextStyle(
                         fontSize: fontSize,
                         height: 1.8,
-                        color: ReadAmberColors.ink,
+                        color: textColor,
                         fontWeight: FontWeight.w500,
                       ),
-                      textAlign: TextAlign.center,
+                      textAlign:
+                          _centerAlign ? TextAlign.center : TextAlign.start,
                     ),
                     const SizedBox(height: 20),
-                    Container(width: 40, height: 1, color: ReadAmberColors.outline),
+                    Container(
+                      width: 40,
+                      height: 1,
+                      color: isInk
+                          ? ReadAmberColors.amber.withValues(alpha: 0.5)
+                          : ReadAmberColors.outline,
+                    ),
                     const SizedBox(height: 12),
                     Text(
                       '—— ${bookmark.bookTitle}',
                       style: TextStyle(
                         fontSize: fontSize * 0.78,
-                        color: ReadAmberColors.muted,
+                        color: subColor,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
-                    if (bookmark.chapterTitle.isNotEmpty) ...[
+                    if (_showChapter && bookmark.chapterTitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         bookmark.chapterTitle,
-                        style: TextStyle(fontSize: fontSize * 0.67, color: ReadAmberColors.muted),
+                        style: TextStyle(
+                            fontSize: fontSize * 0.67, color: subColor),
+                      ),
+                    ],
+                    if (_showWatermark) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        '阅珀 ReadAmber',
+                        style: TextStyle(
+                          fontSize: 10,
+                          letterSpacing: 1.2,
+                          color: subColor.withValues(alpha: 0.7),
+                        ),
                       ),
                     ],
                   ],
@@ -842,13 +972,84 @@ class _CardPreviewState extends State<_CardPreview> {
             ),
           ),
         ),
+        // 模板与排版工具条
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: palette.surface,
+            border: Border(
+                top: BorderSide(color: palette.surfaceMuted, width: 0.5)),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (final tpl in CardTemplate.values)
+                ChoiceChip(
+                  label: Text(tpl.label, style: const TextStyle(fontSize: 12)),
+                  selected: _template == tpl,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: _exporting
+                      ? null
+                      : (_) => setState(() => _template = tpl),
+                ),
+              IconButton(
+                tooltip: _centerAlign ? '切换左对齐' : '切换居中对齐',
+                icon: Icon(
+                  _centerAlign
+                      ? Icons.format_align_center_rounded
+                      : Icons.format_align_left_rounded,
+                  size: 18,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: _exporting
+                    ? null
+                    : () => setState(() => _centerAlign = !_centerAlign),
+              ),
+              IconButton(
+                tooltip: _showChapter ? '隐藏章节' : '显示章节',
+                icon: Icon(
+                  _showChapter
+                      ? Icons.subtitles_outlined
+                      : Icons.subtitles_off_outlined,
+                  size: 18,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: _exporting
+                    ? null
+                    : () => setState(() => _showChapter = !_showChapter),
+              ),
+              IconButton(
+                tooltip: _showWatermark ? '隐藏水印' : '显示水印',
+                icon: Icon(
+                  _showWatermark
+                      ? Icons.branding_watermark_outlined
+                      : Icons.hide_source_outlined,
+                  size: 18,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: _exporting
+                    ? null
+                    : () => setState(() => _showWatermark = !_showWatermark),
+              ),
+              IconButton(
+                tooltip: 'AI 金句解读',
+                icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed:
+                    _exporting || _interpreting ? null : _interpretQuote,
+              ),
+            ],
+          ),
+        ),
         // 底部控制栏：字号调节 + 导出按钮
         Container(
           decoration: BoxDecoration(
-            color: ReadAmberPalette.of(context).surface,
-            border: Border(top: BorderSide(color: ReadAmberPalette.of(context).surfaceMuted, width: 0.5)),
+            color: palette.surface,
           ),
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Row(
             children: [
               // 字号标签

@@ -203,17 +203,21 @@ void main() {
         await pumpUntil(
             tester, () => shelf.totalCount == 6 && !shelf.isLoading);
         await capture('bookshelf');
-        for (final (index, name) in [
-          (1, 'notes'),
-          (2, 'cards'),
-          (3, 'report'),
-          (4, 'settings')
+        for (final (index, name, label) in [
+          (1, 'notes', '笔记'),
+          (2, 'cards', '卡片'),
+          (3, 'report', '报告'),
+          (4, 'settings', '设置')
         ]) {
-          final nav = find
-              .descendant(
-                  of: find.byType(NavigationBar),
-                  matching: find.byType(NavigationDestination))
-              .at(index);
+          final nav = find.byType(NavigationBar).evaluate().isNotEmpty
+              ? find
+                  .descendant(
+                      of: find.byType(NavigationBar),
+                      matching: find.byType(NavigationDestination))
+                  .at(index)
+              : find.descendant(
+                  of: find.byType(NavigationRail),
+                  matching: find.text(label));
           await tester.tap(nav);
           await tester.pumpAndSettle();
           // FFI reads run outside the fake widget clock.

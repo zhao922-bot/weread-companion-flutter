@@ -1,7 +1,9 @@
 import 'dart:ffi' show DynamicLibrary;
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -63,11 +65,23 @@ class _CountingDatabase extends LegacyDatabase {
   }
 }
 
+class _Paths extends PathProviderPlatform {
+  _Paths(this.path);
+  final String path;
+  @override
+  Future<String?> getTemporaryPath() async => path;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory directory;
   late DatabaseService db;
   late _CountingFactory factory;
+  late PathProviderPlatform originalPaths;
   setUpAll(() {
     sqfliteFfiInit();
     open.overrideFor(OperatingSystem.linux, () => DynamicLibrary.open('libsqlite3.so.0'));
@@ -75,6 +89,8 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     directory = await Directory.systemTemp.createTemp('lazy-tabs-');
+    originalPaths = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _Paths(directory.path);
     await databaseFactoryFfiNoIsolate.setDatabasesPath(directory.path);
     factory = _CountingFactory(databaseFactoryFfiNoIsolate);
     databaseFactory = factory;
@@ -88,6 +104,7 @@ void main() {
   tearDown(() async {
     await DatabaseService.endSession();
     databaseFactory = databaseFactoryFfiNoIsolate;
+    PathProviderPlatform.instance = originalPaths;
     await directory.delete(recursive: true);
   });
 
@@ -191,16 +208,15 @@ void main() {
       ChangeNotifierProvider<AppConfigProvider>.value(value: config),
       ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
     ], child: const MaterialApp(home: BookshelfPage())));
-    await pumpUntil(tester, () => find.byType(Image).evaluate().isNotEmpty);
-    ResizeImage checkDimensions(double dpr) {
-      final finder = find.byType(Image);
-      final image = tester.widget<Image>(finder);
-      final provider = image.image as ResizeImage;
+    await pumpUntil(tester, () => find.byType(CachedNetworkImage).evaluate().isNotEmpty);
+    ({int width, int height}) checkDimensions(double dpr) {
+      final finder = find.byType(CachedNetworkImage);
+      final image = tester.widget<CachedNetworkImage>(finder);
       final size = tester.getSize(finder);
-      expect(provider.width, (size.width * dpr).ceil());
-      expect(provider.height, (size.height * dpr).ceil());
-      expect((provider.imageProvider as NetworkImage).url, 'https://example.com/cover.jpg');
-      return provider;
+      expect(image.memCacheWidth, (size.width * dpr).ceil());
+      expect(image.memCacheHeight, (size.height * dpr).ceil());
+      expect(image.imageUrl, 'https://example.com/cover.jpg');
+      return (width: image.memCacheWidth!, height: image.memCacheHeight!);
     }
     final three = checkDimensions(3);
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
@@ -209,13 +225,13 @@ void main() {
       widget is CheckedPopupMenuItem<int> && widget.value == 4));
     await tester.pumpAndSettle();
     final four = checkDimensions(3);
-    expect(four.width, lessThan(three.width!));
-    expect(four.height, lessThan(three.height!));
+    expect(four.width, lessThan(three.width));
+    expect(four.height, lessThan(three.height));
     tester.view.devicePixelRatio = 2;
     tester.view.physicalSize = const Size(800, 1200);
     await tester.pumpAndSettle();
     final lowerDpr = checkDimensions(2);
-    expect(lowerDpr.width, lessThan(four.width!));
+    expect(lowerDpr.width, lessThan(four.width));
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   });

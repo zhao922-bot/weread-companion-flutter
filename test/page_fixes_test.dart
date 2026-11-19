@@ -177,14 +177,14 @@ void main() {
     await pumpUntil(tester, () => find.text('240条').evaluate().length == 2);
     expect(find.text('240条'), findsNWidgets(2));
     expect(find.byKey(const ValueKey('note:n0')), findsNothing);
-    final list = tester.widget<ListView>(find.byType(ListView));
-    expect((list.childrenDelegate as SliverChildBuilderDelegate).childCount, 108);
+    final sliver = tester.widget<SliverList>(find.byType(SliverList));
+    expect((sliver.delegate as SliverChildBuilderDelegate).childCount, 100);
     for (var i = 0; i < 18; i++) {
-      await tester.drag(find.byType(ListView), const Offset(0, -1800));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -1800));
       await pumpUntil(tester, () => find.byType(CircularProgressIndicator).evaluate().isEmpty);
     }
-    final paged = tester.widget<ListView>(find.byType(ListView));
-    expect((paged.childrenDelegate as SliverChildBuilderDelegate).childCount, greaterThan(108));
+    final paged = tester.widget<SliverList>(find.byType(SliverList));
+    expect((paged.delegate as SliverChildBuilderDelegate).childCount, greaterThan(100));
     await tester.pumpWidget(const SizedBox());
   });
 

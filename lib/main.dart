@@ -81,6 +81,21 @@ class _MainScreenState extends State<MainScreen> {
     };
   }
 
+  void _selectTab(int index) {
+    setState(() {
+      _currentIndex = index;
+      _visited.add(index);
+    });
+  }
+
+  static const _destinations = [
+    (Icons.book_outlined, Icons.book, '书架'),
+    (Icons.note_outlined, Icons.note, '笔记'),
+    (Icons.style_outlined, Icons.style, '卡片'),
+    (Icons.bar_chart_outlined, Icons.bar_chart, '报告'),
+    (Icons.settings_outlined, Icons.settings, '设置'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final config = context.watch<AppConfigProvider>();
@@ -89,93 +104,100 @@ class _MainScreenState extends State<MainScreen> {
       _canBrowseLocal = config.canBrowseLocal;
       _visited..clear()..add(_currentIndex);
     }
-    return Scaffold(
-      body: Column(
-        children: [
-          if (config.needsOnlineSync)
-            const SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: EdgeInsets.all(8),
-                child: Text('离线模式：本地数据可浏览 · 同步需要联网验证'),
-              ),
+    final isWide = MediaQuery.sizeOf(context).width >= 840;
+    final bodyContent = Column(
+      children: [
+        if (config.needsOnlineSync)
+          const SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('离线模式：本地数据可浏览 · 同步需要联网验证'),
             ),
-          Expanded(
-            child: IndexedStack(
-              key: ValueKey('${config.sessionRevision}:${config.canBrowseLocal}'),
-              index: _currentIndex,
-              children: [
-                for (var i = 0; i < 5; i++)
-                  if (!_visited.contains(i))
-                    const SizedBox.shrink()
-                  else if (i == 4 || config.canBrowseLocal)
-                    _page(i)
-                  else
-                    Center(
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Image(
-                              image: AssetImage('assets/branding/readamber-v1/readamber-icon-128.png'),
-                              width: 80, height: 80, semanticLabel: '阅珀应用图标',
-                            ),
-                            SizedBox(height: 24),
-                            Text('阅珀 ReadAmber', textAlign: TextAlign.center,
-                              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600,
-                                color: ReadAmberPalette.of(context).ink)),
-                            SizedBox(height: 10),
-                            Text('让读过的，留下来。',
-                              style: TextStyle(fontSize: 16, color: ReadAmberPalette.of(context).amberText)),
-                            SizedBox(height: 32),
-                            Text('请先在设置中验证登录', textAlign: TextAlign.center,
-                              style: TextStyle(color: ReadAmberPalette.of(context).muted)),
-                          ],
-                        ),
+          ),
+        Expanded(
+          child: IndexedStack(
+            key: ValueKey('${config.sessionRevision}:${config.canBrowseLocal}'),
+            index: _currentIndex,
+            children: [
+              for (var i = 0; i < 5; i++)
+                if (!_visited.contains(i))
+                  const SizedBox.shrink()
+                else if (i == 4 || config.canBrowseLocal)
+                  _page(i)
+                else
+                  Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Image(
+                            image: AssetImage('assets/branding/readamber-v1/readamber-icon-128.png'),
+                            width: 80, height: 80, semanticLabel: '阅珀应用图标',
+                          ),
+                          const SizedBox(height: 24),
+                          Text('阅珀 ReadAmber', textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600,
+                              color: ReadAmberPalette.of(context).ink)),
+                          const SizedBox(height: 10),
+                          Text('让读过的，留下来。',
+                            style: TextStyle(fontSize: 16, color: ReadAmberPalette.of(context).amberText)),
+                          const SizedBox(height: 24),
+                          Text('请先在设置中验证登录', textAlign: TextAlign.center,
+                            style: TextStyle(color: ReadAmberPalette.of(context).muted)),
+                          const SizedBox(height: 20),
+                          FilledButton.icon(
+                            onPressed: () => _selectTab(4),
+                            icon: const Icon(Icons.login_rounded, size: 18),
+                            label: const Text('前往登录'),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Scaffold(
+      body: isWide
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: _selectTab,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: [
+                    for (final d in _destinations)
+                      NavigationRailDestination(
+                        icon: Icon(d.$1),
+                        selectedIcon: Icon(d.$2),
+                        label: Text(d.$3),
+                      ),
+                  ],
+                ),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(child: bodyContent),
+              ],
+            )
+          : bodyContent,
+      bottomNavigationBar: isWide
+          ? null
+          : NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: _selectTab,
+              destinations: [
+                for (final d in _destinations)
+                  NavigationDestination(
+                    icon: Icon(d.$1),
+                    selectedIcon: Icon(d.$2),
+                    label: d.$3,
+                  ),
               ],
             ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-            _visited.add(index);
-          });
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.book_outlined),
-            selectedIcon: Icon(Icons.book),
-            label: '书架',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.note_outlined),
-            selectedIcon: Icon(Icons.note),
-            label: '笔记',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.style_outlined),
-            selectedIcon: Icon(Icons.style),
-            label: '卡片',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: '报告',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '设置',
-          ),
-        ],
-      ),
     );
   }
 }
