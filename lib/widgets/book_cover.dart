@@ -39,10 +39,9 @@ class BookCover extends StatelessWidget {
                     final pixelRatio = MediaQuery.devicePixelRatioOf(context);
                     return CachedNetworkImage(
                       imageUrl: coverUrl,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
+                      // 仅按宽度约束解码，保持封面原始宽高比不被 ResizeImagePolicy.exact 拉伸。
                       memCacheWidth: (constraints.maxWidth * pixelRatio).ceil(),
-                      memCacheHeight:
-                          (constraints.maxHeight * pixelRatio).ceil(),
                       placeholder: (context, _) => Container(
                         color: palette.surfaceMuted,
                         child: Center(

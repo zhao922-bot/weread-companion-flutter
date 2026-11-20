@@ -214,29 +214,29 @@ void main() {
       ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
     ], child: const MaterialApp(home: BookshelfPage())));
     await pumpUntil(tester, () => find.byType(CachedNetworkImage).evaluate().isNotEmpty);
-    ({int width, int height}) checkDimensions(double dpr) {
+    int checkWidth(double dpr) {
       final finder = find.byType(CachedNetworkImage);
       final image = tester.widget<CachedNetworkImage>(finder);
       final size = tester.getSize(finder);
       expect(image.memCacheWidth, (size.width * dpr).ceil());
-      expect(image.memCacheHeight, (size.height * dpr).ceil());
+      expect(image.memCacheHeight, isNull);
       expect(image.imageUrl, 'https://example.com/cover.jpg');
-      return (width: image.memCacheWidth!, height: image.memCacheHeight!);
+      expect(image.fit, BoxFit.contain);
+      return image.memCacheWidth!;
     }
-    final three = checkDimensions(3);
+    final three = checkWidth(3);
     await tester.tap(find.byIcon(Icons.grid_view_rounded));
     await tester.pumpAndSettle();
     await tester.tap(find.byWidgetPredicate((widget) =>
       widget is CheckedPopupMenuItem<int> && widget.value == 4));
     await tester.pumpAndSettle();
-    final four = checkDimensions(3);
-    expect(four.width, lessThan(three.width));
-    expect(four.height, lessThan(three.height));
+    final four = checkWidth(3);
+    expect(four, lessThan(three));
     tester.view.devicePixelRatio = 2;
     tester.view.physicalSize = const Size(800, 1200);
     await tester.pumpAndSettle();
-    final lowerDpr = checkDimensions(2);
-    expect(lowerDpr.width, lessThan(four.width));
+    final lowerDpr = checkWidth(2);
+    expect(lowerDpr, lessThan(four));
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   });
