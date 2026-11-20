@@ -8,7 +8,6 @@ import 'services/config.dart';
 import 'services/platform_database.dart';
 import 'pages/bookshelf_page.dart';
 import 'pages/notes_page.dart';
-import 'pages/cards_page.dart';
 import 'pages/report_page.dart';
 import 'pages/settings_page.dart';
 import 'theme/readamber_theme.dart';
@@ -50,6 +49,13 @@ class ReadAmberApp extends StatelessWidget {
         theme: ReadAmberTheme.lightFor(fontFamily: appearance.fontFamily),
         darkTheme: ReadAmberTheme.darkFor(fontFamily: appearance.fontFamily),
         themeMode: appearance.mode,
+        builder: (context, child) => DefaultTextStyle.merge(
+          style: TextStyle(
+            fontFamily: appearance.fontFamily,
+            fontFamilyFallback: ReadAmberTheme.defaultFontFallback,
+          ),
+          child: child!,
+        ),
         home: const MainScreen(),
       )),
     );
@@ -75,8 +81,7 @@ class _MainScreenState extends State<MainScreen> {
     return switch (index) {
       0 => BookshelfPage(isActive: active),
       1 => NotesPage(isActive: active),
-      2 => CardsPage(isActive: active),
-      3 => ReportPage(isActive: active),
+      2 => ReportPage(isActive: active),
       _ => SettingsPage(isActive: active),
     };
   }
@@ -91,7 +96,6 @@ class _MainScreenState extends State<MainScreen> {
   static const _destinations = [
     (Icons.book_outlined, Icons.book, '书架'),
     (Icons.note_outlined, Icons.note, '笔记'),
-    (Icons.style_outlined, Icons.style, '卡片'),
     (Icons.bar_chart_outlined, Icons.bar_chart, '报告'),
     (Icons.settings_outlined, Icons.settings, '设置'),
   ];
@@ -120,10 +124,10 @@ class _MainScreenState extends State<MainScreen> {
             key: ValueKey('${config.sessionRevision}:${config.canBrowseLocal}'),
             index: _currentIndex,
             children: [
-              for (var i = 0; i < 5; i++)
+              for (var i = 0; i < 4; i++)
                 if (!_visited.contains(i))
                   const SizedBox.shrink()
-                else if (i == 4 || config.canBrowseLocal)
+                else if (i == 3 || config.canBrowseLocal)
                   _page(i)
                 else
                   Center(
@@ -148,7 +152,7 @@ class _MainScreenState extends State<MainScreen> {
                             style: TextStyle(color: ReadAmberPalette.of(context).muted)),
                           const SizedBox(height: 20),
                           FilledButton.icon(
-                            onPressed: () => _selectTab(4),
+                            onPressed: () => _selectTab(3),
                             icon: const Icon(Icons.login_rounded, size: 18),
                             label: const Text('前往登录'),
                           ),
@@ -170,6 +174,16 @@ class _MainScreenState extends State<MainScreen> {
                   selectedIndex: _currentIndex,
                   onDestinationSelected: _selectTab,
                   labelType: NavigationRailLabelType.all,
+                  leading: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Image(
+                      image: AssetImage(
+                          'assets/branding/readamber-v1/readamber-icon-128.png'),
+                      width: 32,
+                      height: 32,
+                      semanticLabel: '阅珀应用图标',
+                    ),
+                  ),
                   destinations: [
                     for (final d in _destinations)
                       NavigationRailDestination(

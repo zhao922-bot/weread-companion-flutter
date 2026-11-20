@@ -39,13 +39,42 @@ class _CardExportScope {
   }
 }
 
+void _noopExport(bool _) {}
+
+/// 打开单条引文的金句卡片预览与导出弹窗。
+Future<void> showQuoteCardSheet(
+  BuildContext context,
+  Bookmark bookmark, {
+  CardImageRenderer renderer = const CardImageRenderer(),
+  AIService Function(AppConfig)? aiServiceFactory,
+}) async {
+  final scope = _CardExportScope();
+  try {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QuoteCardSheet(
+        bookmark: bookmark,
+        scope: scope,
+        renderer: renderer,
+        aiServiceFactory: aiServiceFactory,
+      ),
+    );
+  } finally {
+    scope.setActive(false);
+  }
+}
+
 class CardsPage extends StatefulWidget {
   final bool isActive;
+  final bool embedded;
   final CardImageRenderer renderer;
   final AIService Function(AppConfig)? aiServiceFactory;
   const CardsPage({
     super.key,
     this.isActive = true,
+    this.embedded = false,
     this.renderer = const CardImageRenderer(),
     this.aiServiceFactory,
   });
@@ -194,19 +223,9 @@ class _CardsPageState extends State<CardsPage> {
     final pagedBookmarks = _pagedBookmarks;
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 600;
-
-    return Scaffold(
-      backgroundColor: ReadAmberPalette.of(context).canvas,
-      appBar: AppBar(
-        title: const Text('书签卡片'),
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: ReadAmberPalette.of(context).canvas,
-        foregroundColor: ReadAmberPalette.of(context).ink,
-      ),
-      body: AbsorbPointer(
-        absorbing: _exporting,
-        child: Column(
+    final body = AbsorbPointer(
+      absorbing: _exporting,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 搜索栏 + 分页导航（合并为一个白色容器，消除缝隙）
@@ -351,7 +370,19 @@ class _CardsPageState extends State<CardsPage> {
             child: _buildContent(pagedBookmarks, isWide),
           ),
         ],
-      )),
+      ),
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      backgroundColor: ReadAmberPalette.of(context).canvas,
+      appBar: AppBar(
+        title: const Text('书签卡片'),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: ReadAmberPalette.of(context).canvas,
+        foregroundColor: ReadAmberPalette.of(context).ink,
+      ),
+      body: body,
     );
   }
 
@@ -444,7 +475,7 @@ class _CardsPageState extends State<CardsPage> {
     return Row(
       children: [
         Expanded(
-          flex: 1,
+          flex: 2,
           child: Container(
             decoration: BoxDecoration(
               border: Border(right: BorderSide(color: ReadAmberPalette.of(context).surfaceMuted, width: 1)),
@@ -453,7 +484,7 @@ class _CardsPageState extends State<CardsPage> {
           ),
         ),
         Expanded(
-          flex: 1,
+          flex: 3,
           child: _CardPreview(
               key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
               bookmark: selectedBookmark,
@@ -548,44 +579,13 @@ class _CardsPageState extends State<CardsPage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          maxChildSize: 0.95,
-          minChildSize: 0.4,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: ReadAmberPalette.of(context).surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 12),
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: ReadAmberPalette.of(context).outline,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Expanded(
-                    child: _CardPreview(
-                        key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
-                        bookmark: bookmark,
-                        scope: _exportScope,
-                        scrollController: scrollController,
-                        renderer: widget.renderer,
-                        aiServiceFactory: widget.aiServiceFactory,
-                        onExportChanged: _onExportChanged),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => _QuoteCardSheet(
+        bookmark: bookmark,
+        scope: _exportScope,
+        renderer: widget.renderer,
+        aiServiceFactory: widget.aiServiceFactory,
+        onExportChanged: _onExportChanged,
+      ),
     );
   }
 
@@ -683,8 +683,47 @@ class _CardPreviewState extends State<_CardPreview> {
   bool _interpreting = false;
   Bookmark? _exportBookmark;
   double? _exportFontSize;
+  String? _customBookTitle;
   bool _routeCurrent = true;
   int _routeRevision = 0;
+
+  String get _effectiveBookTitle =>
+      _customBookTitle ?? widget.bookmark.bookTitle;
+
+  Future<void> _editBookTitle() async {
+    var input = _effectiveBookTitle;
+    final edited = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('编辑卡片书名'),
+        content: TextFormField(
+          initialValue: input,
+          onChanged: (value) => input = value,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入想要展示的书籍名称',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, ''),
+            child: const Text('恢复默认'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, input.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || edited == null) return;
+    setState(() => _customBookTitle = edited.isEmpty ? null : edited);
+  }
 
   Future<void> _interpretQuote() async {
     setState(() => _interpreting = true);
@@ -702,7 +741,7 @@ class _CardPreviewState extends State<_CardPreview> {
       }
       final result = await service.interpretQuote(
         widget.bookmark.markText,
-        widget.bookmark.bookTitle,
+        _effectiveBookTitle,
       );
       if (mounted) {
         await showDialog<void>(
@@ -753,7 +792,10 @@ class _CardPreviewState extends State<_CardPreview> {
     }
     bool isCurrent() => mounted && scope.active && scope.revision == revision &&
         _routeRevision == routeRevision && route?.isCurrent != false && db.isActive;
-    final snapshot = Bookmark.fromJson(Map<String, dynamic>.from(widget.bookmark.toJson()));
+    final snapshot = Bookmark.fromJson({
+      ...widget.bookmark.toJson(),
+      'book_title': _effectiveBookTitle,
+    });
     final onExportChanged = widget.onExportChanged;
     _exportBookmark = snapshot;
     _exportFontSize = _fontSize;
@@ -853,6 +895,7 @@ class _CardPreviewState extends State<_CardPreview> {
   @override
   Widget build(BuildContext context) {
     final bookmark = _exportBookmark ?? widget.bookmark;
+    final bookTitle = _exportBookmark?.bookTitle ?? _effectiveBookTitle;
     final fontSize = _exportFontSize ?? _fontSize;
     final palette = ReadAmberPalette.of(context);
     final isInk = _template == CardTemplate.ink;
@@ -940,7 +983,7 @@ class _CardPreviewState extends State<_CardPreview> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      '—— ${bookmark.bookTitle}',
+                      '—— $bookTitle',
                       style: TextStyle(
                         fontSize: fontSize * 0.78,
                         color: subColor,
@@ -1035,6 +1078,12 @@ class _CardPreviewState extends State<_CardPreview> {
                     : () => setState(() => _showWatermark = !_showWatermark),
               ),
               IconButton(
+                tooltip: '编辑书名',
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                visualDensity: VisualDensity.compact,
+                onPressed: _exporting ? null : _editBookTitle,
+              ),
+              IconButton(
                 tooltip: 'AI 金句解读',
                 icon: const Icon(Icons.auto_awesome_outlined, size: 18),
                 visualDensity: VisualDensity.compact,
@@ -1101,6 +1150,63 @@ class _CardPreviewState extends State<_CardPreview> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _QuoteCardSheet extends StatelessWidget {
+  final Bookmark bookmark;
+  final _CardExportScope scope;
+  final CardImageRenderer renderer;
+  final AIService Function(AppConfig)? aiServiceFactory;
+  final ValueChanged<bool> onExportChanged;
+
+  const _QuoteCardSheet({
+    required this.bookmark,
+    required this.scope,
+    required this.renderer,
+    this.aiServiceFactory,
+    this.onExportChanged = _noopExport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: ReadAmberPalette.of(context).surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ReadAmberPalette.of(context).outline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: _CardPreview(
+                  key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
+                  bookmark: bookmark,
+                  scope: scope,
+                  scrollController: scrollController,
+                  renderer: renderer,
+                  aiServiceFactory: aiServiceFactory,
+                  onExportChanged: onExportChanged,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

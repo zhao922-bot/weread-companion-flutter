@@ -9,7 +9,12 @@ import '../services/qr_login_service.dart';
 /// 登录页面 —— Cookie 导入及扫码登录入口
 class CookieLoginPage extends StatefulWidget {
   final QrLoginService Function()? qrServiceFactory;
-  const CookieLoginPage({super.key, this.qrServiceFactory});
+  final bool showQrOption;
+  const CookieLoginPage({
+    super.key,
+    this.qrServiceFactory,
+    this.showQrOption = true,
+  });
 
   @override
   State<CookieLoginPage> createState() => _CookieLoginPageState();
@@ -78,7 +83,7 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
       if (!mounted || !_isActive) return;
       if (appConfig.isLoggedIn) {
         _showMsg('验证成功');
-        Navigator.pop(context);
+        Navigator.pop(context, true);
       } else {
         _showMsg(appConfig.loginError ?? appConfig.loginStatusText,
           isError: appConfig.loginStatus == LoginStatus.invalid);
@@ -104,9 +109,12 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
     _pasteRequest++;
     final navigator = Navigator.of(context);
     final success = await navigator.push<bool>(MaterialPageRoute(
-      builder: (_) => QrLoginPage(serviceFactory: widget.qrServiceFactory),
+      builder: (_) => QrLoginPage(
+        serviceFactory: widget.qrServiceFactory,
+        showCookieOption: false,
+      ),
     ));
-    if (_isActive && success == true) navigator.pop();
+    if (_isActive && success == true) navigator.pop(true);
   }
 
   @override
@@ -224,13 +232,14 @@ class _CookieLoginPageState extends State<CookieLoginPage> {
           ),
           const SizedBox(height: 12),
 
-          OutlinedButton.icon(
-            onPressed: _submitting || context.watch<AppConfigProvider>().isBusy
-                ? null
-                : _openQrLogin,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('扫码登录'),
-          ),
+          if (widget.showQrOption)
+            OutlinedButton.icon(
+              onPressed: _submitting || context.watch<AppConfigProvider>().isBusy
+                  ? null
+                  : _openQrLogin,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('扫码登录'),
+            ),
           const SizedBox(height: 12),
 
           Consumer<AppConfigProvider>(

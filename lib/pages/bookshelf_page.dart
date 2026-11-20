@@ -23,11 +23,22 @@ class BookshelfPage extends StatefulWidget {
 
 class _BookshelfPageState extends State<BookshelfPage> {
   static const _densityKey = 'bookshelf_columns';
-  int _crossAxisCount = 3;
+  static const _densityOptions = [0, 2, 3, 4, 5, 6, 8];
+  int _crossAxisCount = 0;
   bool _densityLoaded = false;
   bool _savingDensity = false;
   final TextEditingController _searchController = TextEditingController();
   BookshelfProvider? _provider;
+
+  static String _densityLabel(int columns) => switch (columns) {
+        0 => '自适应 · 随屏宽',
+        2 => '2 列 · 大图',
+        3 => '3 列 · 宽松',
+        4 => '4 列 · 适中',
+        5 => '5 列 · 紧凑',
+        6 => '6 列 · 更紧凑',
+        _ => '8 列 · 极密',
+      };
 
   @override
   void initState() {
@@ -60,7 +71,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
       // Failed writes can leave the shared cache ahead of persisted values.
       await prefs.reload();
       if (!mounted) return;
-      _crossAxisCount = prefs.get(_densityKey) == 4 ? 4 : 3;
+      final stored = prefs.get(_densityKey);
+      _crossAxisCount =
+          stored is int && _densityOptions.contains(stored) ? stored : 0;
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -164,18 +177,17 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   @override
   Widget build(BuildContext context) {
-    final crossAxisCount = _crossAxisCount;
     final appConfig = context.watch<AppConfigProvider>();
-    const childAspectRatio = 0.5;
+    final palette = ReadAmberPalette.of(context);
 
     return Scaffold(
-      backgroundColor: ReadAmberPalette.of(context).canvas,
+      backgroundColor: palette.canvas,
       appBar: AppBar(
         title: const Text('书架'),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: ReadAmberPalette.of(context).canvas,
-        foregroundColor: ReadAmberPalette.of(context).ink,
+        backgroundColor: palette.canvas,
+        foregroundColor: palette.ink,
         actions: [
           Consumer<BookshelfProvider>(
             builder: (context, provider, _) => PopupMenuButton<BookshelfSort>(
@@ -195,16 +207,18 @@ class _BookshelfPageState extends State<BookshelfPage> {
           ),
           PopupMenuButton<int>(
             icon: const Icon(Icons.grid_view_rounded),
-            tooltip: '显示密度：当前 $_crossAxisCount 列',
+            tooltip: _crossAxisCount == 0
+                ? '排列方式：自适应'
+                : '排列方式：当前 $_crossAxisCount 列',
             enabled: _densityLoaded && !_savingDensity,
             initialValue: _crossAxisCount,
             onSelected: _setDensity,
             itemBuilder: (context) => [
-              for (final columns in [3, 4])
+              for (final columns in _densityOptions)
                 CheckedPopupMenuItem(
                   value: columns,
                   checked: _crossAxisCount == columns,
-                  child: Text('$columns 列 · ${columns == 3 ? '紧凑' : '更紧凑'}'),
+                  child: Text(_densityLabel(columns)),
                 ),
             ],
           ),
@@ -219,81 +233,141 @@ class _BookshelfPageState extends State<BookshelfPage> {
           ),
         ],
       ),
-      body: ReadAmberContent(maxWidth: 760, child: Consumer<BookshelfProvider>(
+      body: Consumer<BookshelfProvider>(
         builder: (context, provider, _) {
           final filteredBooks = provider.books;
+          final searchField = TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: '搜索书名或作者...',
+              hintStyle: TextStyle(color: palette.muted, fontSize: 14),
+              prefixIcon: Icon(Icons.search, color: palette.muted, size: 20),
+              suffixIcon: provider.searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        provider.setSearch('');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: palette.surfaceMuted,
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              isDense: true,
+            ),
+            style: const TextStyle(fontSize: 14),
+            onChanged: provider.setSearch,
+          );
+          final filterChips = BookshelfFilter.values.map((filter) {
+            return ReadAmberChip(
+              label: filter.label,
+              selected: provider.filter == filter,
+              onTap: () => provider.setFilter(filter),
+            );
+          }).toList();
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 搜索栏 + 筛选按钮（合并为一个白色容器，消除中间缝隙）
+              // 顶部搜索栏 + 筛选栏（通栏背景，宽屏单行排布）
               Container(
-                color: ReadAmberPalette.of(context).surface,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 搜索栏
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: '搜索书名或作者...',
-                          hintStyle: TextStyle(color: ReadAmberPalette.of(context).muted, fontSize: 14),
-                          prefixIcon: Icon(Icons.search, color: ReadAmberPalette.of(context).muted, size: 20),
-                          suffixIcon: provider.searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    provider.setSearch('');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: ReadAmberPalette.of(context).surfaceMuted,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          isDense: true,
-                        ),
-                        style: const TextStyle(fontSize: 14),
-                        onChanged: provider.setSearch,
-                      ),
-                    ),
-                    // 过滤按钮
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: BookshelfFilter.values.map((filter) {
-                            final isSelected = provider.filter == filter;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: ReadAmberChip(
-                                label: filter.label,
-                                selected: isSelected,
-                                onTap: () => provider.setFilter(filter),
+                decoration: BoxDecoration(
+                  color: palette.surface,
+                  border: Border(
+                    bottom: BorderSide(color: palette.outline, width: 0.6),
+                  ),
+                ),
+                child: ReadAmberContent(
+                  maxWidth: 1600,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth >= 840) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                          child: Row(
+                            children: [
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 320),
+                                child: searchField,
                               ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                  ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: filterChips,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '共 ${filteredBooks.length} 本',
+                                style: TextStyle(
+                                    fontSize: 12, color: palette.muted),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                            child: searchField,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  for (final chip in filterChips)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: chip,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
-              // 书架列表
+              // 书架网格
               Expanded(
-                child: _buildBody(context, provider, filteredBooks, crossAxisCount, childAspectRatio),
+                child: ReadAmberContent(
+                  maxWidth: 1600,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final crossAxisCount = _crossAxisCount > 0
+                          ? _crossAxisCount
+                          : (constraints.maxWidth / 180).floor().clamp(3, 8);
+                      final childAspectRatio =
+                          constraints.maxWidth >= 600 ? 0.56 : 0.50;
+                      return _buildBody(
+                        context,
+                        provider,
+                        filteredBooks,
+                        crossAxisCount,
+                        childAspectRatio,
+                      );
+                    },
+                  ),
+                ),
               ),
             ],
           );
         },
-      )),
+      ),
     );
   }
 

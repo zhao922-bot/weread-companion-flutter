@@ -83,7 +83,7 @@ void main() {
     await tester.tap(find.byType(PopupMenuButton<int>));
     await tester.pumpAndSettle();
     await tester
-        .tap(find.widgetWithText(CheckedPopupMenuItem<int>, '4 列 · 更紧凑'));
+        .tap(find.widgetWithText(CheckedPopupMenuItem<int>, '4 列 · 适中'));
     await tester.pumpAndSettle();
   }
 
@@ -92,7 +92,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.byTooltip('显示密度：当前 3 列'), findsOneWidget);
+    expect(find.byTooltip('排列方式：自适应'), findsOneWidget);
     expect(
         tester
             .widget<PopupMenuButton<int>>(find.byType(PopupMenuButton<int>))
@@ -100,7 +100,7 @@ void main() {
         isTrue);
     store.readError = false;
     await selectFour(tester);
-    expect(find.byTooltip('显示密度：当前 4 列'), findsOneWidget);
+    expect(find.byTooltip('排列方式：当前 4 列'), findsOneWidget);
     expect((await store.getAll())['flutter.bookshelf_columns'], 4);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -111,7 +111,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.byTooltip('显示密度：当前 3 列'), findsOneWidget);
+    expect(find.byTooltip('排列方式：自适应'), findsOneWidget);
     await selectFour(tester);
     expect((await store.getAll())['flutter.bookshelf_columns'], 4);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -126,16 +126,16 @@ void main() {
       store.writeError = throws;
       await selectFour(tester);
       expect(tester.takeException(), isNull);
-      expect(find.byTooltip('显示密度：当前 3 列'), findsOneWidget);
+      expect(find.byTooltip('排列方式：自适应'), findsOneWidget);
       expect(find.text('显示密度保存失败，请重试'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
-      expect(find.byTooltip('显示密度：当前 3 列'), findsOneWidget);
+      expect(find.byTooltip('排列方式：自适应'), findsOneWidget);
       store.writeOk = true;
       store.writeError = false;
       await selectFour(tester);
-      expect(find.byTooltip('显示密度：当前 4 列'), findsOneWidget);
+      expect(find.byTooltip('排列方式：当前 4 列'), findsOneWidget);
       expect((await store.getAll())['flutter.bookshelf_columns'], 4);
       await tester.pumpWidget(const SizedBox.shrink());
     });

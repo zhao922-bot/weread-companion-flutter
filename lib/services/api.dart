@@ -484,6 +484,13 @@ class WeReadApi {
 
   void _invalidRow(String kind, Object error) => debugPrint('同步跳过无效$kind：$error');
 
+  bool _hasFinishMark(Map item) {
+    final finishReading = item['finishReading'];
+    final finishedByFlag =
+        finishReading == true || (finishReading is num && finishReading > 0);
+    return finishedByFlag || item['markedStatus'] == 4;
+  }
+
   /// 书架同步 — GET /web/shelf/sync
   Future<List<Book>> fetchBookshelf({CancelToken? cancelToken}) async {
     try {
@@ -508,8 +515,9 @@ class WeReadApi {
       final booksData = _requiredList(data, 'books');
       final progressData = data['bookProgress'] ?? [];
 
-      // 构建 bookId -> progress 的映射
+      // 构建 bookId -> progress / 读完状态 的映射
       final progressMap = <String, int>{};
+      final finishedMap = <String, bool>{};
       if (progressData is List) {
         for (final p in progressData) {
           try {
@@ -518,6 +526,7 @@ class WeReadApi {
             final progress = p['progress'] ?? 0;
             if (bookId.trim().isEmpty) throw const FormatException('阅读进度缺少 bookId');
             progressMap[bookId] = _integer(progress);
+            if (_hasFinishMark(p)) finishedMap[bookId] = true;
           } on FormatException catch (e) {
             _invalidRow('阅读进度', e);
           }
@@ -537,11 +546,16 @@ class WeReadApi {
           final bookId = _id(b['bookId']);
           if (bookId.trim().isEmpty) throw const FormatException('书籍缺少 bookId');
 
+          // finished=1 在书架接口仅表示「在书架上」；真正读完由 progress>=100 或 finishReading / markedStatus==4 决定
+          final finishMarked = _hasFinishMark(b) ||
+              _hasFinishMark(item) ||
+              finishedMap[bookId] == true;
           final progress = progressMap[bookId] ?? (b['progress'] ?? 0);
-          final progressInt = _integer(progress);
+          var progressInt = _integer(progress);
+          if (finishMarked && progressInt < finishedProgress) {
+            progressInt = finishedProgress;
+          }
 
-          // finished 语义修正：API 的 finished=1 表示「在书架上」，不是「读完了」
-          // 实际判断是否读完用 progress >= 100
           final book = Book(
             bookId: bookId,
             title: _text(b['title']),

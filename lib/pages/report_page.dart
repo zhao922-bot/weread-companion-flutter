@@ -164,12 +164,15 @@ class _ReportPageState extends State<ReportPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('阅读报告')),
       body: ReadAmberContent(
-        maxWidth: 1000,
+        maxWidth: 1280,
         child: RefreshIndicator(
           onRefresh: _loadStats,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final narrow = constraints.maxWidth < 520;
+              final wideCharts = constraints.maxWidth >= 820;
+              final hasMonthlyActivity =
+                  _monthlyActivity.any((entry) => entry.value > 0);
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
@@ -205,10 +208,21 @@ class _ReportPageState extends State<ReportPage> {
                       ],
                     ),
                   const SizedBox(height: 20),
-                  _buildProgressPieCard(context),
-                  if (_monthlyActivity.any((entry) => entry.value > 0)) ...[
-                    const SizedBox(height: 16),
-                    _buildMonthlyActivity(cs.primary),
+                  if (wideCharts && hasMonthlyActivity)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _buildProgressPieCard(context)),
+                        const SizedBox(width: 16),
+                        Expanded(child: _buildMonthlyActivity(cs.primary)),
+                      ],
+                    )
+                  else ...[
+                    _buildProgressPieCard(context),
+                    if (hasMonthlyActivity) ...[
+                      const SizedBox(height: 16),
+                      _buildMonthlyActivity(cs.primary),
+                    ],
                   ],
                   if (_topHighlights.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -227,6 +241,7 @@ class _ReportPageState extends State<ReportPage> {
 
   Widget _buildProgressPieCard(BuildContext context) {
     final palette = ReadAmberPalette.of(context);
+    final activeFont = Theme.of(context).textTheme.bodyMedium?.fontFamily;
     final slices = <(String, int, Color, Color)>[
       ('读完', _readBooks, palette.success, palette.surface),
       ('在读', _readingBooks, palette.amberText, palette.surface),
@@ -259,7 +274,13 @@ class _ReportPageState extends State<ReportPage> {
                               color: s.$3,
                               title: '${s.$1}\n${s.$2}',
                               radius: 60,
-                              titleStyle: TextStyle(fontSize: 12, color: s.$4),
+                              titleStyle: TextStyle(
+                                fontSize: 12,
+                                color: s.$4,
+                                fontFamily: activeFont,
+                                fontFamilyFallback:
+                                    ReadAmberTheme.defaultFontFallback,
+                              ),
                             ),
                         ],
                         sectionsSpace: 2,
@@ -348,6 +369,7 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Widget _buildMonthlyActivity(Color color) {
+    final activeFont = Theme.of(context).textTheme.bodyMedium?.fontFamily;
     final maxCount = _monthlyActivity.fold<int>(
         0, (max, entry) => entry.value > max ? entry.value : max);
     final interval = (maxCount / 4).ceilToDouble().clamp(1.0, double.infinity);
@@ -392,7 +414,10 @@ class _ReportPageState extends State<ReportPage> {
                           '${entry.key.year}年${entry.key.month}月\n${entry.value} 条',
                           TextStyle(
                               color: ReadAmberPalette.of(context).surface,
-                              fontSize: 12),
+                              fontSize: 12,
+                              fontFamily: activeFont,
+                              fontFamilyFallback:
+                                  ReadAmberTheme.defaultFontFallback),
                         );
                       },
                     ),

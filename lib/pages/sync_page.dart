@@ -362,7 +362,6 @@ class _SyncPageState extends State<SyncPage> {
                               style: TextStyle(
                                 color: color,
                                 fontSize: 13,
-                                fontFamily: 'monospace',
                                 height: 1.5,
                               ),
                             ),

@@ -459,6 +459,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('显示水印'), findsOneWidget);
 
+    // 编辑卡片书名：取消 / 修改保存 / 恢复默认 / 销毁后安全关闭
+    await tester.tap(find.byTooltip('编辑书名'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('—— 测试书'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('编辑书名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '修订书名');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(find.text('—— 修订书名'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('编辑书名'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('恢复默认'));
+    await tester.pumpAndSettle();
+    expect(find.text('—— 测试书'), findsOneWidget);
+
+    // 重新改为自定义书名用于 AI 解读
+    await tester.tap(find.byTooltip('编辑书名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '修订书名');
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
     // AI 金句解读：未配置 / 成功 / 失败
     await clearSnackBars(tester);
     await tester.tap(find.byTooltip('AI 金句解读'));

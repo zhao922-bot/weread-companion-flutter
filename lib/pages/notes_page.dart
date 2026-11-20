@@ -10,11 +10,13 @@ import '../services/database.dart';
 import '../services/sync_service.dart';
 import '../models/ai_summary.dart';
 import '../models/book.dart';
+import '../models/bookmark.dart';
 import '../utils/date_format.dart';
 import '../widgets/account_session_guard.dart';
 import '../widgets/readamber_chip.dart';
 import 'ai_summary_page.dart';
 import 'book_detail_page.dart';
+import 'cards_page.dart';
 
 class NotesPage extends StatefulWidget {
   final SummaryReference? reference;
@@ -45,6 +47,21 @@ class _NotesPageState extends State<NotesPage> {
   Future<Map<String, dynamic>?>? _target;
   NotesProvider? _provider;
   DatabaseService? _referenceDatabase;
+  int _subTab = 0;
+  bool _cardsVisited = false;
+
+  void _syncActive() {
+    _provider?.setActive(widget.isActive && _subTab == 0);
+  }
+
+  void _selectSubTab(int index) {
+    if (_subTab == index) return;
+    setState(() {
+      _subTab = index;
+      if (index == 1) _cardsVisited = true;
+    });
+    _syncActive();
+  }
 
   @override
   void initState() {
@@ -60,7 +77,9 @@ class _NotesPageState extends State<NotesPage> {
       return;
     }
     _scrollController.addListener(() {
-      if (widget.isActive && _scrollController.position.extentAfter < 600) {
+      if (widget.isActive &&
+          _subTab == 0 &&
+          _scrollController.position.extentAfter < 600) {
         final provider = context.read<NotesProvider>();
         if (provider.error == null) provider.loadMore();
       }
@@ -68,7 +87,7 @@ class _NotesPageState extends State<NotesPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _provider = context.read<NotesProvider>();
-      _provider!.setActive(widget.isActive);
+      _syncActive();
     });
   }
 
@@ -82,7 +101,7 @@ class _NotesPageState extends State<NotesPage> {
       _provider?.setActive(false);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _provider?.setActive(widget.isActive);
+        if (mounted) _syncActive();
       });
     }
   }
@@ -317,152 +336,234 @@ class _NotesPageState extends State<NotesPage> {
         elevation: 0,
         backgroundColor: ReadAmberPalette.of(context).canvas,
         foregroundColor: ReadAmberPalette.of(context).ink,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.auto_stories_outlined),
-            tooltip: '每日回顾',
-            onPressed: _openDailyReview,
+        actions: _subTab == 0
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.auto_stories_outlined),
+                  tooltip: '每日回顾',
+                  onPressed: _openDailyReview,
+                ),
+                // AI 摘要
+                IconButton(
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  tooltip: 'AI 摘要',
+                  onPressed: _preparingSummary ? null : _aiSummarize,
+                ),
+                IconButton(
+                    icon: const Icon(Icons.history),
+                    tooltip: '历史摘要',
+                    onPressed: () {
+                      final db = DatabaseService.instance;
+                      Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => AISummaryHistoryPage(database: db)));
+                    }),
+                // 导出
+                IconButton(
+                  icon: const Icon(Icons.ios_share_rounded),
+                  tooltip: '导出笔记',
+                  onPressed: _exporting ? null : () => _exportNotes(context),
+                ),
+              ]
+            : null,
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: ReadAmberPalette.of(context).surface,
+            child: ReadAmberContent(
+              maxWidth: _subTab == 1 ? 1400 : 1080,
+              child: _buildModeSwitcher(context),
+            ),
           ),
-          // AI 摘要
-          IconButton(
-            icon: const Icon(Icons.auto_awesome_rounded),
-            tooltip: 'AI 摘要',
-            onPressed: _preparingSummary ? null : _aiSummarize,
-          ),
-          IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: '历史摘要',
-              onPressed: () {
-                final db = DatabaseService.instance;
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => AISummaryHistoryPage(database: db)));
-              }),
-          // 导出
-          IconButton(
-            icon: const Icon(Icons.ios_share_rounded),
-            tooltip: '导出笔记',
-            onPressed: _exporting ? null : () => _exportNotes(context),
+          Expanded(
+            child: IndexedStack(
+              index: _subTab,
+              children: [
+                _buildNotesView(context),
+                if (_cardsVisited)
+                  CardsPage(
+                    isActive: widget.isActive && _subTab == 1,
+                    embedded: true,
+                    aiServiceFactory: widget.aiServiceFactory,
+                  )
+                else
+                  const SizedBox.shrink(),
+              ],
+            ),
           ),
         ],
       ),
-      body: ReadAmberContent(maxWidth: 960, child: Consumer<NotesProvider>(
-        builder: (context, provider, _) {
-          // 搜索和筛选由数据库执行，列表只展示 provider 已加载的页。
-          final filteredNotes = provider.notes;
+    );
+  }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 搜索栏 + 筛选按钮 + 计数（合并为一个白色容器，消除缝隙）
-              Container(
+  Widget _buildModeSwitcher(BuildContext context) {
+    final palette = ReadAmberPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: palette.surfaceMuted,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _SubTabButton(
+                icon: Icons.notes_rounded,
+                label: '笔记列表',
+                selected: _subTab == 0,
+                onTap: () => _selectSubTab(0),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _SubTabButton(
+                icon: Icons.style_outlined,
+                label: '金句卡片',
+                selected: _subTab == 1,
+                onTap: () => _selectSubTab(1),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotesView(BuildContext context) {
+    return Consumer<NotesProvider>(
+      builder: (context, provider, _) {
+        // 搜索和筛选由数据库执行，列表只展示 provider 已加载的页。
+        final filteredNotes = provider.notes;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 搜索栏 + 筛选按钮 + 计数（通栏白色头栏）
+            Container(
+              decoration: BoxDecoration(
                 color: ReadAmberPalette.of(context).surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: ReadAmberPalette.of(context).outline,
+                    width: 0.6,
+                  ),
+                ),
+              ),
+              child: ReadAmberContent(
+                maxWidth: 1080,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 搜索栏
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: '搜索笔记内容或书名...',
-                          hintStyle: TextStyle(color: ReadAmberPalette.of(context).muted),
-                          prefixIcon:
-                              Icon(Icons.search, color: ReadAmberPalette.of(context).muted),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 20),
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchController.clear();
-                                      _searchQuery = '';
-                                    });
-                                    provider.setSearch('');
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: ReadAmberPalette.of(context).surfaceMuted,
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 0),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
+                  // 搜索栏
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: '搜索笔记内容或书名...',
+                        hintStyle: TextStyle(color: ReadAmberPalette.of(context).muted),
+                        prefixIcon:
+                            Icon(Icons.search, color: ReadAmberPalette.of(context).muted),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 20),
+                                onPressed: () {
+                                  setState(() {
+                                    _searchController.clear();
+                                    _searchQuery = '';
+                                  });
+                                  provider.setSearch('');
+                                },
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: ReadAmberPalette.of(context).surfaceMuted,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 0),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
                         ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                          provider.setSearch(value);
-                        },
                       ),
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                        });
+                        provider.setSearch(value);
+                      },
                     ),
-                    // 过滤按钮
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ..._filters.map((filter) {
-                            final isSelected = provider.filter == filter;
-                            final color = filter == ReadingFilter.favorites
-                                ? ReadAmberPalette.of(context).amberText
-                                : ReadAmberPalette.of(context).inkSoft;
-                            return ReadAmberChip(
-                              label: filter.label,
-                              selected: isSelected,
-                              selectedColor: color,
-                              selectedTextColor:
-                                  ReadAmberPalette.of(context).surface,
-                              onTap: () => provider.setFilter(filter),
-                            );
-                          }),
-                          ReadAmberChip(
-                            label: provider.selectedBookId == null
-                                ? '按书筛选'
-                                : (_selectedBookTitle ?? '已选书籍'),
-                            icon: Icons.menu_book_outlined,
-                            selected: provider.selectedBookId != null,
-                            onTap: () => _pickBookFilter(provider),
+                  ),
+                  // 过滤按钮
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ..._filters.map((filter) {
+                          final isSelected = provider.filter == filter;
+                          final color = filter == ReadingFilter.favorites
+                              ? ReadAmberPalette.of(context).amberText
+                              : ReadAmberPalette.of(context).inkSoft;
+                          return ReadAmberChip(
+                            label: filter.label,
+                            selected: isSelected,
+                            selectedColor: color,
+                            selectedTextColor:
+                                ReadAmberPalette.of(context).surface,
+                            onTap: () => provider.setFilter(filter),
+                          );
+                        }),
+                        ReadAmberChip(
+                          label: provider.selectedBookId == null
+                              ? '按书筛选'
+                              : (_selectedBookTitle ?? '已选书籍'),
+                          icon: Icons.menu_book_outlined,
+                          selected: provider.selectedBookId != null,
+                          onTap: () => _pickBookFilter(provider),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 计数
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        Text(
+                          '共 ${provider.matchedCount} 条',
+                          style: TextStyle(
+                              fontSize: 12, color: ReadAmberPalette.of(context).muted),
+                        ),
+                        if (provider.isLoading) ...[
+                          const SizedBox(width: 8),
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 1.5),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                    // 计数
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Row(
-                        children: [
-                          Text(
-                            '共 ${provider.matchedCount} 条',
-                            style: TextStyle(
-                                fontSize: 12, color: ReadAmberPalette.of(context).muted),
-                          ),
-                          if (provider.isLoading) ...[
-                            const SizedBox(width: 8),
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 1.5),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              // 列表
-              Expanded(
+              ),
+            ),
+            // 列表
+            Expanded(
+              child: ReadAmberContent(
+                maxWidth: 1080,
                 child: _buildBody(context, provider, filteredNotes),
               ),
-            ],
-          );
-        },
-      )),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -620,6 +721,19 @@ class _NotesPageState extends State<NotesPage> {
             onFavoriteToggle: () => provider.toggleFavorite(note),
             onCopy: () => _copyNote(note),
             onInterpret: () => _interpretNote(note),
+            onMakeCard: () => showQuoteCardSheet(
+              context,
+              Bookmark(
+                bookmarkId: note.id,
+                bookId: note.bookId,
+                bookTitle: note.bookTitle,
+                markText: note.content,
+                chapterTitle: note.chapterTitle,
+                createdAt: note.createdAt,
+                isFav: note.isFav,
+              ),
+              aiServiceFactory: widget.aiServiceFactory,
+            ),
             onOpenBook: () => _openBookDetail(note),
           );
         },
@@ -634,6 +748,7 @@ class _NoteCard extends StatefulWidget {
   final Future<void> Function() onFavoriteToggle;
   final VoidCallback? onCopy;
   final VoidCallback? onInterpret;
+  final VoidCallback? onMakeCard;
   final VoidCallback? onOpenBook;
 
   const _NoteCard({
@@ -643,6 +758,7 @@ class _NoteCard extends StatefulWidget {
     required this.onFavoriteToggle,
     this.onCopy,
     this.onInterpret,
+    this.onMakeCard,
     this.onOpenBook,
   });
 
@@ -852,6 +968,15 @@ class _NoteCardState extends State<_NoteCard> {
                           visualDensity: VisualDensity.compact,
                           onPressed: widget.onInterpret,
                         ),
+                      if (widget.onMakeCard != null)
+                        IconButton(
+                          tooltip: '做成金句卡片',
+                          icon: Icon(Icons.style_outlined,
+                              size: 16,
+                              color: ReadAmberPalette.of(context).amberText),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onMakeCard,
+                        ),
                       if (widget.onOpenBook != null)
                         IconButton(
                           tooltip: '查看本书',
@@ -980,6 +1105,60 @@ class _DailyReviewSheetState extends State<_DailyReviewSheet> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubTabButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SubTabButton({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ReadAmberPalette.of(context);
+    return Material(
+      color: selected ? palette.surface : Colors.transparent,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: selected ? palette.ink : palette.muted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: selected ? palette.ink : palette.muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

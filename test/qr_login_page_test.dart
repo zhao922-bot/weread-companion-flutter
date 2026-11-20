@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:weread_companion/pages/cookie_login_page.dart';
 import 'package:weread_companion/pages/qr_login_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
 import 'package:weread_companion/services/config.dart';
@@ -68,6 +69,18 @@ class _Config extends AppConfigProvider {
     try {
       await saveGate?.future;
       if (saveError != null) throw saveError!;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> loginWithCookie(String cookie) async {
+    busy = true;
+    notifyListeners();
+    try {
+      verified = true;
     } finally {
       busy = false;
       notifyListeners();
@@ -340,5 +353,31 @@ void main() {
     expect(find.text('扫码登录验证成功'), findsNothing);
     expect(result, isNull);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('切换备用Cookie导入：取消返回后重启扫码，验证成功关闭两层并返回true', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(480, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await open(tester);
+    final first = service.attempts.single;
+    await tester.tap(find.text('使用 Cookie 导入（备用）'));
+    await tester.pumpAndSettle();
+    expect(first.token.isCancelled, isTrue);
+    expect(find.byType(CookieLoginPage), findsOneWidget);
+    expect(find.text('扫码登录'), findsNothing);
+    await navigator.currentState!.maybePop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(QrLoginPage), findsOneWidget);
+    expect(service.attempts, hasLength(2));
+    await tester.tap(find.text('使用 Cookie 导入（备用）'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'wr_vid=123; wr_skey=ok');
+    await tester.ensureVisible(find.text('确认导入并验证'));
+    await tester.tap(find.text('确认导入并验证'));
+    await tester.pumpAndSettle();
+    expect(result, isTrue);
+    expect(find.byType(CookieLoginPage), findsNothing);
+    expect(find.byType(QrLoginPage), findsNothing);
   });
 }

@@ -318,6 +318,31 @@ void main() {
     expect(books.single.title, '有效');
     expect(books.single.progress, 50);
   });
+  test('书架识别微信读书finishReading与markedStatus读完标记并忽略旧finished字段', () async {
+    final books = await api({
+      'books': [
+        {'bookId': 'b1', 'title': '正文读完', 'finished': 1, 'finishReading': 1},
+        {
+          'markedStatus': 4,
+          'book': {'bookId': 'b2', 'title': '手动标读完', 'finished': 1},
+        },
+        {'bookId': 'b3', 'title': '进度表读完', 'finished': 1},
+        {'bookId': 'b4', 'title': '仍在读', 'finished': 1, 'finishReading': 0},
+      ],
+      'bookProgress': [
+        {'bookId': 'b1', 'progress': 96},
+        {'bookId': 'b2', 'progress': 88},
+        {'bookId': 'b3', 'progress': 92, 'finishReading': true},
+        {'bookId': 'b4', 'progress': 96},
+      ],
+    }).fetchBookshelf();
+    expect(books.map((b) => (b.bookId, b.isFinished, b.progress)).toList(), [
+      ('b1', true, 100),
+      ('b2', true, 100),
+      ('b3', true, 100),
+      ('b4', false, 96),
+    ]);
+  });
   test('章节不是对象时增量拒绝推进游标', () async {
     var delta = false;
     await expectLater(

@@ -205,9 +205,8 @@ void main() {
         await capture('bookshelf');
         for (final (index, name, label) in [
           (1, 'notes', '笔记'),
-          (2, 'cards', '卡片'),
-          (3, 'report', '报告'),
-          (4, 'settings', '设置')
+          (2, 'report', '报告'),
+          (3, 'settings', '设置')
         ]) {
           final nav = find.byType(NavigationBar).evaluate().isNotEmpty
               ? find
@@ -239,7 +238,12 @@ void main() {
                 find.widgetWithText(OutlinedButton, 'SiliconFlow'));
             await capture('ai-presets-end');
           }
-          if (name == 'cards') {
+          if (name == 'notes') {
+            await tester.tap(find.text('金句卡片'));
+            await tester.pumpAndSettle();
+            await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 100)));
+            await capture('cards');
             if (view.size.width < 600) {
               await tester.tap(find.text('把喜欢的句子留在纸上，也把阅读的光留在日常里。').first);
               await capture('card-preview');

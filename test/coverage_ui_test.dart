@@ -22,14 +22,17 @@ import 'package:weread_companion/pages/report_page.dart';
 import 'package:weread_companion/pages/notes_page.dart';
 import 'package:weread_companion/pages/ai_summary_page.dart';
 import 'package:weread_companion/pages/cookie_login_page.dart';
+import 'package:weread_companion/pages/qr_login_page.dart';
 import 'package:weread_companion/pages/sync_page.dart';
 import 'package:weread_companion/providers/app_config_provider.dart';
 import 'package:weread_companion/providers/bookshelf_provider.dart';
 import 'package:weread_companion/providers/notes_provider.dart';
+import 'package:weread_companion/providers/theme_controller.dart';
 import 'package:weread_companion/services/config.dart';
 import 'package:weread_companion/services/ai_service.dart';
 import 'package:weread_companion/services/database.dart';
 import 'package:weread_companion/services/sync_service.dart';
+import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:weread_companion/widgets/settings/account_settings_section.dart';
 import 'package:weread_companion/widgets/settings/ai_settings_section.dart';
 import 'package:weread_companion/widgets/settings/about_settings_section.dart';
@@ -589,15 +592,25 @@ void main() {
   }
 
   for (final saved in [false, true]) {
-    testWidgets('${saved ? '已有账号' : '未登录'}设置可打开Cookie导入', (tester) async {
+    testWidgets('${saved ? '已有账号' : '未登录'}设置优先打开扫码登录', (tester) async {
       config.saved = saved;
       await tester.pumpWidget(section(const AccountSettingsSection()));
-      await tester.tap(find.text(saved ? '微信读书账号' : '登录'));
-      await tester.pumpAndSettle();
-      expect(find.byType(CookieLoginPage), findsOneWidget);
+      await tester.tap(find.text(saved ? '微信读书账号' : '扫码登录'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(QrLoginPage), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('未登录设置提供备用Cookie导入入口', (tester) async {
+    config.saved = false;
+    await tester.pumpWidget(section(const AccountSettingsSection()));
+    await tester.tap(find.widgetWithText(OutlinedButton, '导入'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CookieLoginPage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('完整入口恢复可信账号并创建书架和笔记Provider', (tester) async {
     SharedPreferences.setMockInitialValues(
@@ -1348,4 +1361,89 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('笔记条目支持直接做成金句卡片并安全关闭', (tester) async {
+    await tester.runAsync(() => db.insertNote(
+        {'note_id': 'n1', 'book_id': 'b1', 'content': '卡片原文', 'created_at': 1}));
+    final notes = NotesProvider();
+    addTearDown(notes.dispose);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeController>.value(value: ThemeController()),
+        ChangeNotifierProvider<AppConfigProvider>.value(value: config),
+        ChangeNotifierProvider<NotesProvider>.value(value: notes),
+      ],
+      child: const MaterialApp(home: NotesPage()),
+    ));
+    await pumpUntil(tester, () => find.text('卡片原文').evaluate().isNotEmpty);
+    await tester.tap(find.text('笔记列表'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('做成金句卡片'));
+    await tester.pumpAndSettle();
+    expect(find.text('导出图片'), findsOneWidget);
+    await tester.tap(find.text('导出图片'));
+    await tester.pump();
+    Navigator.of(tester.element(find.byType(Slider))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('导出图片'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('选定字体应用到AppBar、导航栏、输入框、Chip、弹窗和报表图表', (tester) async {
+    final light = ReadAmberTheme.lightFor(fontFamily: 'CustomReadFont');
+    expect(light.appBarTheme.titleTextStyle?.fontFamily, 'CustomReadFont');
+    expect(
+      light.navigationBarTheme.labelTextStyle?.resolve({})?.fontFamily,
+      'CustomReadFont',
+    );
+    expect(
+      light.navigationRailTheme.selectedLabelTextStyle?.fontFamily,
+      'CustomReadFont',
+    );
+    expect(light.inputDecorationTheme.hintStyle?.fontFamily, 'CustomReadFont');
+    expect(light.chipTheme.labelStyle?.fontFamily, 'CustomReadFont');
+    expect(light.dialogTheme.titleTextStyle?.fontFamily, 'CustomReadFont');
+    expect(light.snackBarTheme.contentTextStyle?.fontFamily, 'CustomReadFont');
+
+    final dark = ReadAmberTheme.darkFor(fontFamily: 'CustomReadFont');
+    expect(dark.appBarTheme.titleTextStyle?.fontFamily, 'CustomReadFont');
+    expect(dark.popupMenuTheme.textStyle?.fontFamily, 'CustomReadFont');
+
+    SharedPreferences.setMockInitialValues({'readamber_font_id': 'lxgw_wenkai'});
+    await tester.runAsync(() => seedCards(1));
+    await tester.pumpWidget(const application.ReadAmberApp());
+    await tester.pumpAndSettle();
+    final textStyle = DefaultTextStyle.of(tester.element(find.byType(application.MainScreen))).style;
+    expect(textStyle.fontFamilyFallback, ReadAmberTheme.defaultFontFallback);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('书架宽屏自适应与6/8列排列选项均可切换', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 860));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.runAsync(() => db.insertBook({
+          'book_id': 'b1',
+          'title': '宽屏测试书籍',
+          'progress': 50,
+          'updated_at': 1,
+        }));
+    final shelf = BookshelfProvider();
+    addTearDown(shelf.dispose);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AppConfigProvider>.value(value: config),
+        ChangeNotifierProvider<BookshelfProvider>.value(value: shelf),
+      ],
+      child: const MaterialApp(home: BookshelfPage()),
+    ));
+    await pumpUntil(tester, () => find.text('宽屏测试书籍').evaluate().isNotEmpty);
+    await tester.tap(find.byIcon(Icons.grid_view_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('6 列 · 更紧凑'), findsOneWidget);
+    expect(find.text('8 列 · 极密'), findsOneWidget);
+    await tester.tap(find.text('6 列 · 更紧凑'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('排列方式：当前 6 列'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

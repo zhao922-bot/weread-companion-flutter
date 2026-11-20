@@ -132,14 +132,18 @@ void main() {
     }
     await visit(1);
     await pumpUntil(tester, () => notes.matchedCount == 2 && !notes.isLoading);
+    expect(find.byType(CardsPage, skipOffstage: false), findsNothing);
     final notesState = tester.state(find.byType(NotesPage));
     await tester.enterText(find.byType(TextField), '笔记');
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntil(tester, () => notes.matchedCount == 1 && !notes.isLoading);
-    await visit(2);
+    await tester.tap(find.text('金句卡片'));
+    await tester.pump();
     await pumpUntil(tester, () => find.text('引文').evaluate().isNotEmpty);
     final cardsState = tester.state(find.byType(CardsPage));
-    await visit(3);
+    await tester.tap(find.text('笔记列表'));
+    await tester.pump();
+    await visit(2);
     await pumpUntil(tester, () => find.byType(LinearProgressIndicator).evaluate().isEmpty);
     final reportState = tester.state(find.byType(ReportPage));
     await visit(0);
@@ -157,12 +161,13 @@ void main() {
     await visit(1);
     await pumpUntil(tester, () => notes.matchedCount == 2 && !notes.isLoading);
     expect(tester.state(find.byType(NotesPage)), same(notesState));
-    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '笔记');
+    expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, '笔记');
     expect(factory.reads.where((sql) => sql.contains('AS reading_items') && sql.contains('LIMIT')), hasLength(1));
-    await visit(2);
+    await tester.tap(find.text('金句卡片'));
+    await tester.pump();
     await pumpUntil(tester, () => find.byType(CircularProgressIndicator).evaluate().isEmpty);
     expect(tester.state(find.byType(CardsPage)), same(cardsState));
-    await visit(3);
+    await visit(2);
     await pumpUntil(tester, () => find.byType(LinearProgressIndicator).evaluate().isEmpty);
     expect(tester.state(find.byType(ReportPage)), same(reportState));
     await visit(0);

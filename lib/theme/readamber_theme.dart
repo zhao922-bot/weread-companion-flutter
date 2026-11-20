@@ -125,6 +125,10 @@ abstract final class ReadAmberTheme {
 
   static ThemeData _build(Brightness brightness, {String? fontFamily}) {
     final colors = ReadAmberPalette.forBrightness(brightness);
+    TextStyle withFont(TextStyle base) => base.copyWith(
+          fontFamily: fontFamily,
+          fontFamilyFallback: defaultFontFallback,
+        );
     const rounded = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(16)),
     );
@@ -162,12 +166,13 @@ abstract final class ReadAmberTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(
+        titleTextStyle: withFont(TextStyle(
           color: colors.ink,
           fontSize: 19,
           fontWeight: FontWeight.w600,
           letterSpacing: 0.5,
-        ),
+        )),
+        toolbarTextStyle: withFont(TextStyle(color: colors.ink, fontSize: 14)),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: colors.surface,
@@ -182,8 +187,8 @@ abstract final class ReadAmberTheme {
                 : colors.ink,
             size: 23)),
         labelTextStyle: WidgetStatePropertyAll(
-          TextStyle(
-              color: colors.ink, fontSize: 12, fontWeight: FontWeight.w500),
+          withFont(TextStyle(
+              color: colors.ink, fontSize: 12, fontWeight: FontWeight.w500)),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(
@@ -191,10 +196,10 @@ abstract final class ReadAmberTheme {
         indicatorColor: colors.amber,
         selectedIconTheme: const IconThemeData(color: ReadAmberColors.ink, size: 23),
         unselectedIconTheme: IconThemeData(color: colors.ink, size: 23),
-        selectedLabelTextStyle: TextStyle(
-            color: colors.ink, fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelTextStyle: TextStyle(
-            color: colors.muted, fontSize: 12, fontWeight: FontWeight.w500),
+        selectedLabelTextStyle: withFont(TextStyle(
+            color: colors.ink, fontSize: 12, fontWeight: FontWeight.w600)),
+        unselectedLabelTextStyle: withFont(TextStyle(
+            color: colors.muted, fontSize: 12, fontWeight: FontWeight.w500)),
       ),
       cardTheme: CardThemeData(
         color: colors.surface,
@@ -232,7 +237,11 @@ abstract final class ReadAmberTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colors.surfaceMuted,
-        hintStyle: TextStyle(color: colors.muted),
+        hintStyle: withFont(TextStyle(color: colors.muted)),
+        labelStyle: withFont(TextStyle(color: colors.inkSoft)),
+        floatingLabelStyle: withFont(TextStyle(color: colors.ink)),
+        helperStyle: withFont(TextStyle(color: colors.muted, fontSize: 12)),
+        errorStyle: withFont(TextStyle(color: colors.error, fontSize: 12)),
         border: const OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12))),
         enabledBorder: OutlineInputBorder(
@@ -248,7 +257,8 @@ abstract final class ReadAmberTheme {
         backgroundColor: colors.surfaceMuted,
         selectedColor: colors.paper,
         side: BorderSide(color: colors.outline),
-        labelStyle: TextStyle(color: colors.ink),
+        labelStyle: withFont(TextStyle(color: colors.ink)),
+        secondaryLabelStyle: withFont(TextStyle(color: colors.ink)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: colors.surface,
@@ -261,10 +271,29 @@ abstract final class ReadAmberTheme {
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
         shape: rounded,
+        titleTextStyle: withFont(TextStyle(
+          color: colors.ink,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        )),
+        contentTextStyle: withFont(TextStyle(
+          color: colors.inkSoft,
+          fontSize: 14,
+          height: 1.5,
+        )),
       ),
-      snackBarTheme: const SnackBarThemeData(
+      popupMenuTheme: PopupMenuThemeData(
+        color: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        textStyle: withFont(TextStyle(color: colors.ink, fontSize: 14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+          side: BorderSide(color: colors.outline, width: 0.7),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
         backgroundColor: ReadAmberColors.ink,
-        contentTextStyle: TextStyle(color: ReadAmberColors.paper),
+        contentTextStyle: withFont(const TextStyle(color: ReadAmberColors.paper)),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: colors.inkSoft,

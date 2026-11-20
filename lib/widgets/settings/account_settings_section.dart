@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:provider/provider.dart';
 import '../../pages/cookie_login_page.dart';
+import '../../pages/qr_login_page.dart';
 import '../../providers/app_config_provider.dart';
 import 'settings_section.dart';
 
@@ -58,7 +59,9 @@ class AccountSettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final config = context.watch<AppConfigProvider>();
     final enabled = config.isLoaded && !config.isBusy;
-    void login() => Navigator.push(context,
+    void qrLogin() => Navigator.push(context,
+      MaterialPageRoute(builder: (_) => const QrLoginPage()));
+    void cookieLogin() => Navigator.push(context,
       MaterialPageRoute(builder: (_) => const CookieLoginPage()));
     return SettingsSection(title: '账号', children: [
       if (config.cleanupPending)
@@ -79,7 +82,7 @@ class AccountSettingsSection extends StatelessWidget {
           ),
           title: Text(config.userName.isEmpty ? '微信读书账号' : config.userName),
           subtitle: Text(config.loginStatusText),
-          onTap: enabled ? login : null,
+          onTap: enabled ? qrLogin : null,
           trailing: TextButton(
             // 加载失败时仍允许退出可信本地账号。
             onPressed: config.isBusy ? null : () => _logout(context, config),
@@ -87,19 +90,30 @@ class AccountSettingsSection extends StatelessWidget {
             child: const Text('退出登录'),
           ),
         )
-      else
+      else ...[
         ListTile(
-          leading: Icon(Icons.cookie_outlined, color: ReadAmberPalette.of(context).ink),
-          title: const Text('导入 Cookie'),
-          subtitle: const Text('导入后即可同步微信读书数据'),
+          leading: Icon(Icons.qr_code_scanner, color: ReadAmberPalette.of(context).ink),
+          title: const Text('微信扫码登录'),
+          subtitle: const Text('推荐方式，扫码后即可同步微信读书数据'),
           trailing: ElevatedButton(
-            onPressed: enabled ? login : null,
+            onPressed: enabled ? qrLogin : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: ReadAmberPalette.of(context).action, foregroundColor: ReadAmberPalette.of(context).onAction,
+              backgroundColor: ReadAmberPalette.of(context).action,
+              foregroundColor: ReadAmberPalette.of(context).onAction,
             ),
-            child: const Text('登录'),
+            child: const Text('扫码登录'),
           ),
         ),
+        ListTile(
+          leading: Icon(Icons.cookie_outlined, color: ReadAmberPalette.of(context).muted),
+          title: const Text('导入 Cookie（备用）'),
+          subtitle: const Text('扫码受限时可手动粘贴 Cookie 登录'),
+          trailing: OutlinedButton(
+            onPressed: enabled ? cookieLogin : null,
+            child: const Text('导入'),
+          ),
+        ),
+      ],
     ]);
   }
 }

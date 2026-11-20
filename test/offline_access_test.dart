@@ -417,7 +417,7 @@ void main() {
       child: const MaterialApp(home: Scaffold(body: AccountSettingsSection())),
     ));
     expect(find.text('继续清理'), findsOneWidget);
-    expect(find.text('登录'), findsNothing);
+    expect(find.text('扫码登录'), findsNothing);
 
     databaseFactory = databaseFactoryFfiNoIsolate;
     await tester.runAsync(() async {
@@ -432,6 +432,6 @@ void main() {
     expect(provider.loginStatus, LoginStatus.signedOut);
     expect(await tester.runAsync(() => directory.list().isEmpty), isTrue);
     expect(find.text('继续清理'), findsNothing);
-    expect(find.text('登录'), findsOneWidget);
+    expect(find.text('扫码登录'), findsOneWidget);
   });
 }

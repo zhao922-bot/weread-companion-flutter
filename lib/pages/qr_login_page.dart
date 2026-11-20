@@ -6,11 +6,17 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/app_config_provider.dart';
 import '../services/qr_login_service.dart';
+import 'cookie_login_page.dart';
 
 class QrLoginPage extends StatefulWidget {
   /// Creates a service owned and disposed by this page.
   final QrLoginService Function()? serviceFactory;
-  const QrLoginPage({super.key, this.serviceFactory});
+  final bool showCookieOption;
+  const QrLoginPage({
+    super.key,
+    this.serviceFactory,
+    this.showCookieOption = true,
+  });
 
   @override
   State<QrLoginPage> createState() => _QrLoginPageState();
@@ -116,6 +122,23 @@ class _QrLoginPageState extends State<QrLoginPage> {
     Navigator.of(context).pop();
   }
 
+  Future<void> _openCookieLogin() async {
+    _cancelToken?.cancel('切换为 Cookie 登录');
+    _running = false;
+    final navigator = Navigator.of(context);
+    final success = await navigator.push<bool>(MaterialPageRoute(
+      builder: (_) => CookieLoginPage(
+        qrServiceFactory: widget.serviceFactory,
+        showQrOption: false,
+      ),
+    ));
+    if (success == true) {
+      navigator.pop(true);
+    } else if (mounted) {
+      await _startLogin();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -178,6 +201,12 @@ class _QrLoginPageState extends State<QrLoginPage> {
                             : _startLogin,
                     icon: const Icon(Icons.refresh),
                     label: const Text('重试 / 重新扫码'),
+                  ),
+                if (widget.showCookieOption)
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : _openCookieLogin,
+                    icon: const Icon(Icons.cookie_outlined),
+                    label: const Text('使用 Cookie 导入（备用）'),
                   ),
                 TextButton(
                   onPressed: _saving ? null : _cancel,
