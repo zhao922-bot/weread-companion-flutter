@@ -557,17 +557,58 @@ class DatabaseService {
     await db.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> insertBooks(List<Map<String, dynamic>> books,
-      {void Function()? checkCancelled}) async {
+  Future<void> insertBooks(List<Map<String, dynamic>> books) async {
     final db = await database;
     await db.transaction((txn) async {
-      checkCancelled?.call();
       final batch = txn.batch();
       for (final book in books) {
         batch.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
     });
+  }
+
+  /// 将书架镜像同步到最新列表：写入或更新在架书籍，并级联清理已从书架移除的书籍。
+  Future<List<String>> syncBookshelf(List<Map<String, dynamic>> books,
+      {void Function()? checkCancelled}) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      checkCancelled?.call();
+      final activeIds = {for (final book in books) book['book_id'] as String};
+      final existing = await txn.query('books', columns: ['book_id']);
+      final removedIds = [
+        for (final row in existing)
+          if (!activeIds.contains(row['book_id'] as String))
+            row['book_id'] as String,
+      ];
+      final batch = txn.batch();
+      for (final book in books) {
+        batch.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+      await _deleteBookRows(txn, removedIds);
+      return removedIds;
+    });
+  }
+
+  Future<void> _deleteBookRows(Transaction txn, List<String> bookIds) async {
+    final unique = bookIds.toSet().toList();
+    for (var start = 0; start < unique.length; start += 400) {
+      final keys = unique.skip(start).take(400).toList();
+      final placeholders = List.filled(keys.length, '?').join(',');
+      for (final table in const [
+        'books',
+        'bookmarks',
+        'notes',
+        'sync_cursors',
+        'chapters',
+      ]) {
+        await txn.rawDelete(
+          'DELETE FROM $table WHERE book_id IN ($placeholders)',
+          keys,
+        );
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> getBook(String bookId) async {
@@ -584,13 +625,7 @@ class DatabaseService {
   /// 删除书籍及其关联数据（级联删除）
   Future<void> deleteBook(String bookId) async {
     final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('books', where: 'book_id = ?', whereArgs: [bookId]);
-      await txn.delete('bookmarks', where: 'book_id = ?', whereArgs: [bookId]);
-      await txn.delete('notes', where: 'book_id = ?', whereArgs: [bookId]);
-      await txn.delete('sync_cursors', where: 'book_id = ?', whereArgs: [bookId]);
-      await txn.delete('chapters', where: 'book_id = ?', whereArgs: [bookId]);
-    });
+    await db.transaction((txn) => _deleteBookRows(txn, [bookId]));
   }
 
   // ── Bookmarks ──

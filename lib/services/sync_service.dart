@@ -246,11 +246,16 @@ class SyncService {
         final books = await service._withRequestCancellation(
             (token) => api.fetchBookshelf(cancelToken: token));
         checkCancelled();
-        await db.insertBooks(books.map((b) => b.toJson()).toList(),
-            checkCancelled: checkCancelled);
+        final removedIds = await db.syncBookshelf(
+          books.map((b) => b.toJson()).toList(),
+          checkCancelled: checkCancelled,
+        );
         if (!db.isActive || api.syncCancelled) throw const SyncCancelledException();
-        changes.publish(db, kind: SyncChangeKind.bookshelf,
-          bookIds: books.map((b) => b.bookId).toSet());
+        changes.publish(
+          db,
+          kind: removedIds.isEmpty ? SyncChangeKind.bookshelf : SyncChangeKind.all,
+          bookIds: {...books.map((b) => b.bookId), ...removedIds},
+        );
         return books;
       },
       loadBookmarks: (book) async {

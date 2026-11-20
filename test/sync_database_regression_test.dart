@@ -384,4 +384,51 @@ void main() {
     await DatabaseService.selectAccount('456');
     expect(DatabaseService.instance.accountId, '456');
   });
+
+  test('书架镜像同步级联清除已从微信读书删除的书籍及关联数据，失败可回滚', () async {
+    await db.insertBooks([
+      {'book_id': 'keep', 'title': '保留书', 'progress': 50, 'updated_at': 1},
+      {'book_id': 'removed', 'title': '已删书', 'progress': 20, 'updated_at': 1},
+    ]);
+    await db.insertBookmarksPreserveFav([
+      {'bookmark_id': 'bm_rm', 'book_id': 'removed', 'mark_text': '已删划线', 'created_at': 1},
+    ]);
+    await db.insertNotesPreserveFav([
+      {'note_id': 'nt_rm', 'book_id': 'removed', 'content': '已删笔记', 'created_at': 1},
+    ]);
+    await db.applySyncDelta('removed', 'bookmark', [], [], 'cursor_rm');
+
+    final events = <SyncChangeKind>[];
+    void listener() => events.add(SyncService.changes.kind);
+    SyncService.changes.addListener(listener);
+    addTearDown(() => SyncService.changes.removeListener(listener));
+
+    final shelfOnlyKeep = {
+      'books': [
+        {'bookId': 'keep', 'title': '保留书新版', 'updateTime': 20},
+      ],
+      'bookProgress': [
+        {'bookId': 'keep', 'progress': 80},
+      ],
+    };
+    final api = await apiWith({
+      '/shelf/sync': shelfOnlyKeep,
+      '/book/bookmarklist': {'chapters': [], 'updated': []},
+      '/review/list': {'reviews': []},
+    });
+    final result = await SyncService.forApi(api).syncAll();
+    expect(result.successCount, 1);
+    expect((await db.getAllBooks()).map((b) => b['book_id']), ['keep']);
+    expect(await db.getBook('removed'), isNull);
+    expect(await db.getAllBookmarks(), isEmpty);
+    expect(await db.getAllNotes(), isEmpty);
+    expect(await db.countReadingItems(query: '已删'), 0);
+    expect(await db.getSyncCursor('removed', 'bookmark'), '0');
+    expect(events, contains(SyncChangeKind.all));
+
+    // 当书架清空时同样可镜像清零
+    final removedAll = await db.syncBookshelf(const []);
+    expect(removedAll, ['keep']);
+    expect(await db.getAllBooks(), isEmpty);
+  });
 }
