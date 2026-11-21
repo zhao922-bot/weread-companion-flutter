@@ -30,12 +30,24 @@ class BookSyncResult {
   String get reason => errors.join('；');
 }
 
+class BookshelfSyncResult {
+  final BookshelfChanges changes;
+  final bool complete;
+
+  const BookshelfSyncResult(this.changes, {required this.complete});
+
+  String get summary => '新增 ${changes.added.length} 本 · '
+      '更新 ${changes.updated.length} 本 · 移除 ${changes.removed.length} 本';
+}
+
 class SyncResult {
   final List<BookSyncResult> books;
   final int totalBooks;
   final bool cancelled;
+  final BookshelfSyncResult? bookshelf;
 
-  SyncResult(List<BookSyncResult> books, this.totalBooks, {this.cancelled = false})
+  SyncResult(List<BookSyncResult> books, this.totalBooks,
+      {this.cancelled = false, this.bookshelf})
       : books = List.unmodifiable(books);
 
   List<BookSyncResult> get failures => books.where((b) => !b.succeeded).toList();
@@ -48,8 +60,10 @@ class SyncResult {
 
   SyncResult replace(BookSyncResult retried) => SyncResult(
       books.map((b) => b.book.bookId == retried.book.bookId ? retried : b).toList(),
-      totalBooks, cancelled: cancelled);
+      totalBooks, cancelled: cancelled, bookshelf: bookshelf);
 }
+
+typedef _SyncedBookshelf = ({List<Book> books, BookshelfSyncResult? result});
 
 /// 所有同步入口共享的编排与本地数据刷新通知。
 enum SyncChangeKind { all, bookshelf, items, favorites }
@@ -114,7 +128,8 @@ class SyncService {
   static SyncService current({bool Function()? isCancelled}) =>
       SyncService.forApi(WeReadApi.instance, isCancelled: isCancelled);
   static final SyncChanges changes = SyncChanges();
-  final Future<List<Book>> Function() loadBooks;
+  final Future<_SyncedBookshelf> Function() _loadBookshelf;
+  Future<List<Book>> loadBooks() async => (await _loadBookshelf()).books;
   final Future<int> Function(Book) loadBookmarks;
   final Future<int> Function(Book) loadNotes;
   final bool Function() isCancelled;
@@ -214,14 +229,32 @@ class SyncService {
   }
 
   SyncService({
-    required this.loadBooks,
+    required Future<List<Book>> Function() loadBooks,
+    required Future<int> Function(Book) loadBookmarks,
+    required Future<int> Function(Book) loadNotes,
+    required bool Function() isCancelled,
+    required VoidCallback onChanged,
+    Duration requestInterval = const Duration(milliseconds: 300),
+    String? accountId,
+  }) : this._(
+    loadBookshelf: () async => (books: await loadBooks(), result: null),
+    loadBookmarks: loadBookmarks,
+    loadNotes: loadNotes,
+    isCancelled: isCancelled,
+    onChanged: onChanged,
+    requestInterval: requestInterval,
+    accountId: accountId,
+  );
+
+  SyncService._({
+    required Future<_SyncedBookshelf> Function() loadBookshelf,
     required this.loadBookmarks,
     required this.loadNotes,
     required this.isCancelled,
     required this.onChanged,
     this.requestInterval = const Duration(milliseconds: 300),
     this.accountId,
-  });
+  }) : _loadBookshelf = loadBookshelf;
 
   factory SyncService.forApi(WeReadApi api, {bool Function()? isCancelled}) {
     final db = api.db;
@@ -239,24 +272,31 @@ class SyncService {
       changedSources.add(source);
       changedItems.addAll(keys.map((id) => '$source:$id'));
     }
-    service = SyncService(
+    service = SyncService._(
       accountId: db.accountId,
-      loadBooks: () async {
+      loadBookshelf: () async {
         checkCancelled();
+        var complete = false;
         final books = await service._withRequestCancellation(
-            (token) => api.fetchBookshelf(cancelToken: token));
+          (token) => api.fetchBookshelf(
+            cancelToken: token,
+            onCompleteness: (value) => complete = value,
+          ),
+        );
         checkCancelled();
-        final removedIds = await db.syncBookshelf(
+        final bookshelfChanges = await db.syncBookshelfWithChanges(
           books.map((b) => b.toJson()).toList(),
+          allowPrune: complete,
           checkCancelled: checkCancelled,
         );
         if (!db.isActive || api.syncCancelled) throw const SyncCancelledException();
+        final removedIds = bookshelfChanges.removed.map((book) => book.bookId);
         changes.publish(
           db,
           kind: removedIds.isEmpty ? SyncChangeKind.bookshelf : SyncChangeKind.all,
           bookIds: {...books.map((b) => b.bookId), ...removedIds},
         );
-        return books;
+        return (books: books, result: BookshelfSyncResult(bookshelfChanges, complete: complete));
       },
       loadBookmarks: (book) async {
         String? cursor;
@@ -401,7 +441,8 @@ class SyncService {
     void Function(BookSyncResult result, int processed)? onProgress}) async {
     if (_isCancelled) return SyncResult([], 0, cancelled: true);
     try {
-      final books = await _request(loadBooks);
+      final shelf = await _request(_loadBookshelf);
+      final books = shelf.books;
       onBooks?.call(books.length);
       final results = <BookSyncResult>[];
       var next = 0;
@@ -415,7 +456,8 @@ class SyncService {
       }
       // Two books, each with two overlapping requests: at most four in flight.
       await Future.wait([worker(), worker()]);
-      return SyncResult(results, books.length, cancelled: _isCancelled);
+      return SyncResult(results, books.length,
+          cancelled: _isCancelled, bookshelf: shelf.result);
     } on SyncCancelledException {
       return SyncResult([], 0, cancelled: true);
     } finally {

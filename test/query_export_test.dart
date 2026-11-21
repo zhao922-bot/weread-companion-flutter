@@ -260,7 +260,10 @@ void main() {
     db = DatabaseService.instance;
     expect(await db.countReadingItems(query: '原内容'), 1);
     final triggers = await (await db.database).rawQuery("SELECT name FROM sqlite_master WHERE type = 'trigger'");
-    expect(triggers.map((r) => r['name']).toSet(), {'search_notes_delete', 'search_bookmarks_delete'});
+    expect(triggers.map((r) => r['name']).toSet(), {
+      'search_notes_delete', 'search_bookmarks_delete',
+      'reading_bookmark_delete', 'reading_note_delete',
+    });
     await db.insertNotePreserveFav({'note_id': 'n', 'book_id': 'b', 'content': '新内容', 'created_at': 2});
     expect(await db.countReadingItems(query: '新内容'), 1);
     expect(await db.countReadingItems(query: '原内容'), 0);

@@ -159,6 +159,7 @@ class NotesProvider extends ChangeNotifier {
   String _searchQuery = '';
   ReadingFilter _filter = ReadingFilter.all;
   String? _selectedBookId;
+  String? _selectedTag;
   bool _loading = false;
   String? _error;
   int _sessionRevision = -1;
@@ -178,6 +179,7 @@ class NotesProvider extends ChangeNotifier {
     _searchQuery = '';
     _filter = ReadingFilter.all;
     _selectedBookId = null;
+    _selectedTag = null;
     _dataVersion = SyncService.changes.dataVersion;
     _loading = false;
     _error = null;
@@ -189,6 +191,7 @@ class NotesProvider extends ChangeNotifier {
   String? get error => _error;
   ReadingFilter get filter => _filter;
   String? get selectedBookId => _selectedBookId;
+  String? get selectedTag => _selectedTag;
   int get totalCount => bookmarkCount + noteCount;
   int get matchedCount => _matchedCount;
   bool get hasMore => _notes.length < _matchedCount;
@@ -202,10 +205,11 @@ class NotesProvider extends ChangeNotifier {
     final query = _searchQuery;
     final filter = _filter;
     final bookId = _selectedBookId;
+    final tag = _selectedTag;
     final items = <NoteItem>[];
     while (true) {
       final rows = await db.getReadingItems(after: items.isEmpty ? null : items.last,
-          limit: pageSize, query: query, filter: filter, bookId: bookId);
+          limit: pageSize, query: query, filter: filter, bookId: bookId, tag: tag);
       if (!db.isActive || revision != _sessionRevision || _disposed) {
         throw StateError('账号会话已结束');
       }
@@ -219,7 +223,7 @@ class NotesProvider extends ChangeNotifier {
     final db = DatabaseService.instance;
     final revision = _sessionRevision;
     final rows = await db.getSummaryItems(
-        query: _searchQuery, filter: _filter, bookId: _selectedBookId);
+        query: _searchQuery, filter: _filter, bookId: _selectedBookId, tag: _selectedTag);
     if (!db.isActive || revision != _sessionRevision || _disposed) {
       throw StateError('账号会话已结束');
     }
@@ -257,9 +261,10 @@ class NotesProvider extends ChangeNotifier {
       final query = _searchQuery;
       final filter = _filter;
       final bookId = _selectedBookId;
+      final tag = _selectedTag;
       // Data/filter changes reset the list. Continuations can reuse its count.
       final count = reset
-          ? await db.countReadingItems(query: query, filter: filter, bookId: bookId)
+          ? await db.countReadingItems(query: query, filter: filter, bookId: bookId, tag: tag)
           : _matchedCount;
       if (request != _request || !db.isActive) return;
       // Deactivation invalidates _request and marks the refresh pending.
@@ -267,7 +272,7 @@ class NotesProvider extends ChangeNotifier {
       final stats = _statsDirty ? await db.getReadingStats() : _stats;
       if (request != _request || !db.isActive) return;
       final raw = await db.getReadingItems(after: after,
-          limit: limit, query: query, filter: filter, bookId: bookId);
+          limit: limit, query: query, filter: filter, bookId: bookId, tag: tag);
       if (request != _request || !db.isActive) return;
       if (favoriteRevision != _favoriteRevision) {
         await _loadPage(reset: reset, preserve: true, limit: limit);
@@ -312,6 +317,21 @@ class NotesProvider extends ChangeNotifier {
     _selectedBookId = bookId;
     _searchTimer?.cancel();
     _loadPage(reset: true);
+  }
+
+  Future<void> setTagFilter(String? tag) async {
+    if (tag == _selectedTag) return;
+    _selectedTag = tag;
+    _searchTimer?.cancel();
+    await _loadPage(reset: true);
+  }
+
+  Future<void> setTags(DatabaseService db, NoteItem note, Iterable<String> tags) async {
+    final revision = _sessionRevision;
+    await db.setReadingTags(note, tags);
+    if (!db.isActive || _disposed || revision != _sessionRevision) return;
+    await _loadPage(reset: true, preserve: true,
+        limit: _notes.length < pageSize ? pageSize : _notes.length);
   }
 
   Future<void> toggleFavorite(NoteItem note) async {

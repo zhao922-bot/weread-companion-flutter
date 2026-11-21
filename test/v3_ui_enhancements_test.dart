@@ -645,6 +645,7 @@ void main() {
       ),
     )));
     await pumpUntil(tester, () => find.text('暂无书籍进度数据').evaluate().isNotEmpty);
+    expect(find.text('已同步书架书籍'), findsOneWidget);
 
     // 未配置
     await clearSnackBars(tester);

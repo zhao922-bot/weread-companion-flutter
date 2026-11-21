@@ -155,7 +155,7 @@ class _ReportPageState extends State<ReportPage> {
     final cs = Theme.of(context).colorScheme;
     final palette = ReadAmberPalette.of(context);
     final statItems = [
-      _StatCard('总书数', '$_totalBooks', Icons.book, cs.primary),
+      _StatCard('已同步书架书籍', '$_totalBooks', Icons.book, cs.primary),
       _StatCard('已读完', '$_readBooks', Icons.check_circle, palette.success),
       _StatCard('在读中', '$_readingBooks', Icons.menu_book, palette.amberText),
       _StatCard('划线与笔记', '$_totalNotes', Icons.note, palette.inkSoft),
@@ -383,7 +383,7 @@ class _ReportPageState extends State<ReportPage> {
             const Text('划线与笔记趋势',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            Text('近 6 个月 · 按本地记录的创建时间统计',
+            Text('近 6 个月 · 按创建月份统计本地划线与笔记条数',
                 style: TextStyle(
                     fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             const SizedBox(height: 20),
@@ -549,6 +549,7 @@ class _StatCard extends StatelessWidget {
                       fontSize: 18, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 4),
               Text(label,
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 12, color: ReadAmberPalette.of(context).muted)),
             ],

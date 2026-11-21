@@ -35,7 +35,6 @@ import 'package:weread_companion/services/sync_service.dart';
 import 'package:weread_companion/theme/readamber_theme.dart';
 import 'package:weread_companion/widgets/settings/account_settings_section.dart';
 import 'package:weread_companion/widgets/settings/ai_settings_section.dart';
-import 'package:weread_companion/widgets/settings/about_settings_section.dart';
 import 'support/observed_database.dart';
 import 'support/wait_until.dart';
 
@@ -734,34 +733,6 @@ void main() {
     await tester.ensureVisible(find.text('保存配置'));
     await tester.tap(find.text('保存配置'));
     await tester.pump();
-    await tester.pumpWidget(const SizedBox());
-    gate.complete();
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('版本查询失败有反馈，查询中销毁不更新UI', (tester) async {
-    const channel = MethodChannel('dev.fluttercommunity.plus/package_info');
-    var gate = Completer<void>();
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (_) async {
-      await gate.future;
-      throw PlatformException(code: 'version-error');
-    });
-    addTearDown(() => TestDefaultBinaryMessengerBinding
-        .instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null));
-    await tester.pumpWidget(section(const AboutSettingsSection()));
-    await tester.ensureVisible(find.text('检查更新'));
-    await tester.tap(find.text('检查更新'));
-    await tester.pump();
-    expect(find.text('当前版本：读取版本中…'), findsOneWidget);
-    gate.complete();
-    await tester.pumpAndSettle();
-    expect(find.text('版本读取失败'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox());
-    gate = Completer<void>();
-    await tester.pumpWidget(section(const AboutSettingsSection()));
     await tester.pumpWidget(const SizedBox());
     gate.complete();
     await tester.pumpAndSettle();

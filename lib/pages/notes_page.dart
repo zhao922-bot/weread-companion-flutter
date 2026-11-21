@@ -14,6 +14,7 @@ import '../models/bookmark.dart';
 import '../utils/date_format.dart';
 import '../widgets/account_session_guard.dart';
 import '../widgets/readamber_chip.dart';
+import '../widgets/reading_tag_widgets.dart';
 import 'ai_summary_page.dart';
 import 'book_detail_page.dart';
 import 'cards_page.dart';
@@ -173,13 +174,16 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  /// 每日回顾：随机抽取本地划线/笔记
+  /// 每日回顾优先呈现收藏和长期未回顾的条目。
   Future<void> _openDailyReview() async {
     final db = DatabaseService.instance;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => _DailyReviewSheet(database: db),
+      builder: (_) => AccountSessionGuard(
+        database: db,
+        child: _DailyReviewSheet(database: db),
+      ),
     );
   }
 
@@ -234,6 +238,32 @@ class _NotesPageState extends State<NotesPage> {
         provider.setBookFilter(picked.bookId);
       }
     }
+  }
+
+  Future<void> _pickTagFilter(NotesProvider provider) async {
+    final db = DatabaseService.instance;
+    final picked = await showModalBottomSheet<({String? tag})>(
+      context: context,
+      builder: (_) => ReadingTagPicker(
+        database: db,
+        selectedTag: provider.selectedTag,
+      ),
+    );
+    if (picked != null && mounted && db.isActive) {
+      await provider.setTagFilter(picked.tag);
+    }
+  }
+
+  Future<void> _editTags(NotesProvider provider, NoteItem note) async {
+    final db = DatabaseService.instance;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ReadingTagsEditor(
+        database: db,
+        tags: note.tags,
+        onSave: (tags) => provider.setTags(db, note, tags),
+      ),
+    );
   }
 
   Future<void> _copyNote(NoteItem note) async {
@@ -525,6 +555,12 @@ class _NotesPageState extends State<NotesPage> {
                           selected: provider.selectedBookId != null,
                           onTap: () => _pickBookFilter(provider),
                         ),
+                        ReadAmberChip(
+                          label: '按标签筛选',
+                          icon: Icons.label_outline,
+                          selected: provider.selectedTag != null,
+                          onTap: () => _pickTagFilter(provider),
+                        ),
                       ],
                     ),
                   ),
@@ -538,6 +574,13 @@ class _NotesPageState extends State<NotesPage> {
                           style: TextStyle(
                               fontSize: 12, color: ReadAmberPalette.of(context).muted),
                         ),
+                        if (provider.selectedTag case final tag?)
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Text('标签：$tag', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
                         if (provider.isLoading) ...[
                           const SizedBox(width: 8),
                           const SizedBox(
@@ -735,6 +778,7 @@ class _NotesPageState extends State<NotesPage> {
               aiServiceFactory: widget.aiServiceFactory,
             ),
             onOpenBook: () => _openBookDetail(note),
+            onEditTags: () => _editTags(provider, note),
           );
         },
       ),
@@ -750,6 +794,7 @@ class _NoteCard extends StatefulWidget {
   final VoidCallback? onInterpret;
   final VoidCallback? onMakeCard;
   final VoidCallback? onOpenBook;
+  final VoidCallback? onEditTags;
 
   const _NoteCard({
     super.key,
@@ -760,6 +805,7 @@ class _NoteCard extends StatefulWidget {
     this.onInterpret,
     this.onMakeCard,
     this.onOpenBook,
+    this.onEditTags,
   });
 
   @override
@@ -936,6 +982,17 @@ class _NoteCardState extends State<_NoteCard> {
                     ),
                   ],
                   const SizedBox(height: 8),
+                  if (note.tags.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        for (final tag in note.tags)
+                          Chip(
+                            label: Text(tag, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                      ],
+                    ),
                   // 时间与快捷操作
                   Row(
                     children: [
@@ -945,11 +1002,21 @@ class _NoteCardState extends State<_NoteCard> {
                       Expanded(
                         child: Text(
                           ReadAmberDateFormat.formatTimestamp(note.createdAt),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               fontSize: 11,
                               color: ReadAmberPalette.of(context).muted),
                         ),
                       ),
+                      if (widget.onEditTags != null)
+                        IconButton(
+                          tooltip: '编辑标签',
+                          icon: Icon(Icons.label_outline,
+                              size: 16, color: ReadAmberPalette.of(context).inkSoft),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: widget.onEditTags,
+                        ),
                       if (widget.onCopy != null)
                         IconButton(
                           tooltip: '复制原文',
@@ -1007,23 +1074,45 @@ class _DailyReviewSheet extends StatefulWidget {
 }
 
 class _DailyReviewSheetState extends State<_DailyReviewSheet> {
+  static const _batchSize = 5;
   List<NoteItem> _items = [];
-  bool _loading = true;
+  int _offset = 0;
+  bool _loading = false;
+  VoidCallback? _retry;
 
   @override
   void initState() {
     super.initState();
-    _shuffle();
+    _load();
   }
 
-  Future<void> _shuffle() async {
+  Future<void> _load({int offset = 0, NoteItem? reviewed}) async {
+    if (_loading) return;
     setState(() => _loading = true);
-    final rows = await widget.database.getRandomReadingItems(limit: 5);
-    if (mounted) {
-      setState(() {
-        _items = rows.map(NoteItem.fromRow).toList();
-        _loading = false;
-      });
+    final db = widget.database;
+    final now = DateTime.now();
+    final dayStart = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    try {
+      if (reviewed != null) {
+        await db.markReadingItemReviewed(reviewed, now.millisecondsSinceEpoch);
+        reviewed = null;
+      }
+      var rows = await db.getDailyReviewItems(
+        dayStart: dayStart,
+        limit: _batchSize,
+        offset: offset,
+      );
+      if (rows.isEmpty && offset > 0) {
+        offset = 0;
+        rows = await db.getDailyReviewItems(dayStart: dayStart, limit: _batchSize);
+      }
+      _items = rows.map(NoteItem.fromRow).toList();
+      _offset = offset;
+      _retry = null;
+    } catch (_) {
+      _retry = () => _load(offset: offset, reviewed: reviewed);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -1047,7 +1136,7 @@ class _DailyReviewSheetState extends State<_DailyReviewSheet> {
                           TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                 ),
                 TextButton.icon(
-                  onPressed: _loading ? null : _shuffle,
+                  onPressed: _loading ? null : () => _load(offset: _offset + _batchSize),
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('换一批'),
                 ),
@@ -1058,6 +1147,13 @@ class _DailyReviewSheetState extends State<_DailyReviewSheet> {
               const Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_retry != null)
+              Center(
+                child: TextButton(
+                  onPressed: _retry,
+                  child: const Text('每日回顾更新失败，点击重试'),
+                ),
               )
             else if (_items.isEmpty)
               Padding(
@@ -1093,10 +1189,19 @@ class _DailyReviewSheetState extends State<_DailyReviewSheet> {
                                 color: palette.ink),
                           ),
                           const SizedBox(height: 6),
-                          Text(
-                            '—— 《${item.bookTitle}》',
-                            style:
-                                TextStyle(fontSize: 12, color: palette.muted),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '—— 《${item.bookTitle}》',
+                                  style: TextStyle(fontSize: 12, color: palette.muted),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () => _load(offset: _offset, reviewed: item),
+                                child: const Text('已回顾'),
+                              ),
+                            ],
                           ),
                         ],
                       ),

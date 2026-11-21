@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/ai_summary.dart';
+import '../models/book.dart';
 import '../models/note_item.dart';
 import '../models/reading_constants.dart';
 import 'package:sqflite/sqflite.dart';
@@ -27,6 +28,8 @@ List<List<String>> _generateTrigrams(List<String> texts) => texts.map((text) {
 }).toList();
 
 class _IndexChanged implements Exception {}
+
+typedef BookshelfChanges = ({List<Book> added, List<Book> updated, List<Book> removed});
 
 class DatabaseService {
   Database? _db;
@@ -187,7 +190,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 9,
+      version: 10,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -221,6 +224,7 @@ class DatabaseService {
             }
           }
         }
+        await _createReadingPreferences(db);
       },
       onOpen: (db) async {
         if (!await _tableExists(db, 'search_index_backfill')) return;
@@ -302,6 +306,7 @@ class DatabaseService {
     await db.execute('CREATE INDEX idx_notes_book_id ON notes(book_id)');
     await _createItemIndexes(db);
     await _createSearchIndex(db);
+    await _createReadingPreferences(db);
 
     await db.execute('''
       CREATE TABLE chapters (
@@ -461,9 +466,9 @@ class DatabaseService {
       final uniqueDeleted = deleted.toSet().toList();
       for (var start = 0; start < uniqueDeleted.length; start += 400) {
         final keys = uniqueDeleted.skip(start).take(400).toList();
+        final placeholders = List.filled(keys.length, '?').join(',');
         await txn.rawDelete(
-            'DELETE FROM $table WHERE book_id = ? '
-            'AND $id IN (${List.filled(keys.length, '?').join(',')})',
+            'DELETE FROM $table WHERE book_id = ? AND $id IN ($placeholders)',
             [bookId, ...keys]);
       }
       if (cursor != null) {
@@ -542,6 +547,100 @@ class DatabaseService {
 
   // ── Books ──
 
+  Future<void> _createReadingPreferences(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS card_book_titles (
+        book_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS reading_tags (
+        source TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        book_id TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        encoded_tag TEXT NOT NULL,
+        PRIMARY KEY (source, item_id, tag)
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_reading_tags_tag ON reading_tags(tag)');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS reading_reviews (
+        source TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        book_id TEXT NOT NULL,
+        reviewed_at INTEGER NOT NULL,
+        PRIMARY KEY (source, item_id)
+      )
+    ''');
+    for (final (table, source, id) in const [
+      ('bookmarks', 'bookmark', 'bookmark_id'),
+      ('notes', 'note', 'note_id'),
+    ]) {
+      if (!await _tableExists(db, table)) continue;
+      await db.execute('''
+        CREATE TRIGGER IF NOT EXISTS reading_${source}_delete AFTER DELETE ON $table
+        BEGIN
+          DELETE FROM reading_tags WHERE source = '$source' AND item_id = old.$id;
+          DELETE FROM reading_reviews WHERE source = '$source' AND item_id = old.$id;
+        END
+      ''');
+    }
+  }
+
+  Future<Map<String, List<Map<String, Object?>>>> getReadingPreferences() async {
+    final db = await database;
+    return db.transaction((txn) async => {
+      'cardBookTitles': await txn.query('card_book_titles'),
+      'readingTags': await txn.query('reading_tags',
+          columns: ['source', 'item_id', 'book_id', 'tag']),
+      'readingReviews': await txn.query('reading_reviews'),
+    });
+  }
+
+  Future<void> restoreReadingPreferences({
+    required List<Map<String, dynamic>> cardBookTitles,
+    required List<Map<String, dynamic>> readingTags,
+    required List<Map<String, dynamic>> readingReviews,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      requireActive();
+      final batch = txn.batch();
+      for (final row in cardBookTitles) {
+        batch.insert('card_book_titles', row,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      for (final row in readingTags) {
+        batch.insert('reading_tags', {...row, 'encoded_tag': jsonEncode(row['tag'] as String)},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      for (final row in readingReviews) {
+        batch.insert('reading_reviews', row,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<String?> getCardBookTitle(String bookId) async {
+    final rows = await (await database).query('card_book_titles',
+        columns: ['title'], where: 'book_id = ?', whereArgs: [bookId]);
+    return rows.firstOrNull?['title'] as String?;
+  }
+
+  Future<void> setCardBookTitle(String bookId, String? title) async {
+    final db = await database;
+    requireActive();
+    if (title == null) {
+      await db.delete('card_book_titles', where: 'book_id = ?', whereArgs: [bookId]);
+    } else {
+      await db.insert('card_book_titles', {'book_id': bookId, 'title': title},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
   Future<void> insertBook(Map<String, dynamic> book) async {
     final db = await database;
     await db.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -571,23 +670,44 @@ class DatabaseService {
   /// 将书架镜像同步到最新列表：写入或更新在架书籍，并级联清理已从书架移除的书籍。
   Future<List<String>> syncBookshelf(List<Map<String, dynamic>> books,
       {void Function()? checkCancelled}) async {
+    final changes = await syncBookshelfWithChanges(books, checkCancelled: checkCancelled);
+    return changes.removed.map((book) => book.bookId).toList();
+  }
+
+  Future<BookshelfChanges> syncBookshelfWithChanges(
+      List<Map<String, dynamic>> books,
+      {bool allowPrune = true, void Function()? checkCancelled}) async {
     final db = await database;
     return db.transaction((txn) async {
       checkCancelled?.call();
-      final activeIds = {for (final book in books) book['book_id'] as String};
-      final existing = await txn.query('books', columns: ['book_id']);
-      final removedIds = [
-        for (final row in existing)
-          if (!activeIds.contains(row['book_id'] as String))
-            row['book_id'] as String,
-      ];
+      final incoming = {for (final book in books) book['book_id'] as String: book};
+      final existing = {
+        for (final row in await txn.query('books')) row['book_id'] as String: row,
+      };
+      final added = <Book>[];
+      final updated = <Book>[];
+      final removed = <Book>[];
       final batch = txn.batch();
-      for (final book in books) {
-        batch.insert('books', book, conflictAlgorithm: ConflictAlgorithm.replace);
+      for (final entry in incoming.entries) {
+        final row = entry.value;
+        final previous = existing[entry.key];
+        if (previous == null) {
+          added.add(Book.fromJson(row));
+        } else if (row.entries.any((field) =>
+            field.key != 'updated_at' && previous[field.key] != field.value)) {
+          updated.add(Book.fromJson(row));
+        }
+        batch.insert('books', row, conflictAlgorithm: ConflictAlgorithm.replace);
       }
+      if (allowPrune) {
+        for (final entry in existing.entries) {
+          if (!incoming.containsKey(entry.key)) removed.add(Book.fromJson(entry.value));
+        }
+      }
+      checkCancelled?.call();
       await batch.commit(noResult: true);
-      await _deleteBookRows(txn, removedIds);
-      return removedIds;
+      await _deleteBookRows(txn, removed.map((book) => book.bookId).toList());
+      return (added: added, updated: updated, removed: removed);
     });
   }
 
@@ -718,33 +838,47 @@ class DatabaseService {
       [_searchTerm(query), _searchTerm(query)]);
   }
 
-  (String, List<Object?>) _readingFilter(String query, ReadingFilter filter, String? bookId) {
+  (String, List<Object?>) _readingFilter(String query, ReadingFilter filter,
+      String? bookId, {String? tag}) {
     final search = _itemFilter(query, bookId, 'content');
     final clauses = <String>[if (search.$1 != null) search.$1!];
     if (filter == ReadingFilter.notes) clauses.add("source = 'note'");
     if (filter == ReadingFilter.favorites) clauses.add('is_fav = 1');
-    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}', search.$2);
+    if (tag != null) {
+      clauses.add("source || ':' || id IN "
+          "(SELECT source || ':' || item_id FROM reading_tags WHERE tag = ?)");
+    }
+    return (clauses.isEmpty ? '' : 'WHERE ${clauses.join(' AND ')}',
+        [...search.$2, if (tag != null) tag]);
   }
 
   Future<List<Map<String, dynamic>>> getReadingItems({int offset = 0,
     int limit = 100, String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId,
-    NoteItem? after}) async {
+    String? tag, NoteItem? after}) async {
     final db = await database;
     final items = _readingSource(query);
-    final where = _readingFilter(query, filter, bookId);
+    final where = _readingFilter(query, filter, bookId, tag: tag);
     final cursor = after == null ? '' : '${where.$1.isEmpty ? 'WHERE' : 'AND'} '
         '(created_at < ? OR (created_at = ? AND source < ?) '
         'OR (created_at = ? AND source = ? AND id < ?))';
-    return db.rawQuery('SELECT * FROM (${items.$1}) AS reading_items ${where.$1} $cursor '
-        'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?',
-        [...items.$2, ...where.$2, if (after != null) ...[after.createdAt, after.createdAt,
-          after.source.name, after.createdAt, after.source.name, after.id], limit, offset]);
+    return db.rawQuery(
+      'WITH selected AS ('
+      'SELECT * FROM (${items.$1}) AS reading_items ${where.$1} $cursor '
+      'ORDER BY created_at DESC, source DESC, id DESC LIMIT ? OFFSET ?) '
+      "SELECT selected.*, '[' || group_concat(t.encoded_tag) || ']' AS tags "
+      'FROM selected LEFT JOIN reading_tags AS t ON t.source = selected.source '
+      'AND t.item_id = selected.id AND t.book_id = selected.book_id '
+      'GROUP BY selected.source, selected.id '
+      'ORDER BY selected.created_at DESC, selected.source DESC, selected.id DESC',
+      [...items.$2, ...where.$2, if (after != null) ...[after.createdAt, after.createdAt,
+        after.source.name, after.createdAt, after.source.name, after.id], limit, offset],
+    );
   }
 
-  Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
+  Future<int> countReadingItems({String query = '', ReadingFilter filter = ReadingFilter.all, String? bookId, String? tag}) async {
     final db = await database;
     final items = _readingSource(query);
-    final where = _readingFilter(query, filter, bookId);
+    final where = _readingFilter(query, filter, bookId, tag: tag);
     return Sqflite.firstIntValue(await db.rawQuery(
         'SELECT COUNT(*) FROM (${items.$1}) AS reading_items ${where.$1}', [...items.$2, ...where.$2])) ?? 0;
   }
@@ -762,6 +896,63 @@ class DatabaseService {
     return (
       total: rows.first['total'] as int,
       favorites: rows.first['favorites'] as int,
+    );
+  }
+
+  Future<List<String>> getReadingTags() async {
+    final rows = await (await database).query('reading_tags', distinct: true,
+        columns: ['tag'], orderBy: 'tag COLLATE NOCASE, tag');
+    return rows.map((row) => row['tag'] as String).toList();
+  }
+
+  Future<void> setReadingTags(NoteItem note, Iterable<String> tags) async {
+    final normalized = tags.map((tag) => tag.trim()).where((tag) => tag.isNotEmpty).toSet();
+    final source = note.source.name;
+    final db = await database;
+    await db.transaction((txn) async {
+      requireActive();
+      final rows = await txn.rawQuery('SELECT id FROM ($_readingItems) '
+          'WHERE source = ? AND id = ? AND book_id = ?', [source, note.id, note.bookId]);
+      if (rows.isEmpty) throw StateError('阅读条目已移除');
+      final batch = txn.batch();
+      batch.delete('reading_tags', where: 'source = ? AND item_id = ?',
+          whereArgs: [source, note.id]);
+      for (final tag in normalized) {
+        // Encode tag text for aggregation on SQLite builds without JSON1.
+        batch.insert('reading_tags', {'source': source, 'item_id': note.id,
+          'book_id': note.bookId, 'tag': tag, 'encoded_tag': jsonEncode(tag)});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getDailyReviewItems({
+    required int dayStart,
+    int limit = 5,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    return db.rawQuery(
+      'SELECT reading_items.* FROM ($_readingItems) AS reading_items '
+      'LEFT JOIN reading_reviews AS r ON r.source = reading_items.source '
+      'AND r.item_id = reading_items.id AND r.book_id = reading_items.book_id '
+      'WHERE trim(content, $_summaryWhitespace) <> ? '
+      'AND (r.reviewed_at IS NULL OR r.reviewed_at < ?) '
+      'ORDER BY r.reviewed_at, is_fav DESC, created_at DESC, '
+      'reading_items.source DESC, id DESC LIMIT ? OFFSET ?',
+      ['', dayStart, limit, offset],
+    );
+  }
+
+  Future<void> markReadingItemReviewed(NoteItem item, int timestamp) async {
+    final db = await database;
+    requireActive();
+    await db.rawInsert(
+      'INSERT OR REPLACE INTO reading_reviews '
+      '(source, item_id, book_id, reviewed_at) '
+      'SELECT source, id, book_id, ? FROM ($_readingItems) '
+      'WHERE source = ? AND id = ? AND book_id = ?',
+      [timestamp, item.source.name, item.id, item.bookId],
     );
   }
 
@@ -800,9 +991,9 @@ class DatabaseService {
       '8232,8233,8239,8287,12288,65279)';
 
   Future<List<Map<String, dynamic>>> getSummaryItems({String query = '',
-    ReadingFilter filter = ReadingFilter.all, String? bookId}) async {
+    ReadingFilter filter = ReadingFilter.all, String? bookId, String? tag}) async {
     final items = _readingSource(query);
-    final where = _readingFilter(query, filter, bookId);
+    final where = _readingFilter(query, filter, bookId, tag: tag);
     return (await database).rawQuery(
       'SELECT * FROM (${items.$1}) AS reading_items ${where.$1} '
       '${where.$1.isEmpty ? 'WHERE' : 'AND'} trim(content, $_summaryWhitespace) <> ? '

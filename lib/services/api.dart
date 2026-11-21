@@ -48,7 +48,7 @@ class WeReadApi {
   }
   String? authenticatedAccountId;
   static final Set<WeReadApi> _sessions = {};
-  static Map<String, dynamic>? _shelfSnapshot;
+  static Response<dynamic>? _shelfSnapshot;
   static String? _snapshotCredential;
   static DateTime? _snapshotTime;
   String? get _credentialKey => config.credentials == null ? null :
@@ -416,7 +416,7 @@ class WeReadApi {
           throw StateError('暂时无法验证移动端登录');
         }
         authenticatedAccountId = accountId;
-        _shelfSnapshot = Map<String, dynamic>.from(data);
+        _shelfSnapshot = resp;
         _snapshotCredential = _credentialKey;
         _snapshotTime = DateTime.now();
         return true;
@@ -492,7 +492,10 @@ class WeReadApi {
   }
 
   /// 书架同步 — GET /web/shelf/sync
-  Future<List<Book>> fetchBookshelf({CancelToken? cancelToken}) async {
+  Future<List<Book>> fetchBookshelf({
+    CancelToken? cancelToken,
+    void Function(bool complete)? onCompleteness,
+  }) async {
     try {
       // A cached response bypasses Dio's cancellation interceptor. Reject
       // retired callers before they consume or clear another client's snapshot.
@@ -508,7 +511,8 @@ class WeReadApi {
           _snapshotTime != null && DateTime.now().difference(_snapshotTime!) < const Duration(seconds: 30);
       final snapshot = reusable ? _shelfSnapshot : null;
       _clearSnapshot();
-      final data = snapshot ?? (await _dio.get('/shelf/sync', cancelToken: cancelToken)).data;
+      final response = snapshot ?? await _dio.get('/shelf/sync', cancelToken: cancelToken);
+      final data = response.data;
 
       _checkSyncResponse(data);
 
@@ -533,7 +537,7 @@ class WeReadApi {
         }
       }
 
-      final books = <Book>[];
+      final books = <String, Book>{};
       for (final item in booksData) {
         try {
           if (item is! Map) throw const FormatException('书籍条目类型无效');
@@ -570,12 +574,14 @@ class WeReadApi {
             ),
           );
 
-          books.add(book);
+          books[bookId] = book;
         } on FormatException catch (e) {
           _invalidRow('书籍', e);
         }
       }
-      return books;
+      // Only a full response with every distinct book parsed can prune the shelf.
+      onCompleteness?.call(response.statusCode == 200 && books.length == booksData.length);
+      return books.values.toList();
     } on DioException catch (e) {
       if (e.response?.statusCode == 401 || e.response?.statusCode == 302) {
         throw Exception('Cookie 已过期，请重新导入');

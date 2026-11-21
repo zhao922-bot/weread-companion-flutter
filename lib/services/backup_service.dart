@@ -34,6 +34,7 @@ abstract final class BackupService {
     final bookmarks = await db.getAllBookmarks(limit: 1000000);
     final notes = await db.getAllNotes(limit: 1000000);
     final summaries = await db.getSummaries();
+    final preferences = await db.getReadingPreferences();
     db.requireActive();
     return jsonEncode({
       'version': currentVersion,
@@ -42,6 +43,7 @@ abstract final class BackupService {
       'bookmarks': bookmarks,
       'notes': notes,
       'summaries': summaries.map((s) => s.toJson()).toList(),
+      ...preferences,
     });
   }
 
@@ -85,6 +87,11 @@ abstract final class BackupService {
     for (final raw in rawSummaries) {
       await db.saveSummary(AISummary.fromJson(raw));
     }
+    await db.restoreReadingPreferences(
+      cardBookTitles: _castRows(decoded['cardBookTitles']),
+      readingTags: _castRows(decoded['readingTags']),
+      readingReviews: _castRows(decoded['readingReviews']),
+    );
     db.requireActive();
     SyncService.changes.publish(db, kind: SyncChangeKind.all);
     return BackupRestoreResult(

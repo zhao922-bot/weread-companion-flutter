@@ -90,6 +90,10 @@ class _ObservedDatabase extends LegacyDatabase {
       probe.observe(sql, delegate.rawQuery(sql, arguments));
 
   @override
+  Future<int> rawInsert(String sql, [List<Object?>? arguments]) =>
+      delegate.rawInsert(sql, arguments);
+
+  @override
   Future<int> update(String table, Map<String, Object?> values,
       {String? where,
       List<Object?>? whereArgs,

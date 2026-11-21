@@ -245,6 +245,7 @@ class _SyncPageState extends State<SyncPage> {
   }
 
   Widget _buildContent(double progress, AppConfigProvider appConfig) {
+    final bookshelf = _result?.bookshelf;
     return Scaffold(
       backgroundColor: ReadAmberPalette.of(context).canvas,
       appBar: AppBar(
@@ -342,8 +343,11 @@ class _SyncPageState extends State<SyncPage> {
                   : ListView.builder(
                       controller: _logScrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: _logs.length,
+                      itemCount: _logs.length + (bookshelf == null ? 0 : 1),
                       itemBuilder: (context, index) {
+                        if (index == _logs.length) {
+                          return _buildBookshelfDetails(bookshelf!);
+                        }
                         final log = _logs[index];
                         final failure = _retryLogs[index];
                         Color color = ReadAmberColors.paper;
@@ -371,6 +375,45 @@ class _SyncPageState extends State<SyncPage> {
                     ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookshelfDetails(BookshelfSyncResult result) {
+    final changes = result.changes;
+    final entries = [
+      for (final group in {
+        '新增': changes.added,
+        '更新': changes.updated,
+        '移除': changes.removed,
+      }.entries)
+        for (final book in group.value)
+          '${group.key} · ${book.title.trim().isEmpty ? book.bookId : book.title}',
+    ];
+    const foreground = ReadAmberColors.paper;
+    return Material(
+      type: MaterialType.transparency,
+      child: ExpansionTile(
+        key: PageStorageKey('bookshelf-sync-details-$_operation'),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        textColor: foreground,
+        collapsedTextColor: foreground,
+        iconColor: foreground,
+        collapsedIconColor: foreground,
+        title: Text('书架变更 · ${result.summary}'),
+        subtitle: result.complete ? null : const Text(
+          '书架响应有缺失或无效条目，已保留未返回的本地书籍。',
+          style: TextStyle(color: ReadAmberColors.amber),
+        ),
+        children: [
+          for (final text in entries.isEmpty ? ['本次没有书架变更'] : entries)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(text, style: const TextStyle(color: foreground)),
+            ),
         ],
       ),
     );

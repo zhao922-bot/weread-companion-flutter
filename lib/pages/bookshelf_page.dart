@@ -140,17 +140,23 @@ class _BookshelfPageState extends State<BookshelfPage> {
       if (!mounted || !isCurrent()) return;
       final msg = await provider.syncFromServer(config: appConfig.config);
       if (mounted && isCurrent()) {
+        final result = provider.lastSyncResult;
+        final bookshelf = result?.bookshelf;
+        final succeeded = result?.failureCount == 0;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(msg),
-            backgroundColor: provider.lastSyncResult?.failureCount == 0
+            content: Text(bookshelf == null ? msg : '$msg\n${bookshelf.summary}'),
+            backgroundColor: succeeded
                 ? ReadAmberPalette.of(context).ink : ReadAmberPalette.of(context).amberText,
             duration: const Duration(seconds: 3),
-            action: provider.lastSyncResult?.failureCount == 0 ? null : SnackBarAction(
-              label: '失败清单',
-              onPressed: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => SyncPage(initialResult: provider.lastSyncResult),
-              )),
+            action: bookshelf == null && succeeded ? null : SnackBarAction(
+              label: bookshelf == null ? '失败清单' : '同步详情',
+              onPressed: () {
+                if (!mounted || !isCurrent()) return;
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => SyncPage(initialResult: result),
+                ));
+              },
             ),
           ),
         );

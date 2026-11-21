@@ -198,6 +198,71 @@ void main() {
     expect((await db.getAllNotes()).single['created_at'], 14);
   });
 
+  test('无效书籍条目不触发删除，仍同步有效书籍并保留本地数据', () async {
+    await db.insertBook({'book_id': 'retained', 'title': '本地书', 'updated_at': 1});
+    await db.insertBookmarksPreserveFav([
+      {'bookmark_id': 'bm-local', 'book_id': 'retained', 'mark_text': '本地划线', 'created_at': 1},
+    ]);
+    await db.insertNotesPreserveFav([
+      {'note_id': 'nt-local', 'book_id': 'retained', 'content': '本地笔记', 'created_at': 1, 'is_fav': 1},
+    ]);
+    await db.applySyncDelta('retained', 'note', [], [], 'local-cursor');
+
+    final responses = <String, Object?>{
+      '/shelf/sync': shelf,
+      '/book/bookmarklist': {'updated': []},
+      '/review/list': {'reviews': []},
+    };
+    final service = SyncService.forApi(await apiWith(responses));
+    final partial = await service.syncAll();
+    expect(partial.bookshelf!.complete, isFalse);
+    expect(partial.bookshelf!.changes.added.single.title, '真实书');
+    expect(partial.bookshelf!.changes.removed, isEmpty);
+    expect(partial.successCount, 1);
+    expect(await db.getBook('retained'), isNotNull);
+    expect((await db.getAllBookmarks()).single['mark_text'], '本地划线');
+    expect((await db.getAllNotes()).single['is_fav'], 1);
+    expect(await db.getSyncCursor('retained', 'note'), 'local-cursor');
+
+    responses['/shelf/sync'] = {'books': [null, {'bookId': ''}]};
+    final invalid = await service.syncAll();
+    expect(invalid.bookshelf!.complete, isFalse);
+    expect(invalid.bookshelf!.changes.removed, isEmpty);
+    expect(invalid.totalBooks, 0);
+    expect(await db.getAllBooks(), hasLength(2));
+
+    responses['/shelf/sync'] = {'books': []};
+    final empty = await service.syncAll();
+    expect(empty.bookshelf!.complete, isTrue);
+    expect(empty.bookshelf!.changes.removed.map((book) => book.title),
+        unorderedEquals(['本地书', '真实书']));
+    expect(await db.getAllBooks(), isEmpty);
+    expect(await db.getAllBookmarks(), isEmpty);
+    expect(await db.getAllNotes(), isEmpty);
+    expect(await db.getSyncCursor('retained', 'note'), '0');
+  });
+
+  test('重复书籍 ID 保留最后一项并跳过书架删除', () async {
+    await db.insertBook({'book_id': 'other', 'title': '本地书', 'updated_at': 1});
+    final api = await apiWith({
+      '/shelf/sync': {
+        'books': [
+          {'bookId': 'b', 'title': '旧标题'},
+          {'bookId': 'b', 'title': '新标题'},
+        ],
+      },
+      '/book/bookmarklist': {'updated': []},
+      '/review/list': {'reviews': []},
+    });
+    final service = SyncService.forApi(api);
+    expect((await service.loadBooks()).single.title, '新标题');
+    final result = await service.syncAll();
+    expect(result.totalBooks, 1);
+    expect(result.bookshelf!.complete, isFalse);
+    expect(result.bookshelf!.changes.removed, isEmpty);
+    expect(await db.getBook('other'), isNotNull);
+  });
+
   test('携带synckey的坏行响应明确失败，不提交部分数据或游标，修复后可重试', () async {
     await db.applySyncDelta('b', 'bookmark', [{
       'bookmark_id': 'bm', 'book_id': 'b', 'mark_text': '原划线', 'created_at': 1,
@@ -389,6 +454,7 @@ void main() {
     await db.insertBooks([
       {'book_id': 'keep', 'title': '保留书', 'progress': 50, 'updated_at': 1},
       {'book_id': 'removed', 'title': '已删书', 'progress': 20, 'updated_at': 1},
+      {'book_id': 'unchanged', 'title': '一直在架', 'updated_at': 1},
     ]);
     await db.insertBookmarksPreserveFav([
       {'bookmark_id': 'bm_rm', 'book_id': 'removed', 'mark_text': '已删划线', 'created_at': 1},
@@ -406,6 +472,8 @@ void main() {
     final shelfOnlyKeep = {
       'books': [
         {'bookId': 'keep', 'title': '保留书新版', 'updateTime': 20},
+        {'bookId': 'added', 'title': '新增书'},
+        {'bookId': 'unchanged', 'title': '一直在架'},
       ],
       'bookProgress': [
         {'bookId': 'keep', 'progress': 80},
@@ -417,8 +485,13 @@ void main() {
       '/review/list': {'reviews': []},
     });
     final result = await SyncService.forApi(api).syncAll();
-    expect(result.successCount, 1);
-    expect((await db.getAllBooks()).map((b) => b['book_id']), ['keep']);
+    expect(result.successCount, 3);
+    expect(result.bookshelf!.complete, isTrue);
+    expect(result.bookshelf!.changes.added.single.title, '新增书');
+    expect(result.bookshelf!.changes.updated.single.title, '保留书新版');
+    expect(result.bookshelf!.changes.removed.single.title, '已删书');
+    expect((await db.getAllBooks()).map((b) => b['book_id']),
+        unorderedEquals(['keep', 'added', 'unchanged']));
     expect(await db.getBook('removed'), isNull);
     expect(await db.getAllBookmarks(), isEmpty);
     expect(await db.getAllNotes(), isEmpty);
@@ -428,7 +501,7 @@ void main() {
 
     // 当书架清空时同样可镜像清零
     final removedAll = await db.syncBookshelf(const []);
-    expect(removedAll, ['keep']);
+    expect(removedAll, unorderedEquals(['keep', 'added', 'unchanged']));
     expect(await db.getAllBooks(), isEmpty);
   });
 }

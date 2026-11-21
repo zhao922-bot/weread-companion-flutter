@@ -58,6 +58,22 @@ void main() {
     expect(requests, 1);
   });
 
+  test('验证缓存保留 HTTP 部分响应状态，不把书架子集视为完整书架', () async {
+    final verifier = WeReadApi.forLogin(config: config, dio: Dio()
+      ..httpClientAdapter = AuthAdapter((_) {
+        requests++;
+        return jsonResponse({'books': [{'bookId': 'b', 'title': '部分书架'}]}, 206);
+      }));
+    expect(await verifier.checkLogin(), isTrue);
+    final db = await DatabaseService.selectAccount('123');
+    final api = await WeReadApi.init(config: config, db: db, dio: transport());
+    bool? complete;
+    final books = await api.fetchBookshelf(onCompleteness: (value) => complete = value);
+    expect(books.single.title, '部分书架');
+    expect(complete, isFalse);
+    expect(requests, 1);
+  });
+
   test('已关闭客户端的迟到书架请求不能清空当前会话的验证快照', () async {
     final retired = WeReadApi.forLogin(config: config, dio: transport());
     retired.dispose();

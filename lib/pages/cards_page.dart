@@ -13,6 +13,7 @@ import '../services/database.dart';
 import '../services/export_service.dart';
 import '../services/card_image_renderer.dart';
 import '../services/sync_service.dart';
+import '../widgets/account_session_guard.dart';
 
 /// 金句卡片配色模板。
 enum CardTemplate {
@@ -39,6 +40,11 @@ class _CardExportScope {
   }
 }
 
+typedef _CardBookTitleChange = ({String bookId, String? title});
+
+// A quick card can change the title of a wide preview kept alive offstage.
+final _cardBookTitleChanges = Expando<StreamController<_CardBookTitleChange>>();
+
 void _noopExport(bool _) {}
 
 /// 打开单条引文的金句卡片预览与导出弹窗。
@@ -48,6 +54,12 @@ Future<void> showQuoteCardSheet(
   CardImageRenderer renderer = const CardImageRenderer(),
   AIService Function(AppConfig)? aiServiceFactory,
 }) async {
+  final DatabaseService database;
+  try {
+    database = DatabaseService.instance;
+  } on StateError {
+    return;
+  }
   final scope = _CardExportScope();
   try {
     await showModalBottomSheet<void>(
@@ -56,6 +68,7 @@ Future<void> showQuoteCardSheet(
       backgroundColor: Colors.transparent,
       builder: (_) => _QuoteCardSheet(
         bookmark: bookmark,
+        database: database,
         scope: scope,
         renderer: renderer,
         aiServiceFactory: aiServiceFactory,
@@ -101,6 +114,7 @@ class _CardsPageState extends State<CardsPage> {
   bool _exporting = false;
   bool _refreshPending = false;
   final _exportScope = _CardExportScope();
+  late DatabaseService _bookmarkDatabase;
 
   @override
   void didUpdateWidget(covariant CardsPage oldWidget) {
@@ -171,6 +185,7 @@ class _CardsPageState extends State<CardsPage> {
           offset: (page - 1) * _itemsPerPage, limit: _itemsPerPage);
       if (!mounted || request != _request || !db.isActive) return;
       setState(() {
+        _bookmarkDatabase = db;
         _currentPage = page;
         _totalCount = count;
         _allBookmarks = raw.map((m) => Bookmark.fromJson(m)).toList();
@@ -484,10 +499,12 @@ class _CardsPageState extends State<CardsPage> {
           ),
         ),
         Expanded(
+          key: ObjectKey(_bookmarkDatabase),
           flex: 3,
           child: _CardPreview(
               key: ValueKey((selectedBookmark.bookId, selectedBookmark.bookmarkId)),
               bookmark: selectedBookmark,
+              database: _bookmarkDatabase,
               scope: _exportScope,
               renderer: widget.renderer,
               aiServiceFactory: widget.aiServiceFactory,
@@ -575,12 +592,14 @@ class _CardsPageState extends State<CardsPage> {
   }
 
   void _showCardPreviewDialog(BuildContext context, Bookmark bookmark) {
+    final database = _bookmarkDatabase;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _QuoteCardSheet(
         bookmark: bookmark,
+        database: database,
         scope: _exportScope,
         renderer: widget.renderer,
         aiServiceFactory: widget.aiServiceFactory,
@@ -652,6 +671,7 @@ class _CardsPageState extends State<CardsPage> {
 /// 卡片预览组件（支持调节文字大小 + 导出图片）
 class _CardPreview extends StatefulWidget {
   final Bookmark bookmark;
+  final DatabaseService database;
   final _CardExportScope scope;
   final CardImageRenderer renderer;
   final ValueChanged<bool> onExportChanged;
@@ -661,6 +681,7 @@ class _CardPreview extends StatefulWidget {
   const _CardPreview({
     super.key,
     required this.bookmark,
+    required this.database,
     required this.scope,
     required this.renderer,
     required this.onExportChanged,
@@ -684,13 +705,61 @@ class _CardPreviewState extends State<_CardPreview> {
   Bookmark? _exportBookmark;
   double? _exportFontSize;
   String? _customBookTitle;
+  bool _titleBusy = true;
+  bool _titleChanged = false;
+  late final _titleChanges = _cardBookTitleChanges[widget.database] ??=
+      StreamController<_CardBookTitleChange>.broadcast(sync: true);
+  late final StreamSubscription<_CardBookTitleChange> _titleSubscription;
   bool _routeCurrent = true;
   int _routeRevision = 0;
 
   String get _effectiveBookTitle =>
       _customBookTitle ?? widget.bookmark.bookTitle;
 
+  bool get _canUseBookTitle => !_exporting && !_titleBusy;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleSubscription = _titleChanges.stream.listen(_onBookTitleChanged);
+    unawaited(_loadBookTitle());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_titleSubscription.cancel());
+    super.dispose();
+  }
+
+  Future<void> _loadBookTitle() async {
+    final database = widget.database;
+    try {
+      final title = await database.getCardBookTitle(widget.bookmark.bookId);
+      database.requireActive();
+      // A commit may have arrived while this lookup was in flight.
+      if (!_titleChanged) _customBookTitle = title;
+    } catch (_) {
+      if (mounted && database.isActive) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('卡片书名加载失败，请重新打开卡片重试'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _titleBusy = false);
+    }
+  }
+
+  void _onBookTitleChanged(_CardBookTitleChange change) {
+    if (change.bookId != widget.bookmark.bookId) return;
+    setState(() {
+      _titleChanged = true;
+      _customBookTitle = change.title;
+    });
+  }
+
   Future<void> _editBookTitle() async {
+    final database = widget.database;
+    final bookId = widget.bookmark.bookId;
     var input = _effectiveBookTitle;
     final edited = await showDialog<String?>(
       context: context,
@@ -702,6 +771,8 @@ class _CardPreviewState extends State<_CardPreview> {
           autofocus: true,
           decoration: const InputDecoration(
             hintText: '输入想要展示的书籍名称',
+            helperText: '同一本书的金句卡片共用此书名',
+            helperMaxLines: 2,
             border: OutlineInputBorder(),
           ),
         ),
@@ -721,8 +792,26 @@ class _CardPreviewState extends State<_CardPreview> {
         ],
       ),
     );
-    if (!mounted || edited == null) return;
-    setState(() => _customBookTitle = edited.isEmpty ? null : edited);
+    if (edited == null || !mounted || !widget.scope.active || !database.isActive) {
+      return;
+    }
+    final title = edited.isEmpty || edited == widget.bookmark.bookTitle
+        ? null
+        : edited;
+    setState(() => _titleBusy = true);
+    try {
+      await database.setCardBookTitle(bookId, title);
+      database.requireActive();
+      _titleChanges.add((bookId: bookId, title: title));
+    } catch (_) {
+      if (mounted && database.isActive) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('卡片书名保存失败，请重试'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _titleBusy = false);
+    }
   }
 
   Future<void> _interpretQuote() async {
@@ -784,12 +873,8 @@ class _CardPreviewState extends State<_CardPreview> {
     final scope = widget.scope;
     final revision = scope.revision;
     final routeRevision = _routeRevision;
-    DatabaseService db;
-    try {
-      db = DatabaseService.instance;
-    } on StateError {
-      return;
-    }
+    final db = widget.database;
+    if (!db.isActive) return;
     bool isCurrent() => mounted && scope.active && scope.revision == revision &&
         _routeRevision == routeRevision && route?.isCurrent != false && db.isActive;
     final snapshot = Bookmark.fromJson({
@@ -1081,14 +1166,14 @@ class _CardPreviewState extends State<_CardPreview> {
                 tooltip: '编辑书名',
                 icon: const Icon(Icons.edit_outlined, size: 18),
                 visualDensity: VisualDensity.compact,
-                onPressed: _exporting ? null : _editBookTitle,
+                onPressed: _canUseBookTitle ? _editBookTitle : null,
               ),
               IconButton(
                 tooltip: 'AI 金句解读',
                 icon: const Icon(Icons.auto_awesome_outlined, size: 18),
                 visualDensity: VisualDensity.compact,
                 onPressed:
-                    _exporting || _interpreting ? null : _interpretQuote,
+                    _canUseBookTitle && !_interpreting ? _interpretQuote : null,
               ),
             ],
           ),
@@ -1132,7 +1217,7 @@ class _CardPreviewState extends State<_CardPreview> {
               SizedBox(
                 height: 34,
                 child: ElevatedButton.icon(
-                  onPressed: _exporting ? null : _exportAsImage,
+                  onPressed: _canUseBookTitle ? _exportAsImage : null,
                   icon: _exporting
                       ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: ReadAmberPalette.of(context).ink))
                       : const Icon(Icons.ios_share_rounded, size: 16),
@@ -1156,6 +1241,7 @@ class _CardPreviewState extends State<_CardPreview> {
 
 class _QuoteCardSheet extends StatelessWidget {
   final Bookmark bookmark;
+  final DatabaseService database;
   final _CardExportScope scope;
   final CardImageRenderer renderer;
   final AIService Function(AppConfig)? aiServiceFactory;
@@ -1163,6 +1249,7 @@ class _QuoteCardSheet extends StatelessWidget {
 
   const _QuoteCardSheet({
     required this.bookmark,
+    required this.database,
     required this.scope,
     required this.renderer,
     this.aiServiceFactory,
@@ -1171,7 +1258,7 @@ class _QuoteCardSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
+    final sheet = DraggableScrollableSheet(
       initialChildSize: 0.75,
       maxChildSize: 0.95,
       minChildSize: 0.4,
@@ -1196,6 +1283,7 @@ class _QuoteCardSheet extends StatelessWidget {
                 child: _CardPreview(
                   key: ValueKey((bookmark.bookId, bookmark.bookmarkId)),
                   bookmark: bookmark,
+                  database: database,
                   scope: scope,
                   scrollController: scrollController,
                   renderer: renderer,
@@ -1208,5 +1296,6 @@ class _QuoteCardSheet extends StatelessWidget {
         );
       },
     );
+    return AccountSessionGuard(database: database, child: sheet);
   }
 }
